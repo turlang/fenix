@@ -119,10 +119,11 @@ function repeatedMotifs(value) {
 }
 
 export class NarrationQualityGuard {
-  constructor({ minWords = 80, maxWords = 150, maxParagraphs = 3 } = {}) {
+  constructor({ minWords = 80, maxWords = 150, maxParagraphs = 3, requireDecisionEnding = true } = {}) {
     this.minWords = minWords;
     this.maxWords = maxWords;
     this.maxParagraphs = maxParagraphs;
+    this.requireDecisionEnding = requireDecisionEnding;
   }
 
   evaluate(candidate, context = {}) {
@@ -134,7 +135,7 @@ export class NarrationQualityGuard {
     const issues = [];
     const hardIssues = [];
 
-    if (!/O que vocês fazem\?\s*$/i.test(text)) hardIssues.push('DECISION_ENDING_MISSING');
+    if (this.requireDecisionEnding && !/O que vocês fazem\?\s*$/i.test(text)) hardIssues.push('DECISION_ENDING_MISSING');
     if (wordCount < this.minWords) issues.push(`WORD_COUNT_LOW:${wordCount}`);
     if (wordCount > this.maxWords) issues.push(`WORD_COUNT_HIGH:${wordCount}`);
     if (wordCount > this.maxWords + 40) hardIssues.push('EXCESSIVE_LENGTH');

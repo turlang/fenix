@@ -70,6 +70,26 @@ app.post('/v1/session/action', {
   catch (error) { return reply.code(400).send({ code: 'ACTION_PROCESSING_FAILED', message: error.message }); }
 });
 
+app.post('/v1/session/room-entry', {
+  schema: {
+    body: {
+      type: 'object',
+      required: ['room', 'source'],
+      additionalProperties: true,
+      properties: {
+        room: { type: 'object', required: ['id', 'name'], properties: { id: { type: 'string' }, name: { type: 'string' } } },
+        source: { type: 'object', required: ['canonicalAnchor', 'text'], properties: { canonicalAnchor: { type: 'boolean' }, text: { type: 'string' }, type: { type: 'string' }, extractionMode: { type: 'string' } } },
+        scene: { type: 'object', properties: { id: { type: 'string' }, name: { type: 'string' }, description: { type: 'string' }, darkness: { type: 'number' } } },
+        visibleActors: { type: 'array', items: { type: 'object', properties: { id: { type: 'string' }, name: { type: 'string' }, type: { type: 'string' } } } },
+        campaign: { type: 'object', properties: { worldId: { type: 'string' }, title: { type: 'string' }, systemId: { type: 'string' } } }
+      }
+    }
+  }
+}, async (request, reply) => {
+  try { return await runtime.describeRoom(request.body ?? {}); }
+  catch (error) { return reply.code(400).send({ code: 'ROOM_ENTRY_FAILED', message: error.message }); }
+});
+
 app.post('/v1/session/end', async () => runtime.end());
 app.get('/v1/session/status', async () => runtime.getStatus());
 

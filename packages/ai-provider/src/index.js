@@ -8,6 +8,10 @@ export class NarrativeProvider {
     return this.generateText({ purpose: 'SESSION_OPENING', responseMode: 'text', context });
   }
 
+  async createRoomEntry(context) {
+    return this.generateText({ purpose: 'ROOM_ENTRY', responseMode: 'text', context });
+  }
+
   async narrateResolution(payload) {
     return this.generateText({ purpose: 'ACTION_RESOLUTION', responseMode: 'text', ...payload });
   }
@@ -16,6 +20,33 @@ export class NarrativeProvider {
 function compactText(value, limit = 9000) {
   const text = String(value ?? '').replace(/\s+/g, ' ').trim();
   return text.length > limit ? `${text.slice(0, limit)}…` : text;
+}
+
+function roomEntryPrompt(context) {
+  const room = compactText(context.room?.name ?? 'sala', 200);
+  const anchor = compactText(context.source?.text ?? '', 4000);
+  const actors = (context.visibleActors ?? []).map((actor) => actor.name).filter(Boolean).slice(0, 8);
+
+  return [
+    'Você é o narrador cinematográfico de uma mesa de RPG e está descrevendo uma sala no momento em que um personagem entra nela.',
+    'O texto abaixo é a âncora canônica dessa sala: extraia seus fatos observáveis, interprete-os e reescreva a descrição com clareza e atmosfera.',
+    'NÃO traduza literalmente, NÃO copie frases e NÃO mantenha a mesma ordem de ideias do texto-fonte.',
+    'Preserve os fatos visíveis e descreva cada elemento canônico apenas uma vez.',
+    'Só acrescente consequências sensoriais diretas do que já está confirmado, como o som natural, a luz ou a escuridão.',
+    'Não invente chuva, vento, névoa, musgo, aromas, pegadas, vozes, presságios, história do lugar, ameaças, segredos ou mistérios não confirmados.',
+    'Não use frases especulativas como “como se”, “parece esconder”, “sensação de que” ou “algo importante”.',
+    'Não invente inimigos visíveis, armadilhas, tesouros, sangue, cadáveres, magia, rastros ou acontecimentos futuros.',
+    'Não controle falas, emoções, decisões, olhares, expectativas ou ações dos personagens jogadores.',
+    'Quando houver atores visíveis, mencione seus nomes no máximo uma vez e apenas para registrar que estão presentes no local.',
+    'É proibido mencionar livro, aventura, capítulo, Journal, Scene, Foundry, sistema, mestre, instruções ou material-fonte.',
+    'Escreva apenas a narração que os jogadores ouvirão, em português do Brasil.',
+    'Produza 1 ou 2 parágrafos curtos, entre 50 e 120 palavras.',
+    '',
+    `Sala: ${room}`,
+    `Descrição da cena: ${compactText(context.scene?.description, 1000) || 'não informada'}`,
+    `Âncora canônica da sala: ${anchor || 'nenhum texto adicional seguro'}`,
+    `Atores presentes: ${actors.length ? actors.join(', ') : 'nenhum identificado'}`
+  ].join('\n');
 }
 
 function openingPrompt(context) {
@@ -90,6 +121,14 @@ export class GroqNarrativeProvider {
       maxTokens: 750,
       temperature: Math.min(1, 0.78 + attempt * 0.055),
       topP: 0.95
+    });
+  }
+
+  async createRoomEntry(context) {
+    return this.#requestText(roomEntryPrompt(context), {
+      maxTokens: 400,
+      temperature: 0.7,
+      topP: 0.9
     });
   }
 

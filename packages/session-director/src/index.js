@@ -67,4 +67,27 @@ export class SessionDirector {
     this.state = SessionState.ENDED;
     return { state: this.state, sessionId: ended?.id ?? null };
   }
+
+  async describeRoom(roomContext) {
+    try {
+      const context = this.contextBuilder.build({
+        ...(this.session?.context ?? {}),
+        room: roomContext.room,
+        scene: roomContext.scene ?? this.session?.context?.scene,
+        source: roomContext.source,
+        visibleActors: roomContext.visibleActors ?? this.session?.context?.visibleActors ?? [],
+        campaign: roomContext.campaign ?? this.session?.context?.campaign
+      });
+      const opening = await this.narrationService.describeRoom(context);
+      const audio = this.audioNarrationService?.createDirective(opening, {
+        sceneId: context.scene?.id ?? null,
+        sessionId: this.session?.id ?? null
+      }) ?? null;
+      await this.foundryPublisher.postNarration(opening);
+      return { opening, audio };
+    } catch (error) {
+      this.logger.error?.('[Mestre Orc][Session] falha ao descrever sala', { message: error.message, stack: error.stack });
+      throw error;
+    }
+  }
 }

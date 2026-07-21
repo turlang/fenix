@@ -759,3 +759,282 @@ Hooks.on('renderSidebarTab', (app, html) => {
   const tabName = app?.tabName ?? app?.options?.id ?? '';
   if (String(tabName).toLowerCase().includes('chat')) scheduleInjection(asElement(html) ?? document);
 });
+
+let roomNarrationState = {
+  active: false,
+  sessionId: null,
+  narratedRooms: new Set(),
+  lastRoomCheck: 0,
+  lastReportedIds: new Set()
+};
+
+function resetRoomNarrationState(sessionId) {
+  roomNarrationState = {
+    active: true,
+    sessionId: sessionId ?? crypto.randomUUID(),
+    narratedRooms: new Set(),
+    lastRoomCheck: Date.now(),
+    lastReportedIds: new Set()
+  };
+}
+
+function stopRoomNarrationState() {
+  roomNarrationState = {
+    active: false,
+    sessionId: null,
+    narratedRooms: new Set(),
+    lastRoomCheck: 0,
+    lastReportedIds: new Set()
+  };
+}
+
+function noteBounds(note) {
+  const raw = note?.toObject?.() ?? note ?? {};
+  return {
+    x: Number(raw.x ?? 0),
+    y: Number(raw.y ?? 0),
+    width: Number(raw.width ?? 0),
+    height: Number(raw.height ?? 0)
+  };
+}
+
+function tokenCenterPixels(token) {
+  const raw = token?.toObject?.() ?? token?.document?.toObject?.() ?? token?.document ?? token ?? {};
+  const x = Number(raw.x ?? 0);
+  const y = Number(raw.y ?? 0);
+  const scene = game.scenes?.active;
+  const grid = scene?.grid;
+  if (!grid) return { px: x, py: y };
+  const size = Number(grid.gridSize ?? grid?.squareSize ?? 100);
+  const ratio = Number(grid.ratio ?? 1);
+  return {
+    px: x * size * ratio,
+    py: y * size * ratio
+  };
+}
+
+function isTokenInsideNote(token, note) {
+  if (!token || !note) return false;
+  const center = tokenCenterPixels(token);
+  const bounds = noteBounds(note);
+  return center.px >= bounds.x
+    && center.px <= bounds.x + bounds.width
+    && center.py >= bounds.y
+    && center.py <= bounds.y + bounds.height;
+}
+
+function findNoteContainingToken(token, notes) {
+  if (!token || !notes?.length) return null;
+  return notes.find((note) => isTokenInsideNote(token, note)) ?? null;
+}
+
+function extractNoteRoomLabel(note) {
+  const text = String(note?.text ?? note?.name ?? '').trim();
+  if (!text) return null;
+  const cleaned = text.replace(/\s*\(player|gm|jogador|mestre\s*version\)\s*$/i, '').trim();
+  return cleaned || null;
+}
+
+function normalizeLabel(value) {
+  return String(value ?? '')
+    .replace(/\s*\((player|gm|jogador|mestre)\s*version\)\s*$/i, '')
+    .replace(/\s*[-–—]\s*(player|gm|jogador|mestre)\s*$/i, '')
+    .trim().toLowerCase();
+}
+
+function labelsRelated(left, right) {
+  const a = normalizeLabel(left);
+  const b = normalizeLabel(right);
+  if (!a || !b) return false;
+  const numberA = a.match(/\d+/);
+  const numberB = b.match(/\d+/);
+  if (numberA && numberB) return numberA[0] === numberB[0];
+  return a === b || (a.length >= 3 && b.includes(a)) || (b.length >= 3 && a.includes(b));
+}
+
+function findJournalPageForNote(note, journal) {
+  if (!note || !journal) return null;
+  const noteLabel = extractNoteRoomLabel(note);
+  if (!noteLabel) return null;
+
+  const pages = journal.pages?.contents ?? [];
+  const exact = pages.find((page) => labelsRelated(noteLabel, page.name));
+  if (exact) return exact;
+
+  const anyByLabel = pages.find((page) => {
+    const content = journalPageContent(page).toLowerCase();
+    return content.includes(noteLabel.toLowerCase()) || page.name.toLowerCase().includes(noteLabel.toLowerCase());
+  });
+  return anyByLabel ?? null;
+}
+
+function visiblePlayerTokens() {
+  const scene = game.scenes?.active;
+  if (!scene) return [];
+  const tokens = scene.tokens?.contents ?? [];
+  return tokens.filter((token) => !token.hidden && token.actor);
+}
+
+async function checkRoomTransitions() {
+  const scene = game.scenes?.active;
+  if (!scene || !roomNarrationState.active) return;
+  const notes = scene.notes?.contents ?? [];
+  if (!notes.length) return;
+
+  const journal = game.journal?.contents?.find((entry) => namesRelated(scene.name, entry.name)) ?? null;
+  const tokens = visiblePlayerTokens();
+  if (!tokens.length) return;
+
+  for (const token of tokens) {
+    const note = findNoteContainingToken(token, notes);
+    if (!note) continue;
+    const roomLabel = extractNoteRoomLabel(note);
+    if (!roomLabel) continue;
+    const roomKey = `${scene.id}:${normalizeLabel(roomLabel)}`;
+    if (roomNarrationState.narratedRooms.has(roomKey)) continue;
+    const page = findJournalPageForNote(note, journal);
+    if (!page) continue;
+    const readAloud = extractStructuredReadAloud(page, scene.name) ?? extractFirstReadAloud(page);
+    if (!readAloud?.content) continue;
+
+    const snapshot = {
+      activeScene: {
+        id: scene.id,
+        uuid: scene.uuid,
+        name: scene.name,
+        description: stripHtml(game.scenes.active.getFlag?.(MODULE_ID, 'description') ?? scene.description ?? ''),
+        darkness: scene.environment?.darknessLevel ?? scene.darkness ?? 0,
+        flags: scene.flags ?? {}
+      },
+      campaign: {
+        worldId: game.world?.id ?? '',
+        title: game.world?.title ?? '',
+        systemId: game.system?.id ?? '',
+        systemVersion: game.system?.version ?? ''
+      },
+      visibleActors: tokens.filter((t) => !t.hidden && t.actor && t.id === token.id).map((actor) => serializeActor(token.actor)),
+      room: { id: note.id, name: roomLabel },
+      source: {
+        type: readAloud.extractionMode,
+        name: page.name,
+        text: readAloud.content.slice(0, 5000),
+        canonicalAnchor: true,
+        extractionMode: readAloud.extractionMode,
+        sceneSectionName: readAloud.sceneSectionName,
+        areaName: readAloud.areaName
+      }
+    };
+
+    try {
+      const result = await request('/v1/session/room-entry', {
+        method: 'POST',
+        body: JSON.stringify(snapshot)
+      });
+      roomNarrationState.narratedRooms.add(roomKey);
+      await ChatMessage.create({
+        speaker: { alias: 'Mestre Orc' },
+        content: narrationHtml(result.opening)
+      });
+      publishNarrationAudio(result.audio, result.opening, scene.id);
+      ui.notifications.info(`Mestre Orc: ${roomLabel}`);
+    } catch (error) {
+      console.error(`${MODULE_ID} | falha ao descrever sala`, error);
+    }
+    break;
+  }
+}
+
+function scheduleRoomCheck() {
+  if (!roomNarrationState.active) return;
+  const now = Date.now();
+  if (now - roomNarrationState.lastRoomCheck < 1000) return;
+  roomNarrationState.lastRoomCheck = now;
+  void checkRoomTransitions();
+}
+
+function installRoomTracking() {
+  if (document.documentElement.dataset.mestreOrcRoomTracking === '1') return;
+  document.documentElement.dataset.mestreOrcRoomTracking = '1';
+
+  Hooks.on('updateToken', (_token, options, userId) => {
+    if (userId && userId !== game.user?.id) return;
+    scheduleRoomCheck();
+  });
+
+  Hooks.on('deleteToken', () => scheduleRoomCheck());
+  Hooks.on('createToken', () => scheduleRoomCheck());
+  Hooks.on('renderScene', () => scheduleRoomCheck());
+  Hooks.on('onConflictResolution', () => scheduleRoomCheck());
+}
+
+Hooks.once('init', () => {
+  console.log(`${MODULE_ID} | módulo MVP inicializado`);
+  registerAudioSettings();
+  installDelegatedStartHandler();
+  installRoomTracking();
+  if (supportsSpeechSynthesis()) {
+    refreshSpeechVoices();
+    window.speechSynthesis.addEventListener?.('voiceschanged', refreshSpeechVoices);
+  }
+});
+
+Hooks.once('ready', () => {
+  installAudioSocket();
+  scheduleInjection(document);
+});
+
+Hooks.on('renderChatLog', (_app, html) => scheduleInjection(asElement(html) ?? document));
+Hooks.on('renderSidebarTab', (app, html) => {
+  const tabName = app?.tabName ?? app?.options?.id ?? '';
+  if (String(tabName).toLowerCase().includes('chat')) scheduleInjection(asElement(html) ?? document);
+});
+
+
+
+
+const originalStartSession = startSession;
+startSession = async function(button) {
+  if (startInFlight) return;
+  startInFlight = true;
+  console.log('[Mestre Orc] clique recebido: iniciar sessão');
+  const original = button?.innerHTML ?? '';
+  try {
+    if (button) {
+      button.disabled = true;
+      button.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i><span>Lendo a cena ativa...</span>';
+    }
+    const snapshot = await collectSnapshot();
+    resetRoomNarrationState();
+
+    if (button) button.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i><span>Gerando abertura...</span>';
+    const result = await request('/v1/session/start', {
+      method: 'POST',
+      body: JSON.stringify({ snapshot })
+    });
+
+    await ChatMessage.create({
+      speaker: { alias: 'Mestre Orc' },
+      content: narrationHtml(result.opening)
+    });
+    publishNarrationAudio(result.audio, result.opening, snapshot.activeScene?.id ?? null);
+    if (button) button.innerHTML = '<i class="fa-solid fa-circle-check"></i><span>Sessão iniciada</span>';
+    ui.notifications.info('Mestre Orc: abertura publicada no chat.');
+    if (button) {
+      setTimeout(() => {
+        if (button?.isConnected) { button.innerHTML = original; button.disabled = false; }
+        startInFlight = false;
+      }, 1800);
+    } else {
+      startInFlight = false;
+    }
+    void checkRoomTransitions();
+  } catch (error) {
+    console.error(`${MODULE_ID} | falha ao iniciar`, error);
+    ui.notifications.error(`Mestre Orc: ${error.message}`);
+    if (button?.isConnected) {
+      button.innerHTML = original;
+      button.disabled = false;
+    }
+    startInFlight = false;
+  }
+};
