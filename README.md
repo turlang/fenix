@@ -1,6 +1,6 @@
 # Mestre Orc Engine
 
-Versão `0.1.0-alpha.17` — Node.js 20–24 e Foundry VTT 13.
+Versão `0.1.0-alpha.24` — Node.js 20–24 e Foundry VTT 13.
 
 O fluxo atual localiza a Scene ativa, procura o Journal correspondente no diretório do Foundry, extrai exclusivamente a caixa `.ve-rd__b-inset--readaloud`, interpreta a âncora canônica com Groq, valida qualidade e novidade, publica no chat e reproduz a narração em áudio.
 
@@ -21,7 +21,7 @@ Preencha o `.env` sem versionar chaves:
 PORT=3001
 HOST=0.0.0.0
 NODE_ENV=development
-CORS_ALLOWED_ORIGINS=http://localhost:3000,http://localhost:3001
+CORS_ALLOWED_ORIGINS=http://localhost:30000,http://127.0.0.1:30000,http://localhost:3000,http://localhost:3001
 GROQ_API_KEY=sua_chave
 GROQ_MODEL=seu_modelo_disponivel
 MESTRE_ORC_NARRATION_MEMORY_FILE=./data/narration-history.json
@@ -62,6 +62,10 @@ A pasta precisa conter diretamente `module.json`, `scripts/main.js` e `styles/me
 
 O botão **Áudio ligado/desligado** aparece junto ao chat para cada usuário. Nas configurações do módulo é possível ajustar voz, velocidade, tom e volume. O mestre pode desativar a transmissão para os demais clientes.
 
+Depois que a sessão é iniciada, o módulo acompanha os tokens e identifica o número da sala mais próxima. Esse número é usado para procurar a seção correspondente no Journal relacionado à cena; o vínculo individual do marcador não é usado. O módulo extrai somente o read-aloud seguro e publica uma descrição curta com áudio. Cada sala é narrada uma vez por sessão e mantém histórico próprio entre sessões.
+
+Durante uma sessão ativa, mensagens de jogadores no chat são classificadas como ações sociais, combate, investigação, movimento ou ação geral. O Engine identifica o alvo, produz o resultado básico de regras e relacionamento e devolve a consequência narrada em texto e áudio. Comandos iniciados por `/`, mensagens do GM e mensagens do próprio Mestre Orc são ignorados.
+
 ## Pipeline validado
 
 ```text
@@ -89,7 +93,7 @@ git init
 git branch -M main
 git add .
 git commit -m "chore: prepare Mestre Orc Engine alpha.17"
-git remote add origin https://github.com/turlang/fenix
+git remote add origin https://github.com/SEU-USUARIO/SEU-REPOSITORIO.git
 git push -u origin main
 ```
 

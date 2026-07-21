@@ -6,14 +6,14 @@ function clone(value) {
 }
 
 export class InMemoryNarrationMemory {
-  #records = [];
+  records = [];
 
   async list(sceneKey, { limit = 20 } = {}) {
-    return clone(this.#records.filter((record) => record.sceneKey === sceneKey).slice(-limit));
+    return clone(this.records.filter((record) => record.sceneKey === sceneKey).slice(-limit));
   }
 
   async append(record) {
-    this.#records.push(clone(record));
+    this.records.push(clone(record));
     return clone(record);
   }
 }

@@ -59,6 +59,7 @@ export function createSessionRuntime({
       return director.start();
     },
     processAction: (input) => director.processAction(input),
+    describeRoom: (roomContext) => director.describeRoom(roomContext),
     end: () => director.end()
   };
 }

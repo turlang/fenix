@@ -1,6 +1,6 @@
 {
   "name": "mestre-orc-engine",
-  "version": "0.1.0-alpha.17",
+  "version": "0.1.0-alpha.24",
   "description": "Motor modular de narração para Foundry VTT com integração de IA e áudio.",
   "private": true,
   "type": "module",

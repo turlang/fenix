@@ -61,6 +61,40 @@ export class SessionDirector {
     }
   }
 
+  async describeRoom(roomContext = {}) {
+    if (!this.session || this.state !== SessionState.COLLECTING_ACTIONS) {
+      throw new Error('Sessão não está pronta para narrar transições de sala.');
+    }
+    try {
+      const normalized = this.contextBuilder.build({
+        ...this.session.context,
+        scene: roomContext.scene ?? this.session.context.scene,
+        campaign: roomContext.campaign ?? this.session.context.campaign,
+        visibleActors: roomContext.visibleActors ?? this.session.context.visibleActors
+      });
+      const context = {
+        ...normalized,
+        room: { id: roomContext.room?.id ?? null, name: String(roomContext.room?.name ?? '').trim() },
+        source: {
+          canonicalAnchor: Boolean(roomContext.source?.canonicalAnchor),
+          text: String(roomContext.source?.text ?? '').trim(),
+          type: roomContext.source?.type ?? 'ROOM_READ_ALOUD',
+          extractionMode: roomContext.source?.extractionMode ?? null
+        }
+      };
+      const opening = await this.narrationService.describeRoom(context);
+      const audio = this.audioNarrationService?.createDirective(opening, {
+        sceneId: context.scene?.id ?? null,
+        sessionId: this.session.id
+      }) ?? null;
+      await this.foundryPublisher.postNarration(opening);
+      return { state: this.state, sessionId: this.session.id, opening, audio, room: context.room };
+    } catch (error) {
+      this.logger.error?.('[Mestre Orc][Session] falha ao narrar sala', { message: error.message, stack: error.stack });
+      throw error;
+    }
+  }
+
   async end() {
     const ended = this.session;
     this.session = null;

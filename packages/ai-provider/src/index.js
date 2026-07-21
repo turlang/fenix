@@ -8,6 +8,10 @@ export class NarrativeProvider {
     return this.generateText({ purpose: 'SESSION_OPENING', responseMode: 'text', context });
   }
 
+  async createRoomEntry(context) {
+    return this.generateText({ purpose: 'ROOM_ENTRY', responseMode: 'text', context });
+  }
+
   async narrateResolution(payload) {
     return this.generateText({ purpose: 'ACTION_RESOLUTION', responseMode: 'text', ...payload });
   }
@@ -73,6 +77,27 @@ function openingPrompt(context) {
   ].join('\n');
 }
 
+function roomEntryPrompt(context) {
+  const actors = (context.visibleActors ?? []).map((actor) => actor.name).filter(Boolean).slice(0, 8);
+  return [
+    'Você é o narrador cinematográfico de uma mesa de RPG descrevendo a sala em que o grupo acaba de entrar.',
+    'Use a âncora canônica somente como fonte de fatos observáveis; interprete e reescreva, sem copiar frases ou a ordem original.',
+    'Não invente ameaças, inimigos, armadilhas, tesouros, acontecimentos, segredos ou detalhes não confirmados.',
+    'Não revele estatísticas, instruções do mestre, áreas futuras ou pensamentos de NPCs.',
+    'Não controle ações, emoções, falas ou decisões dos personagens jogadores.',
+    'Não mencione Journal, Note, Foundry, livro, aventura, capítulo, sistema, mestre ou material-fonte.',
+    'Escreva em português do Brasil, em 1 ou 2 parágrafos, entre 50 e 120 palavras.',
+    'Não faça pergunta final e não termine com “O que vocês fazem?”.',
+    `Cena: ${context.scene?.name ?? 'sem nome'}`,
+    `Sala: ${context.room?.name ?? 'sem nome'}`,
+    `Âncora canônica: ${compactText(context.source?.text, 4200)}`,
+    `Atores presentes: ${actors.length ? actors.join(', ') : 'nenhum identificado'}`,
+    context.novelty?.avoidOpenings?.length
+      ? `Evite repetir estas descrições anteriores: ${context.novelty.avoidOpenings.map((item) => compactText(item.excerpt, 500)).join(' | ')}`
+      : 'Não há descrição anterior registrada para esta sala.'
+  ].join('\n');
+}
+
 export class GroqNarrativeProvider {
   constructor({ apiKey, model, baseUrl = 'https://api.groq.com/openai/v1', logger = console, timeoutMs = 45000 } = {}) {
     if (!apiKey) throw new TypeError('GROQ_API_KEY não configurada.');
@@ -93,15 +118,30 @@ export class GroqNarrativeProvider {
     });
   }
 
+  async createRoomEntry(context) {
+    return this.#requestText(roomEntryPrompt(context), {
+      maxTokens: 400,
+      temperature: 0.7,
+      topP: 0.9
+    });
+  }
+
   async narrateResolution({ intent, rules, relationship, context }) {
+    const actors = (context?.visibleActors ?? []).map((actor) => actor.name).filter(Boolean).slice(0, 6);
+    const npcInfo = relationship?.npcName
+      ? `NPC identificado: ${relationship.npcName}; disposição: ${relationship.disposition}; relação: ${relationship.relationshipType}.`
+      : 'Nenhum NPC específico identificado.';
     const prompt = [
-      'Você é o narrador de uma mesa de RPG. Narre apenas as consequências já resolvidas abaixo.',
-      'Não invente resultados mecânicos. Não explique regras. Preserve a agência dos jogadores.',
-      'Termine em um ponto claro de decisão.',
+      'Você é o narrador de uma mesa de RPG. Narre as consequências da ação abaixo.',
+      'Seja direto e cinematográfico. Não explique regras, não refaça eventos e preserve a agência dos jogadores.',
+      'Não invente resultados mecânicos além dos dados fornecidos. Termine em um resultado ou ponto claro de decisão.',
       `Cena: ${context?.scene?.name ?? 'sem nome'}`,
-      `Ação interpretada: ${JSON.stringify(intent ?? {})}`,
-      `Resultado de regras: ${JSON.stringify(rules ?? {})}`,
-      `Estado social: ${JSON.stringify(relationship ?? {})}`
+      `Ação do personagem: ${intent?.content ?? 'ação não especificada'}`,
+      `Tipo de ação: ${intent?.type ?? 'GENERAL'}`,
+      `Alvo: ${intent?.target ?? 'não identificado'}`,
+      `Atores presentes: ${actors.length ? actors.join(', ') : 'nenhum identificado'}`,
+      npcInfo,
+      `Resultado de regras: ${rules?.result?.effect ?? 'sem regra aplicada'}`
     ].join('\n');
     return this.#requestText(prompt, { maxTokens: 500, temperature: 0.65, topP: 0.9 });
   }

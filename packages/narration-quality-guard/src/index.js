@@ -119,13 +119,15 @@ function repeatedMotifs(value) {
 }
 
 export class NarrationQualityGuard {
-  constructor({ minWords = 80, maxWords = 150, maxParagraphs = 3 } = {}) {
+  constructor({ minWords = 80, maxWords = 150, minimumHardWords = 35, minParagraphs = 2, maxParagraphs = 3 } = {}) {
     this.minWords = minWords;
     this.maxWords = maxWords;
+    this.minimumHardWords = minimumHardWords;
+    this.minParagraphs = minParagraphs;
     this.maxParagraphs = maxParagraphs;
   }
 
-  evaluate(candidate, context = {}) {
+  evaluate(candidate, context = {}, { requireDecisionEnding = true } = {}) {
     const text = String(candidate ?? '').trim();
     const sourceText = context.source?.text ?? '';
     const actorNames = (context.visibleActors ?? []).map((actor) => actor?.name).filter(Boolean);
@@ -134,12 +136,13 @@ export class NarrationQualityGuard {
     const issues = [];
     const hardIssues = [];
 
-    if (!/O que vocês fazem\?\s*$/i.test(text)) hardIssues.push('DECISION_ENDING_MISSING');
+    if (requireDecisionEnding && !/O que vocês fazem\?\s*$/i.test(text)) hardIssues.push('DECISION_ENDING_MISSING');
+    if (!requireDecisionEnding && DECISION_ENDING.test(text)) hardIssues.push('UNEXPECTED_DECISION_ENDING');
     if (wordCount < this.minWords) issues.push(`WORD_COUNT_LOW:${wordCount}`);
     if (wordCount > this.maxWords) issues.push(`WORD_COUNT_HIGH:${wordCount}`);
     if (wordCount > this.maxWords + 40) hardIssues.push('EXCESSIVE_LENGTH');
-    if (wordCount < 35) hardIssues.push('INSUFFICIENT_NARRATION');
-    if (paragraphCount < 2) issues.push(`PARAGRAPH_COUNT_LOW:${paragraphCount}`);
+    if (wordCount < this.minimumHardWords) hardIssues.push('INSUFFICIENT_NARRATION');
+    if (paragraphCount < this.minParagraphs) issues.push(`PARAGRAPH_COUNT_LOW:${paragraphCount}`);
     if (paragraphCount > this.maxParagraphs) issues.push(`PARAGRAPH_COUNT_HIGH:${paragraphCount}`);
     if (paragraphCount > this.maxParagraphs + 1) hardIssues.push('EXCESSIVE_PARAGRAPHS');
 

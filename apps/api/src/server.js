@@ -3,7 +3,7 @@ import { createSessionRuntime } from '../../../packages/session-runtime/src/inde
 import { createNarrativeProviderFromEnv } from '../../../packages/ai-provider/src/index.js';
 import { createNarrationMemoryFromEnv } from '../../../packages/narration-memory/src/index.js';
 import { createAudioNarrationServiceFromEnv } from '../../../packages/audio-narration-service/src/index.js';
-import { createConfig, loadEnvFile } from '../../../packages/config/src/index.js';
+import { createConfig, isOriginAllowed, loadEnvFile } from '../../../packages/config/src/index.js';
 
 
 loadEnvFile();
@@ -17,7 +17,7 @@ const runtime = createSessionRuntime({ narrator, narrationMemory, audioNarration
 
 app.addHook('onRequest', async (request, reply) => {
   const origin = request.headers.origin;
-  if (origin && config.allowedOrigins.includes(origin)) {
+  if (origin && isOriginAllowed(origin, config.allowedOrigins)) {
     reply.header('Access-Control-Allow-Origin', origin);
     reply.header('Vary', 'Origin');
   }
@@ -68,6 +68,41 @@ app.post('/v1/session/action', {
 }, async (request, reply) => {
   try { return await runtime.processAction(request.body ?? {}); }
   catch (error) { return reply.code(400).send({ code: 'ACTION_PROCESSING_FAILED', message: error.message }); }
+});
+
+app.post('/v1/session/room-entry', {
+  schema: {
+    body: {
+      type: 'object',
+      required: ['room', 'source'],
+      additionalProperties: false,
+      properties: {
+        room: {
+          type: 'object', required: ['id', 'name'], additionalProperties: false,
+          properties: { id: { type: 'string', minLength: 1, maxLength: 200 }, name: { type: 'string', minLength: 1, maxLength: 300 } }
+        },
+        source: {
+          type: 'object', required: ['canonicalAnchor', 'text'], additionalProperties: false,
+          properties: {
+            canonicalAnchor: { type: 'boolean' }, text: { type: 'string', minLength: 1, maxLength: 5000 },
+            type: { type: 'string', maxLength: 100 }, extractionMode: { type: 'string', maxLength: 100 }
+          }
+        },
+        scene: { type: 'object', additionalProperties: true },
+        visibleActors: { type: 'array', maxItems: 100, items: { type: 'object', additionalProperties: true } },
+        campaign: { type: 'object', additionalProperties: true }
+      }
+    }
+  }
+}, async (request, reply) => {
+  try {
+    return await runtime.describeRoom(request.body ?? {});
+  } catch (error) {
+    return reply.code(Number(error.statusCode) || 400).send({
+      code: error.code || 'ROOM_ENTRY_FAILED',
+      message: error.message
+    });
+  }
 });
 
 app.post('/v1/session/end', async () => runtime.end());

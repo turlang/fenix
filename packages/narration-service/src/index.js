@@ -98,6 +98,7 @@ export class NarrationService {
     openingPlanner = null,
     noveltyGuard = null,
     qualityGuard = null,
+    roomQualityGuard = null,
     narrationMemory = null,
     maxOpeningAttempts = 5,
     logger = console
@@ -108,6 +109,7 @@ export class NarrationService {
     this.openingPlanner = openingPlanner ?? createOpeningNarrativePlanner();
     this.noveltyGuard = noveltyGuard ?? createNoveltyGuard();
     this.qualityGuard = qualityGuard ?? createNarrationQualityGuard();
+    this.roomQualityGuard = roomQualityGuard ?? createNarrationQualityGuard({ minWords: 20, maxWords: 120, minimumHardWords: 20, minParagraphs: 1, maxParagraphs: 2 });
     this.narrationMemory = narrationMemory ?? new InMemoryNarrationMemory();
     this.maxOpeningAttempts = Math.max(1, Number(maxOpeningAttempts) || 5);
   }
@@ -281,6 +283,107 @@ export class NarrationService {
       return best.candidate;
     } catch (error) {
       this.logger.error?.('[Mestre Orc][Narration] falha na abertura', { message: error.message, code: error.code });
+      throw error;
+    }
+  }
+
+  async describeRoom(roomContext) {
+    try {
+      if (!this.provider?.createRoomEntry) {
+        throw createServiceError('A Groq não está configurada para narrar a entrada da sala.', {
+          statusCode: 503,
+          code: 'AI_NOT_CONFIGURED'
+        });
+      }
+      if (!roomContext?.room?.name || !roomContext?.source?.canonicalAnchor || !roomContext?.source?.text) {
+        throw createServiceError('A sala precisa de nome e âncora read-aloud canônica.', {
+          statusCode: 422,
+          code: 'ROOM_READ_ALOUD_REQUIRED'
+        });
+      }
+
+      const sceneId = roomContext.scene?.id ?? 'scene-unknown';
+      const roomName = String(roomContext.room.name).trim();
+      const normalizedRoom = normalizeWords(roomName).join('-') || 'room-unknown';
+      const sceneKey = `room:${sceneId}:${normalizedRoom}`;
+      const history = await this.narrationMemory.list(sceneKey, { limit: 20 });
+      const attempts = [];
+
+      for (let attempt = 0; attempt < this.maxOpeningAttempts; attempt += 1) {
+        const providerContext = {
+          ...roomContext,
+          novelty: {
+            attempt: attempt + 1,
+            priorCount: history.length,
+            forceContrast: attempt === this.maxOpeningAttempts - 1,
+            avoidOpenings: [
+              ...history.slice(-6).map((entry) => ({ id: entry.id, excerpt: entry.text, source: 'history' })),
+              ...attempts.filter((entry) => entry.safety?.safe).slice(-3).map((entry, index) => ({
+                id: `current-attempt-${index + 1}`,
+                excerpt: entry.candidate,
+                source: 'current-run'
+              }))
+            ]
+          }
+        };
+        const candidate = String(await this.provider.createRoomEntry(providerContext) ?? '')
+          .trim()
+          .replace(/(?:\s*O que vocês fazem\?\s*)+$/i, '')
+          .trim();
+        const safety = evaluateOpeningSafety(candidate, roomContext.source.text);
+        if (!safety.safe) {
+          attempts.push({ candidate, safety });
+          continue;
+        }
+        const quality = this.roomQualityGuard.evaluate(candidate, roomContext, { requireDecisionEnding: false });
+        if (!quality.hardSafe) {
+          attempts.push({ candidate, safety, quality });
+          continue;
+        }
+        const evaluation = this.noveltyGuard.evaluate(candidate, history);
+        attempts.push({ candidate, safety, quality, evaluation });
+        if (!quality.accepted || !evaluation.accepted) continue;
+
+        await this.narrationMemory.append({
+          id: crypto.randomUUID(),
+          sceneKey,
+          campaignId: roomContext.campaign?.worldId ?? null,
+          sceneId,
+          sceneName: roomContext.scene?.name ?? null,
+          areaName: roomName,
+          sourceType: roomContext.source?.type ?? 'ROOM_READ_ALOUD',
+          text: candidate,
+          fingerprint: this.noveltyGuard.fingerprint(candidate),
+          similarityToHistory: evaluation.maxSimilarity,
+          quality: { status: 'accepted', issues: quality.issues, hardIssues: quality.hardIssues, metrics: quality.metrics },
+          noveltyStatus: 'accepted',
+          createdAt: new Date().toISOString()
+        });
+        return candidate;
+      }
+
+      const safe = attempts.filter((entry) => entry.safety?.safe && entry.quality?.hardSafe && entry.evaluation);
+      const best = [...safe].sort((left, right) =>
+        left.quality.penalty - right.quality.penalty || left.evaluation.maxSimilarity - right.evaluation.maxSimilarity
+      )[0];
+      if (!best) {
+        const safetyFailure = attempts.some((entry) => !entry.safety?.safe);
+        throw createServiceError(
+          safetyFailure ? 'A descrição da sala copiou ou vazou conteúdo reservado.' : 'A descrição da sala falhou nos controles de qualidade.',
+          { statusCode: 502, code: safetyFailure ? 'NARRATION_SAFETY_FAILED' : 'NARRATION_QUALITY_FAILED' }
+        );
+      }
+      await this.narrationMemory.append({
+        id: crypto.randomUUID(), sceneKey, campaignId: roomContext.campaign?.worldId ?? null,
+        sceneId, sceneName: roomContext.scene?.name ?? null, areaName: roomName,
+        sourceType: roomContext.source?.type ?? 'ROOM_READ_ALOUD', text: best.candidate,
+        fingerprint: this.noveltyGuard.fingerprint(best.candidate), similarityToHistory: best.evaluation.maxSimilarity,
+        quality: { status: 'best-effort', issues: best.quality.issues, hardIssues: best.quality.hardIssues, metrics: best.quality.metrics },
+        noveltyStatus: 'best-effort', createdAt: new Date().toISOString()
+      });
+      return best.candidate;
+    } catch (error) {
+      this.logger.error?.('[Mestre Orc][Narration] falha na entrada da sala', { message: error.message, code: error.code });
       throw error;
     }
   }
