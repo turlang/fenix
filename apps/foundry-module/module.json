@@ -1,0 +1,17 @@
+{
+  "id": "mestre-orc",
+  "title": "Mestre Orc",
+  "description": "Narrações interpretadas com Groq, controle de qualidade, antirrepetição e reprodução em áudio TTS sincronizada.",
+  "version": "0.1.0-alpha.17",
+  "compatibility": {
+    "minimum": "13",
+    "verified": "13"
+  },
+  "esmodules": [
+    "scripts/main.js"
+  ],
+  "styles": [
+    "styles/mestre-orc.css"
+  ],
+  "socket": true
+}

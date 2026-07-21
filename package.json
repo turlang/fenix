@@ -1,0 +1,25 @@
+{
+  "name": "mestre-orc-engine",
+  "version": "0.1.0-alpha.17",
+  "description": "Motor modular de narração para Foundry VTT com integração de IA e áudio.",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "node apps/api/src/server.js",
+    "start": "node apps/api/src/server.js",
+    "test": "node --test",
+    "validate": "node scripts/validate.mjs",
+    "check": "npm run validate && npm test"
+  },
+  "engines": {
+    "node": ">=20 <25"
+  },
+  "license": "UNLICENSED",
+  "dependencies": {
+    "fastify": "^5.2.1"
+  }
+}

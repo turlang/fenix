@@ -1,0 +1,50 @@
+#mestre-orc-start {
+  width: calc(100% - 12px);
+  min-height: 38px;
+  margin: 6px;
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid rgba(180, 132, 52, 0.85);
+  border-radius: 6px;
+  background: linear-gradient(180deg, rgba(62, 44, 25, 0.98), rgba(35, 25, 16, 0.98));
+  color: #f2dfb4;
+  font-weight: 700;
+  line-height: 1.2;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
+  cursor: pointer;
+}
+#mestre-orc-start:hover,
+#mestre-orc-start:focus-visible {
+  border-color: #d6a84f;
+  color: #fff3d4;
+  box-shadow: 0 0 0 1px rgba(214, 168, 79, 0.35), 0 2px 7px rgba(0, 0, 0, 0.55);
+}
+#mestre-orc-start i { color: #d6a84f; }
+
+#mestre-orc-audio-toggle {
+  width: calc(100% - 12px);
+  min-height: 30px;
+  margin: 0 6px 6px;
+  padding: 5px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid rgba(180, 132, 52, 0.55);
+  border-radius: 6px;
+  background: rgba(30, 24, 18, 0.9);
+  color: #e5d5b3;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+#mestre-orc-audio-toggle[data-enabled="true"] i { color: #d6a84f; }
+#mestre-orc-audio-toggle[data-enabled="false"] { opacity: 0.72; }
+#mestre-orc-audio-toggle:hover,
+#mestre-orc-audio-toggle:focus-visible {
+  border-color: #d6a84f;
+  color: #fff3d4;
+}
