@@ -1,7 +1,14 @@
 import { access, readFile } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
+
+const root = new URL('../', import.meta.url);
 const required = [
   'apps/api/src/server.js',
   'apps/foundry-module/module.json',
+  'apps/foundry-module/scripts/read-aloud.js',
+  'apps/foundry-module/scripts/cinematic-speech.js',
+  'apps/foundry-module/scripts/room-transition-state.js',
+  'apps/foundry-module/scripts/token-vision.js',
   'packages/session-director/src/index.js',
   'packages/narration-context-builder/src/index.js',
   'packages/scene-opening-context/src/index.js',
@@ -16,7 +23,10 @@ const required = [
   'packages/relationship-service/src/index.js',
   'packages/narration-service/src/index.js',
   'packages/foundry-publisher/src/index.js',
+  'scripts/prepare-release.mjs',
+  'scripts/run-tests.mjs',
   '.env.example',
+  'data/.gitkeep',
   '.gitignore',
   '.gitattributes',
   '.github/workflows/ci.yml',
@@ -26,22 +36,73 @@ const required = [
   'SECURITY.md',
   'README.md'
 ];
-for (const file of required) await access(new URL(`../${file}`, import.meta.url));
 
-const packageJson = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
-const moduleJson = JSON.parse(await readFile(new URL('../apps/foundry-module/module.json', import.meta.url), 'utf8'));
+for (const file of required) await access(new URL(file, root));
+
+const packageJson = JSON.parse(await readFile(new URL('package.json', root), 'utf8'));
+const packageLock = JSON.parse(await readFile(new URL('package-lock.json', root), 'utf8'));
+const moduleJson = JSON.parse(await readFile(new URL('apps/foundry-module/module.json', root), 'utf8'));
+
 if (packageJson.version !== moduleJson.version) {
   throw new Error(`Versões divergentes: engine=${packageJson.version}, foundry=${moduleJson.version}`);
 }
-if (!packageJson.scripts?.test || !packageJson.scripts?.check) throw new Error('Scripts de qualidade ausentes.');
+if (packageJson.version !== packageLock.version || packageJson.version !== packageLock.packages?.['']?.version) {
+  throw new Error('package.json e package-lock.json possuem versões divergentes.');
+}
 
-const forbidden = ['.env', 'node_modules', 'data/narration-history.json'];
-for (const path of forbidden) {
+for (const scriptName of ['test', 'validate', 'check', 'check:offline', 'release:prepare']) {
+  if (!packageJson.scripts?.[scriptName]) throw new Error(`Script obrigatório ausente: ${scriptName}`);
+}
+
+for (const entry of [...(moduleJson.esmodules ?? []), ...(moduleJson.styles ?? [])]) {
+  await access(new URL(`apps/foundry-module/${entry}`, root));
+}
+
+const gitignore = await readFile(new URL('.gitignore', root), 'utf8');
+for (const expectedRule of ['node_modules/', '.env', 'data/*.json', 'dist/']) {
+  if (!gitignore.split(/\r?\n/).includes(expectedRule)) {
+    throw new Error(`Regra obrigatória ausente no .gitignore: ${expectedRule}`);
+  }
+}
+
+const envExample = await readFile(new URL('.env.example', root), 'utf8');
+const secretPatterns = [
+  /\bgsk_[A-Za-z0-9]{20,}\b/,
+  /\bsk-[A-Za-z0-9_-]{20,}\b/,
+  /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/
+];
+if (secretPatterns.some((pattern) => pattern.test(envExample))) {
+  throw new Error('.env.example contém um valor com aparência de segredo real.');
+}
+
+try {
+  const tracked = execFileSync('git', ['ls-files'], {
+    cwd: new URL('.', root),
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'ignore']
+  }).split(/\r?\n/).filter(Boolean);
+  const forbiddenTracked = tracked.filter((path) =>
+    path === '.env' ||
+    path.startsWith('node_modules/') ||
+    path === 'data/narration-history.json' ||
+    path.startsWith('dist/')
+  );
+  if (forbiddenTracked.length) {
+    throw new Error(`Arquivos locais rastreados pelo Git: ${forbiddenTracked.join(', ')}`);
+  }
+} catch (error) {
+  if (error?.message?.startsWith('Arquivos locais rastreados')) throw error;
+  console.warn('Aviso: validação de arquivos rastreados pelo Git não pôde ser executada.');
+}
+
+const forbiddenLocal = ['.env', 'node_modules', 'data/narration-history.json'];
+for (const path of forbiddenLocal) {
   try {
-    await access(new URL(`../${path}`, import.meta.url));
-    console.warn(`Aviso local: ${path} existe, mas deve permanecer fora do Git.`);
+    await access(new URL(path, root));
+    console.warn(`Aviso local: ${path} existe, mas permanece fora do Git e da entrega.`);
   } catch {
     // Ausência esperada em uma cópia limpa do repositório.
   }
 }
+
 console.log(`Estrutura modular válida (${packageJson.version}).`);

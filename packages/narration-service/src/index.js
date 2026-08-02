@@ -17,6 +17,52 @@ const FORBIDDEN_NARRATION_PATTERNS = [
   /ve-rd__b-inset/i
 ];
 
+const MECHANICAL_ROOM_PATTERNS = [
+  ['REPORT_OPENING', /\ba sala (?:apresenta|possui|cont[eé]m|disp[oõ]e de)\b/i],
+  ['REPORT_SPACE', /\bo (?:espa[cç]o|ambiente|recinto) (?:apresenta|permanece|possui|cont[eé]m)\b/i],
+  ['EXISTENCE_REPORT', /(?:^|[^\p{L}\p{N}_])(?:h[aá]|existe(?:m)?|encontra(?:m)?-se|localiza(?:m)?-se|pode(?:m)? ser (?:visto|vistos|vista|vistas|observado|observados|observada|observadas))(?=$|[^\p{L}\p{N}_])/iu],
+  ['VISIBLE_ELEMENTS', /\b(?:elementos?|detalhes?) (?:vis[ií]veis|confirmados)\b/i],
+  ['POSSIBILITY_FRAMING', /(?:^|\s)[eé] poss[ií]vel (?:ver|observar|notar|perceber)\b/i],
+  ['READING_FRAMING', /\b(?:oferece|oferecendo|permite) (?:ao grupo )?uma (?:leitura|vis[aã]o)\b/i],
+  ['SPACE_ORGANIZATION', /\borganiz(?:a|am|ado|ada|ando) o espa[cç]o\b/i],
+  ['TOLD_EMOTION', /\b(?:(?:criando|causando|provocando|refor[cç]ando) (?:um|uma) (?:ambiente|atmosfera|clima|sensa[cç][aã]o)|(?:a|uma) (?:tens[aã]o|atmosfera) (?:paira|toma conta))\b/i],
+  ['OBSERVER_FRAMING', /\b(?:voc[eê]s?|o personagem) (?:v[eê]|veem|observa|observam|nota|notam|percebe|percebem)\b/i],
+  ['VISION_TECHNICALITY', /\b(?:token|linha de vis[aã]o|campo de vis[aã]o|raio de vis[aã]o|grade do mapa|marcador da sala)\b/i]
+];
+
+const ROOM_NARRATIVE_DIRECTIONS = Object.freeze([
+  Object.freeze({
+    tone: 'tensão contida, produzida pela pausa e pela ordem dos detalhes',
+    opening: 'abra com uma frase breve sobre a imagem concreta mais forte',
+    movement: 'avance do primeiro plano para o fundo, alternando uma frase curta e outra mais ampla',
+    closing: 'encerre sobre um limite visível — passagem, porta, sombra ou obstáculo confirmado — sem explicar sua importância'
+  }),
+  Object.freeze({
+    tone: 'descoberta intensa, sem declarar perigo ou controlar emoções',
+    opening: 'comece por um detalhe próximo e deixe a escala do lugar surgir depois',
+    movement: 'conduza o olhar por contraste de luz, altura, distância ou geometria que esteja na âncora',
+    closing: 'termine na imagem mais carregada de expectativa que já esteja confirmada'
+  }),
+  Object.freeze({
+    tone: 'inquietação sóbria, criada apenas pela cadência',
+    opening: 'entre direto na cena com um verbo concreto e sem introdução explicativa',
+    movement: 'revele dois detalhes conectados, com comprimentos de frase claramente diferentes',
+    closing: 'faça a última frase desacelerar sobre um detalhe imóvel e visível'
+  }),
+  Object.freeze({
+    tone: 'assombro cauteloso, apoiado na escala e no enquadramento visíveis',
+    opening: 'comece pelo panorama e corte rapidamente para um detalhe específico',
+    movement: 'use a progressão espacial para unir os fatos, nunca uma enumeração',
+    closing: 'pare antes de interpretar a cena, deixando a imagem final sustentar a tensão'
+  }),
+  Object.freeze({
+    tone: 'urgência contida, com linguagem concisa e pulsação crescente',
+    opening: 'abra com o elemento que mais interrompe ou domina o recorte visível',
+    movement: 'encadeie o restante como um movimento de câmera contínuo',
+    closing: 'feche com uma frase curta sobre o último detalhe alcançado pela visão'
+  })
+]);
+
 function createServiceError(message, { statusCode = 500, code = 'NARRATION_FAILED' } = {}) {
   const error = new Error(message);
   error.statusCode = statusCode;
@@ -33,6 +79,60 @@ function normalizeWords(value) {
     .trim()
     .split(/\s+/)
     .filter(Boolean);
+}
+
+function stableHash(value) {
+  let result = 2166136261;
+  for (const character of String(value ?? '')) {
+    result ^= character.charCodeAt(0);
+    result = Math.imul(result, 16777619);
+  }
+  return result >>> 0;
+}
+
+export function createRoomNarrativeDirection(sceneKey, attempt = 0) {
+  const index = (stableHash(sceneKey) + Math.max(0, Number(attempt) || 0)) % ROOM_NARRATIVE_DIRECTIONS.length;
+  const direction = ROOM_NARRATIVE_DIRECTIONS[index];
+  return { ...direction, signature: `room-style-${index + 1}` };
+}
+
+function escapeRegExp(value) {
+  return String(value ?? '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function uniqueActorNames(values) {
+  const names = [];
+  const normalized = new Set();
+  for (const value of values ?? []) {
+    const name = String(value ?? '').trim();
+    const key = name.toLocaleLowerCase('pt-BR');
+    if (name.length < 2 || normalized.has(key)) continue;
+    normalized.add(key);
+    names.push(name);
+  }
+  return names.sort((left, right) => right.length - left.length);
+}
+
+function actorNamePattern(name) {
+  return new RegExp(`(^|[^\\p{L}\\p{N}_])(${escapeRegExp(name)})(?=$|[^\\p{L}\\p{N}_])`, 'giu');
+}
+
+export function redactActorNames(value, actorNames = []) {
+  let text = String(value ?? '');
+  for (const name of uniqueActorNames(actorNames)) {
+    text = text.replace(actorNamePattern(name), '$1[personagem]');
+  }
+  return text;
+}
+
+export function evaluateActorNameSafety(candidate, actorNames = []) {
+  const text = String(candidate ?? '');
+  const mentions = uniqueActorNames(actorNames).filter((name) => actorNamePattern(name).test(text));
+  return {
+    safe: mentions.length === 0,
+    issues: mentions.map(() => 'PLAYER_ACTOR_NAME_MENTIONED'),
+    mentions
+  };
 }
 
 function containsCopiedRun(candidate, source, size = 9) {
@@ -59,6 +159,60 @@ export function evaluateOpeningSafety(candidate, sourceText) {
   }
   if (containsCopiedRun(text, sourceText)) issues.push('SOURCE_TEXT_COPIED');
   return { safe: issues.length === 0, issues };
+}
+
+function evaluateSafetyWithActorExclusions(candidate, sourceText, actorNames) {
+  const contentSafety = evaluateOpeningSafety(candidate, sourceText);
+  const actorSafety = evaluateActorNameSafety(candidate, actorNames);
+  return {
+    safe: contentSafety.safe && actorSafety.safe,
+    issues: [...contentSafety.issues, ...actorSafety.issues],
+    actorMentions: actorSafety.mentions
+  };
+}
+
+export function evaluateRoomNarrationStyle(candidate, { sourceText = '', allowCanonicalNonVisual = false } = {}) {
+  const text = String(candidate ?? '').trim();
+  const issues = [];
+  if (!text) issues.push('EMPTY_NARRATION');
+  for (const [code, pattern] of MECHANICAL_ROOM_PATTERNS) {
+    if (pattern.test(text)) issues.push(code);
+  }
+  const inventoryLists = text.match(/(?:,[^.!?;,]{2,}){2,}\s+(?:e|ou)\s+[^.!?]+[.!?]/giu) ?? [];
+  if (inventoryLists.length) issues.push('INVENTORY_LIST');
+
+  const sentenceWordCounts = text
+    .split(/(?<=[.!?])\s+/)
+    .map((sentence) => normalizeWords(sentence).length)
+    .filter(Boolean);
+  const rhythmRange = sentenceWordCounts.length
+    ? Math.max(...sentenceWordCounts) - Math.min(...sentenceWordCounts)
+    : 0;
+  if (sentenceWordCounts.length >= 3 && rhythmRange <= 2) issues.push('UNIFORM_SENTENCE_RHYTHM');
+
+  const nonVisualTerms = [
+    'som', 'sons', 'eco', 'ecos', 'silêncio', 'rangido', 'rangidos', 'gotejo', 'gotejar',
+    'murmúrio', 'murmúrios', 'voz', 'vozes', 'passos', 'cheiro', 'odor', 'aroma',
+    'frio', 'calor', 'temperatura'
+  ];
+  const canonicalText = String(sourceText ?? '');
+  const unsupportedNonVisualTerms = nonVisualTerms.filter((term) => {
+    const pattern = new RegExp(`(?:^|[^\\p{L}\\p{N}_])${term}(?=$|[^\\p{L}\\p{N}_])`, 'iu');
+    if (!pattern.test(text)) return false;
+    return !allowCanonicalNonVisual || !pattern.test(canonicalText);
+  });
+  if (unsupportedNonVisualTerms.length) issues.push('NON_VISUAL_ROOM_DETAIL');
+
+  return {
+    natural: issues.length === 0,
+    issues,
+    metrics: {
+      sentenceWordCounts,
+      rhythmRange,
+      inventoryListCount: inventoryLists.length,
+      nonVisualTerms: unsupportedNonVisualTerms
+    }
+  };
 }
 
 function ensureDecisionEnding(value) {
@@ -109,7 +263,7 @@ export class NarrationService {
     this.openingPlanner = openingPlanner ?? createOpeningNarrativePlanner();
     this.noveltyGuard = noveltyGuard ?? createNoveltyGuard();
     this.qualityGuard = qualityGuard ?? createNarrationQualityGuard();
-    this.roomQualityGuard = roomQualityGuard ?? createNarrationQualityGuard({ minWords: 20, maxWords: 120, minimumHardWords: 20, minParagraphs: 1, maxParagraphs: 2 });
+    this.roomQualityGuard = roomQualityGuard ?? createNarrationQualityGuard({ minWords: 50, maxWords: 120, minimumHardWords: 25, minParagraphs: 1, maxParagraphs: 2 });
     this.narrationMemory = narrationMemory ?? new InMemoryNarrationMemory();
     this.maxOpeningAttempts = Math.max(1, Number(maxOpeningAttempts) || 5);
   }
@@ -134,6 +288,11 @@ export class NarrationService {
       const sceneKey = this.openingPlanner.buildSceneKey(openingContext);
       const history = await this.narrationMemory.list(sceneKey, { limit: 20 });
       const attempts = [];
+      const forbiddenActorNames = uniqueActorNames([
+        ...(openingContext.narrationExclusions?.actorNames ?? []),
+        ...(openingContext.visibleActors ?? []).map((actor) => actor?.name)
+      ]);
+      const { narrationExclusions: _openingExclusions, ...providerOpeningContext } = openingContext;
 
       for (let attempt = 0; attempt < this.maxOpeningAttempts; attempt += 1) {
         const planHistory = [...history, ...attempts.filter((item) => item.safety?.safe).map((item) => ({ plan: item.plan }))];
@@ -142,7 +301,7 @@ export class NarrationService {
           ...history.slice(-6).map((entry) => ({
             id: entry.id,
             planSignature: entry.plan?.signature ?? null,
-            excerpt: String(entry.text ?? '').slice(0, 700),
+            excerpt: redactActorNames(String(entry.text ?? ''), forbiddenActorNames).slice(0, 700),
             source: 'history'
           })),
           ...attempts.filter((entry) => entry.safety?.safe).slice(-3).map((entry, index) => ({
@@ -153,7 +312,9 @@ export class NarrationService {
           }))
         ];
         const providerContext = {
-          ...openingContext,
+          ...providerOpeningContext,
+          // A abertura é ambiental. Nomes de tokens da Scene nunca chegam ao provedor.
+          visibleActors: [],
           narrativePlan: plan,
           novelty: {
             attempt: attempt + 1,
@@ -178,7 +339,7 @@ export class NarrationService {
 
         const generated = await this.provider.createOpening(providerContext);
         const candidate = ensureDecisionEnding(generated);
-        const safety = evaluateOpeningSafety(candidate, openingContext.source.text);
+        const safety = evaluateSafetyWithActorExclusions(candidate, openingContext.source.text, forbiddenActorNames);
 
         if (!safety.safe) {
           attempts.push({ candidate, safety, plan, evaluation: null });
@@ -308,40 +469,97 @@ export class NarrationService {
       const sceneKey = `room:${sceneId}:${normalizedRoom}`;
       const history = await this.narrationMemory.list(sceneKey, { limit: 20 });
       const attempts = [];
+      const roomActors = roomContext.visibleActors ?? [];
+      const characterNameKeys = new Set(
+        roomActors
+          .filter((actor) => String(actor?.type ?? '').toLowerCase() === 'character')
+          .map((actor) => String(actor?.name ?? '').trim().toLocaleLowerCase('pt-BR'))
+          .filter(Boolean)
+      );
+      const narratableActors = roomActors.filter((actor) => {
+        const type = String(actor?.type ?? '').toLowerCase();
+        const nameKey = String(actor?.name ?? '').trim().toLocaleLowerCase('pt-BR');
+        return type !== 'character' && nameKey && !characterNameKeys.has(nameKey);
+      });
+      const allowedActorNameKeys = new Set(
+        narratableActors.map((actor) => String(actor.name).trim().toLocaleLowerCase('pt-BR'))
+      );
+      const forbiddenActorNames = uniqueActorNames([
+        ...(roomContext.narrationExclusions?.actorNames ?? []).filter((name) =>
+          !allowedActorNameKeys.has(String(name ?? '').trim().toLocaleLowerCase('pt-BR'))
+        ),
+        ...roomActors
+          .filter((actor) => String(actor?.type ?? '').toLowerCase() === 'character')
+          .map((actor) => actor?.name)
+      ]);
+      const { narrationExclusions: _roomExclusions, ...providerRoomContext } = roomContext;
 
       for (let attempt = 0; attempt < this.maxOpeningAttempts; attempt += 1) {
+        const styleDirection = createRoomNarrativeDirection(sceneKey, attempt);
         const providerContext = {
-          ...roomContext,
+          ...providerRoomContext,
+          // Somente NPCs comprovadamente visíveis podem participar da descrição.
+          visibleActors: narratableActors,
+          styleDirection,
           novelty: {
             attempt: attempt + 1,
             priorCount: history.length,
             forceContrast: attempt === this.maxOpeningAttempts - 1,
             avoidOpenings: [
-              ...history.slice(-6).map((entry) => ({ id: entry.id, excerpt: entry.text, source: 'history' })),
+              ...history.slice(-6).map((entry) => ({
+                id: entry.id,
+                excerpt: redactActorNames(entry.text, forbiddenActorNames),
+                source: 'history'
+              })),
               ...attempts.filter((entry) => entry.safety?.safe).slice(-3).map((entry, index) => ({
                 id: `current-attempt-${index + 1}`,
                 excerpt: entry.candidate,
                 source: 'current-run'
               }))
             ]
+          },
+          quality: {
+            target: {
+              minWords: this.roomQualityGuard.minWords,
+              maxWords: this.roomQualityGuard.maxWords,
+              maxParagraphs: this.roomQualityGuard.maxParagraphs
+            },
+            rejected: attempts.slice(-3).map((entry) => ({
+              issues: entry.quality?.issues ?? [],
+              hardIssues: entry.quality?.hardIssues ?? [],
+              styleIssues: entry.style?.issues ?? []
+            }))
           }
         };
         const candidate = String(await this.provider.createRoomEntry(providerContext) ?? '')
           .trim()
           .replace(/(?:\s*O que vocês fazem\?\s*)+$/i, '')
           .trim();
-        const safety = evaluateOpeningSafety(candidate, roomContext.source.text);
+        const safety = evaluateSafetyWithActorExclusions(candidate, roomContext.source.text, forbiddenActorNames);
         if (!safety.safe) {
-          attempts.push({ candidate, safety });
+          attempts.push({ candidate, safety, styleDirection });
           continue;
         }
         const quality = this.roomQualityGuard.evaluate(candidate, roomContext, { requireDecisionEnding: false });
-        if (!quality.hardSafe) {
-          attempts.push({ candidate, safety, quality });
+        const style = evaluateRoomNarrationStyle(candidate, {
+          sourceText: roomContext.source.text,
+          allowCanonicalNonVisual: Boolean(roomContext.perception?.blinded)
+        });
+        if (!quality.hardSafe || !style.natural) {
+          attempts.push({ candidate, safety, quality, style, styleDirection });
+          this.logger.warn?.('[Mestre Orc][RoomQuality] descrição de sala rejeitada', {
+            sceneKey,
+            attempt: attempt + 1,
+            hardIssues: quality.hardIssues,
+            styleIssues: style.issues,
+            metrics: quality.metrics,
+            styleMetrics: style.metrics,
+            styleDirection: styleDirection.signature
+          });
           continue;
         }
         const evaluation = this.noveltyGuard.evaluate(candidate, history);
-        attempts.push({ candidate, safety, quality, evaluation });
+        attempts.push({ candidate, safety, quality, style, evaluation, styleDirection });
         if (!quality.accepted || !evaluation.accepted) continue;
 
         await this.narrationMemory.append({
@@ -355,14 +573,24 @@ export class NarrationService {
           text: candidate,
           fingerprint: this.noveltyGuard.fingerprint(candidate),
           similarityToHistory: evaluation.maxSimilarity,
-          quality: { status: 'accepted', issues: quality.issues, hardIssues: quality.hardIssues, metrics: quality.metrics },
+          quality: {
+            status: 'accepted',
+            issues: quality.issues,
+            hardIssues: quality.hardIssues,
+            styleIssues: style.issues,
+            styleMetrics: style.metrics,
+            metrics: quality.metrics
+          },
+          styleDirection,
           noveltyStatus: 'accepted',
           createdAt: new Date().toISOString()
         });
         return candidate;
       }
 
-      const safe = attempts.filter((entry) => entry.safety?.safe && entry.quality?.hardSafe && entry.evaluation);
+      const safe = attempts.filter((entry) =>
+        entry.safety?.safe && entry.quality?.hardSafe && entry.style?.natural && entry.evaluation
+      );
       const best = [...safe].sort((left, right) =>
         left.quality.penalty - right.quality.penalty || left.evaluation.maxSimilarity - right.evaluation.maxSimilarity
       )[0];
@@ -378,7 +606,15 @@ export class NarrationService {
         sceneId, sceneName: roomContext.scene?.name ?? null, areaName: roomName,
         sourceType: roomContext.source?.type ?? 'ROOM_READ_ALOUD', text: best.candidate,
         fingerprint: this.noveltyGuard.fingerprint(best.candidate), similarityToHistory: best.evaluation.maxSimilarity,
-        quality: { status: 'best-effort', issues: best.quality.issues, hardIssues: best.quality.hardIssues, metrics: best.quality.metrics },
+        quality: {
+          status: 'best-effort',
+          issues: best.quality.issues,
+          hardIssues: best.quality.hardIssues,
+          styleIssues: best.style.issues,
+          styleMetrics: best.style.metrics,
+          metrics: best.quality.metrics
+        },
+        styleDirection: best.styleDirection,
         noveltyStatus: 'best-effort', createdAt: new Date().toISOString()
       });
       return best.candidate;

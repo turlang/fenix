@@ -33,20 +33,20 @@ const FOCUSES = Object.freeze([
 ]);
 
 const TONES = Object.freeze([
-  'descoberta contida',
-  'aventura cautelosa',
-  'atenção crescente',
-  'exploração sóbria',
-  'observação silenciosa',
-  'curiosidade cuidadosa'
+  'tensão contida sem ameaça inventada',
+  'descoberta intensa e cautelosa',
+  'expectativa crescente construída pela cadência',
+  'assombro sóbrio diante da escala visível',
+  'inquietação silenciosa sem especulação',
+  'curiosidade sob pressão'
 ]);
 
 const PACES = Object.freeze([
-  'lento e atmosférico',
-  'cinematográfico e progressivo',
-  'direto com detalhes sensoriais',
-  'crescente, do panorama ao detalhe',
-  'contido, com pausas e imagens precisas'
+  'lento, atmosférico e pontuado por uma frase curta',
+  'cinematográfico, com progressão espacial contínua',
+  'direto, alternando impacto e detalhe sensorial confirmado',
+  'crescente, do panorama ao detalhe final',
+  'contido, com pausas dramáticas e imagens precisas'
 ]);
 
 const ENTRIES = Object.freeze([
@@ -61,7 +61,7 @@ const ENTRIES = Object.freeze([
 const PERSPECTIVES = Object.freeze([
   'panorama para detalhe',
   'detalhe para panorama',
-  'aproximação em movimento',
+  'movimento de câmera pelo espaço visível',
   'observação estática do limiar',
   'revelação em camadas'
 ]);

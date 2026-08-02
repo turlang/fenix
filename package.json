@@ -1,7 +1,7 @@
 {
   "name": "mestre-orc-engine",
-  "version": "0.1.0-alpha.24",
-  "description": "Motor modular de narração para Foundry VTT com integração de IA e áudio.",
+  "version": "0.1.0-alpha.36",
+  "description": "Motor modular de narração cinematográfica para Foundry VTT com integração de IA e áudio.",
   "private": true,
   "type": "module",
   "workspaces": [
@@ -11,14 +11,25 @@
   "scripts": {
     "dev": "node apps/api/src/server.js",
     "start": "node apps/api/src/server.js",
-    "test": "node --test",
+    "test": "node scripts/run-tests.mjs",
+    "audit": "npm audit --omit=dev",
     "validate": "node scripts/validate.mjs",
-    "check": "npm run validate && npm test"
+    "check:offline": "npm run validate && npm test",
+    "release:prepare": "node scripts/prepare-release.mjs",
+    "check": "npm run validate && npm run audit && npm test"
   },
   "engines": {
     "node": ">=20 <25"
   },
   "license": "UNLICENSED",
+  "overrides": {
+    "@fastify/ajv-compiler": {
+      "fast-uri": "3.1.4"
+    },
+    "ajv": {
+      "fast-uri": "3.1.4"
+    }
+  },
   "dependencies": {
     "fastify": "^5.2.1"
   }

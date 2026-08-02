@@ -35,7 +35,7 @@ const serviceContext = {
 
 const goodNarration = `A trilha dos goblins termina diante de uma colina tomada por vegetação cerrada. Entre os espinheiros, a pedra se abre em uma passagem larga e escura, parcialmente escondida pelos galhos. O murmúrio constante da água marca o limite entre o terreno aberto e o interior da caverna.
 
-Um riacho raso corre para fora da entrada e atravessa o caminho do grupo. À direita da correnteza, uma faixa estreita de solo seco acompanha a parede rochosa até desaparecer na sombra. Mistra e Wolf estão diante desse acesso, com espaço suficiente para escolher como avançar.
+Um riacho raso corre para fora da entrada e atravessa o caminho do grupo. À direita da correnteza, uma faixa estreita de solo seco acompanha a parede rochosa até desaparecer na sombra. O terreno diante desse acesso permanece livre, deixando nítidas as duas formas de aproximação.
 
 O que vocês fazem?`;
 

@@ -62,10 +62,18 @@ export class NarrationContextBuilder {
         flags: journalSource.flags && typeof journalSource.flags === 'object' ? journalSource.flags : {}
       } : null;
 
+      const excludedActorNames = [...new Set(
+        asArray(raw.narrationExclusions?.actorNames)
+          .map((name) => asText(name))
+          .filter(Boolean)
+          .slice(0, 200)
+      )];
+
       const context = {
         scene,
         campaign: raw.campaign && typeof raw.campaign === 'object' ? raw.campaign : null,
         visibleActors: actors,
+        narrationExclusions: { actorNames: excludedActorNames },
         sceneJournal,
         scenePage: selectedPage,
         messages: asArray(raw.messages).map((message) => ({

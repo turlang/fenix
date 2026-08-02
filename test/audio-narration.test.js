@@ -24,7 +24,7 @@ test('AudioNarrationService cria diretiva browser-tts normalizada', () => {
   const directive = service.createDirective('  A caverna\nse abre diante do grupo.  ', { sceneId: 'scene-1', sessionId: 'session-1' });
 
   assert.equal(directive.mode, 'browser-tts');
-  assert.equal(directive.text, 'A caverna se abre diante do grupo.');
+  assert.equal(directive.text, 'A caverna\nse abre diante do grupo.');
   assert.equal(directive.language, 'pt-BR');
   assert.equal(directive.sceneId, 'scene-1');
   assert.equal(directive.sessionId, 'session-1');
@@ -43,7 +43,7 @@ O espaço permanece diante do grupo, oferecendo mais de uma forma de aproximaç�
   const result = await runtime.start({ snapshot });
 
   assert.equal(result.audio.mode, 'browser-tts');
-  assert.equal(result.audio.text, result.opening.replace(/\s+/g, ' ').trim());
+  assert.equal(result.audio.text, result.opening.trim());
   assert.equal(result.audio.sceneId, 'scene-audio');
   assert.equal(result.audio.sessionId, result.sessionId);
 });
@@ -51,7 +51,30 @@ O espaço permanece diante do grupo, oferecendo mais de uma forma de aproximaç�
 test('módulo Foundry contém reprodução local e transmissão por socket', async () => {
   const source = await readFile(new URL('../apps/foundry-module/scripts/main.js', import.meta.url), 'utf8');
   assert.match(source, /SpeechSynthesisUtterance/);
+  assert.match(source, /parseCinematicSpeechScript/);
+  assert.match(source, /speakCinematicSegments/);
   assert.match(source, /module\.\$\{MODULE_ID\}/);
   assert.match(source, /type: 'narration-audio'/);
-  assert.match(source, /publishNarrationAudio\(result\.audio, result\.opening/);
+  assert.match(source, /publishNarrationAudio\([\s\S]*?result\.audio,[\s\S]*?result\.opening/);
+});
+
+test('TTS bloqueia texto e diretiva publicados mais de uma vez', async () => {
+  const source = await readFile(new URL('../apps/foundry-module/scripts/main.js', import.meta.url), 'utf8');
+  assert.match(source, /audioWasRecentlySpoken/);
+  assert.match(source, /AUDIO_DEDUPE_WINDOW_MS/);
+  assert.match(source, /claimBrowserPublication\('audio-publication', key\)/);
+  assert.match(source, /reprodução duplicada bloqueada/);
+  assert.match(source, /source: 'local-publish'/);
+  assert.match(source, /source: 'socket'/);
+  assert.match(source, /globalThis\.localStorage/);
+  assert.match(source, /socket duplicado bloqueado/);
+  assert.match(source, /claimBrowserPublication\('audio-publication', publicationKey\)/);
+});
+
+test('socket respeita destinatários da diretiva antes de reproduzir', async () => {
+  const source = await readFile(new URL('../apps/foundry-module/scripts/main.js', import.meta.url), 'utf8');
+  const block = source.slice(source.indexOf('function installAudioSocket'), source.indexOf('function refreshAudioToggleButton'));
+  assert.match(block, /audioTargetsUser\(payload\.audio, game\.user\?\.id\)/);
+  assert.match(block, /diretiva destinada a outro usuário ignorada/);
+  assert.ok(block.indexOf('audioTargetsUser') < block.indexOf("claimBrowserPublication('audio-publication'"));
 });

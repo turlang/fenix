@@ -3,12 +3,16 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 const mainPath = new URL('../apps/foundry-module/scripts/main.js', import.meta.url);
+const helperPath = new URL('../apps/foundry-module/scripts/read-aloud.js', import.meta.url);
 
 test('módulo prioriza estrutura data-roll-name-ancestor e bloco readaloud', async () => {
-  const source = await readFile(mainPath, 'utf8');
+  const source = `${await readFile(mainPath, 'utf8')}\n${await readFile(helperPath, 'utf8')}`;
   assert.match(source, /findStructuredSceneSection/);
   assert.match(source, /findStartingArea/);
   assert.match(source, /ve-rd__b-inset--readaloud/);
+  assert.match(source, /rd__b-inset--readaloud/);
+  assert.match(source, /allowBlockquote/);
+  assert.match(source, /PRIVATE_JOURNAL_SELECTOR/);
   assert.match(source, /STRUCTURED_READ_ALOUD/);
   assert.match(source, /areaName/);
   assert.doesNotMatch(source, /HEADING_SECTION_FALLBACK/);

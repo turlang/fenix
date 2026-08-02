@@ -59,6 +59,12 @@ export class SceneOpeningContextBuilder {
       name: actor.name,
       type: actor.type
     }));
+    const excludedActorNames = [...new Set(
+      (context.narrationExclusions?.actorNames ?? [])
+        .map((name) => text(name))
+        .filter(Boolean)
+        .slice(0, 200)
+    )];
 
     const result = {
       scene: {
@@ -80,6 +86,7 @@ export class SceneOpeningContextBuilder {
         canonicalAnchor: safeReadAloud
       },
       visibleActors,
+      narrationExclusions: { actorNames: excludedActorNames },
       constraints: {
         revealOnlyObservableFacts: true,
         neverQuoteSourceDirectly: true,

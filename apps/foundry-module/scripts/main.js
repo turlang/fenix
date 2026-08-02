@@ -1,4 +1,28 @@
+import {
+  READ_ALOUD_SELECTOR,
+  extractMarkdownReadAloud
+} from './read-aloud.js';
+import { RoomTransitionTracker } from './room-transition-state.js';
+import {
+  actionMessageRejectionReason,
+  isSupportedPlayerChatStyle
+} from './chat-action-filter.js';
+import {
+  audioTargetsUser,
+  normalizeRecipientUserIds,
+  ownerUserIdsForToken
+} from './audio-routing.js';
+import {
+  createTokenPerception,
+  visibleTokensFrom
+} from './token-vision.js';
+import {
+  parseCinematicSpeechScript,
+  stripCinematicMarkers
+} from './cinematic-speech.js';
+
 const MODULE_ID = 'mestre-orc';
+const MODULE_BUILD = '0.1.0-alpha.36';
 const BUTTON_ID = 'mestre-orc-start';
 const AUDIO_BUTTON_ID = 'mestre-orc-audio-toggle';
 const SOCKET_CHANNEL = `module.${MODULE_ID}`;
@@ -7,16 +31,20 @@ let startInFlight = false;
 let lastAudioDirectiveId = null;
 let speechVoices = [];
 let activeUtterance = null;
+let activePauseTimer = null;
+let activeNarrationRun = 0;
 let latestAudioDirective = null;
 let roomCheckTimer = null;
+let roomMonitorTimer = null;
 let lastPlayerActionAt = 0;
 const processedActionMessages = new Set();
-const roomNarrationState = {
-  active: false,
-  sessionId: null,
-  narratedRooms: new Set(),
-  lastRoomCheck: 0
-};
+const recentActionFingerprints = new Map();
+const publishedNarrationKeys = new Set();
+const recentAudioFingerprints = new Map();
+const roomNarrationState = new RoomTransitionTracker();
+const ROOM_MONITOR_INTERVAL_MS = 1500;
+const AUDIO_DEDUPE_WINDOW_MS = 45000;
+const ACTION_DEDUPE_WINDOW_MS = 30000;
 
 function asElement(html) {
   if (html instanceof HTMLElement) return html;
@@ -121,19 +149,148 @@ function selectSpeechVoice(language = 'pt-BR') {
 }
 
 function normalizeSpeechText(value) {
-  return stripHtml(String(value ?? ''))
+  return stripCinematicMarkers(stripHtml(String(value ?? '')))
     .replace(/\[Modo[^\]]*\]/gi, '')
     .replace(/\s+/g, ' ')
     .trim();
 }
 
+function stableTextFingerprint(value) {
+  const text = normalizeSpeechText(value).toLocaleLowerCase('pt-BR');
+  let hash = 2166136261;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return `${text.length}:${(hash >>> 0).toString(16)}`;
+}
+
+function sharedBrowserStorage() {
+  try {
+    return globalThis.localStorage ?? globalThis.sessionStorage ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function claimBrowserPublication(category, key) {
+  const normalized = String(key ?? '').trim();
+  if (!normalized) return true;
+  const storageKey = `${MODULE_ID}:${category}:${normalized}`;
+  const storage = sharedBrowserStorage();
+  try {
+    if (storage?.getItem(storageKey)) return false;
+    storage?.setItem(storageKey, String(Date.now()));
+  } catch {
+    // O Set local continua protegendo quando o armazenamento não está disponível.
+  }
+  return true;
+}
+
+function releaseBrowserPublication(category, key) {
+  const normalized = String(key ?? '').trim();
+  if (!normalized) return;
+  const storage = sharedBrowserStorage();
+  try {
+    storage?.removeItem(`${MODULE_ID}:${category}:${normalized}`);
+  } catch {
+    // Nada a liberar quando o armazenamento não está disponível.
+  }
+}
+
+function audioWasRecentlySpoken(text) {
+  const fingerprint = stableTextFingerprint(text);
+  const now = Date.now();
+  const localTimestamp = recentAudioFingerprints.get(fingerprint) ?? 0;
+  let storedTimestamp = 0;
+  const storage = sharedBrowserStorage();
+  try {
+    storedTimestamp = Number(storage?.getItem(`${MODULE_ID}:audio-fingerprint:${fingerprint}`) ?? 0);
+  } catch {
+    // O cache em memória é suficiente como fallback.
+  }
+  const lastTimestamp = Math.max(localTimestamp, storedTimestamp);
+  if (now - lastTimestamp < AUDIO_DEDUPE_WINDOW_MS) return true;
+  recentAudioFingerprints.set(fingerprint, now);
+  try {
+    storage?.setItem(`${MODULE_ID}:audio-fingerprint:${fingerprint}`, String(now));
+  } catch {
+    // Ignora indisponibilidade do armazenamento da aba.
+  }
+  if (recentAudioFingerprints.size > 100) recentAudioFingerprints.delete(recentAudioFingerprints.keys().next().value);
+  return false;
+}
+
 function stopNarrationAudio() {
-  if (!supportsSpeechSynthesis()) return;
-  window.speechSynthesis.cancel();
+  activeNarrationRun += 1;
+  if (activePauseTimer) {
+    clearTimeout(activePauseTimer);
+    activePauseTimer = null;
+  }
+  if (supportsSpeechSynthesis()) window.speechSynthesis.cancel();
   activeUtterance = null;
 }
 
-function speakAudioDirective(directive, { force = false } = {}) {
+function speakCinematicSegments(segments, directive, { source = 'unknown' } = {}) {
+  const runId = activeNarrationRun;
+  const language = String(directive.language ?? 'pt-BR');
+  const voice = selectSpeechVoice(language);
+
+  const playNext = (index) => {
+    if (runId !== activeNarrationRun) return;
+    const segment = segments[index];
+    if (!segment) {
+      activeUtterance = null;
+      activePauseTimer = null;
+      return;
+    }
+
+    if (segment.type === 'pause') {
+      activePauseTimer = setTimeout(() => {
+        activePauseTimer = null;
+        playNext(index + 1);
+      }, Math.max(0, Number(segment.duration) || 0));
+      return;
+    }
+
+    const utterance = new SpeechSynthesisUtterance(segment.text);
+    activeUtterance = utterance;
+    utterance.lang = language;
+    utterance.rate = segment.rate;
+    utterance.pitch = segment.pitch;
+    utterance.volume = segment.volume;
+    if (voice) utterance.voice = voice;
+
+    utterance.onstart = () => console.log('[Mestre Orc][Audio] trecho expressivo iniciado', {
+      id: directive.id ?? null,
+      source,
+      marker: segment.marker,
+      voice: utterance.voice?.name ?? 'padrão do navegador',
+      language: utterance.lang,
+      rate: utterance.rate,
+      pitch: utterance.pitch,
+      volume: utterance.volume
+    });
+    utterance.onend = () => {
+      if (runId !== activeNarrationRun) return;
+      if (activeUtterance === utterance) activeUtterance = null;
+      playNext(index + 1);
+    };
+    utterance.onerror = (event) => {
+      if (event.error === 'interrupted' || event.error === 'canceled') return;
+      if (runId !== activeNarrationRun) return;
+      if (activeUtterance === utterance) activeUtterance = null;
+      console.error('[Mestre Orc][Audio] falha na reprodução expressiva', event.error ?? event);
+      ui.notifications?.warn?.('Mestre Orc: não foi possível reproduzir a narração em áudio neste navegador.');
+    };
+
+    window.speechSynthesis.speak(utterance);
+  };
+
+  playNext(0);
+}
+
+function speakAudioDirective(directive, { force = false, source = 'unknown' } = {}) {
   if (!directive || directive.mode !== 'browser-tts') return false;
   if (!force && !audioSetting('audioEnabled', true)) return false;
   if (!supportsSpeechSynthesis()) {
@@ -143,42 +300,37 @@ function speakAudioDirective(directive, { force = false } = {}) {
 
   const id = String(directive.id ?? '');
   if (id && id === lastAudioDirectiveId) return false;
-  const text = normalizeSpeechText(directive.text);
-  if (!text) return false;
+  const fingerprintText = normalizeSpeechText(directive.text);
+  if (!fingerprintText) return false;
+  if (!force && audioWasRecentlySpoken(fingerprintText)) {
+    console.log('[Mestre Orc][Audio] reprodução duplicada bloqueada', { id, source });
+    return false;
+  }
 
   lastAudioDirectiveId = id || crypto.randomUUID();
   stopNarrationAudio();
-
-  const utterance = new SpeechSynthesisUtterance(text);
-  activeUtterance = utterance;
-  utterance.lang = String(directive.language ?? 'pt-BR');
-  utterance.rate = Number(audioSetting('audioRate', directive.rate ?? 0.9));
-  utterance.pitch = Number(audioSetting('audioPitch', directive.pitch ?? 0.85));
-  utterance.volume = Number(audioSetting('audioVolume', directive.volume ?? 1));
-  const voice = selectSpeechVoice(utterance.lang);
-  if (voice) utterance.voice = voice;
-
-  utterance.onstart = () => console.log('[Mestre Orc][Audio] reprodução iniciada', {
-    id: lastAudioDirectiveId,
-    voice: utterance.voice?.name ?? 'padrão do navegador',
-    language: utterance.lang
+  const segments = parseCinematicSpeechScript(directive.text, {
+    rate: Number(audioSetting('audioRate', directive.rate ?? 0.9)),
+    pitch: Number(audioSetting('audioPitch', directive.pitch ?? 0.85)),
+    volume: Number(audioSetting('audioVolume', directive.volume ?? 1))
   });
-  utterance.onend = () => {
-    if (activeUtterance === utterance) activeUtterance = null;
-  };
-  utterance.onerror = (event) => {
-    if (event.error === 'interrupted' || event.error === 'canceled') return;
-    if (activeUtterance === utterance) activeUtterance = null;
-    console.error('[Mestre Orc][Audio] falha na reprodução', event.error ?? event);
-    ui.notifications?.warn?.('Mestre Orc: não foi possível reproduzir a narração em áudio neste navegador.');
-  };
+  if (!segments.some((segment) => segment.type === 'speech')) return false;
 
-  window.speechSynthesis.speak(utterance);
+  console.log('[Mestre Orc][Audio] roteiro expressivo preparado', {
+    id: lastAudioDirectiveId,
+    source,
+    segments: segments.length,
+    pauses: segments.filter((segment) => segment.type === 'pause').length
+  });
+  speakCinematicSegments(segments, directive, { source });
   return true;
 }
 
-function buildAudioDirective(audio, fallbackText, sceneId = null) {
+function buildAudioDirective(audio, fallbackText, sceneId = null, publicationKey = '', recipientUserIds = null) {
   const source = audio && typeof audio === 'object' ? audio : {};
+  const recipients = source.recipientUserIds !== undefined
+    ? normalizeRecipientUserIds(source.recipientUserIds)
+    : normalizeRecipientUserIds(recipientUserIds);
   return {
     id: source.id ?? crypto.randomUUID(),
     mode: source.mode ?? 'browser-tts',
@@ -188,16 +340,28 @@ function buildAudioDirective(audio, fallbackText, sceneId = null) {
     pitch: source.pitch ?? 0.85,
     volume: source.volume ?? 1,
     sceneId: source.sceneId ?? sceneId ?? null,
-    sessionId: source.sessionId ?? null
+    sessionId: source.sessionId ?? null,
+    publicationKey: source.publicationKey ?? publicationKey ?? null,
+    recipientUserIds: recipients
   };
 }
 
-function publishNarrationAudio(audio, fallbackText, sceneId = null) {
-  const directive = buildAudioDirective(audio, fallbackText, sceneId);
-  latestAudioDirective = directive;
-  speakAudioDirective(directive);
+function publishNarrationAudio(audio, fallbackText, sceneId = null, publicationKey = '', recipientUserIds = null) {
+  const key = String(publicationKey ?? '').trim();
+  const directive = buildAudioDirective(audio, fallbackText, sceneId, key, recipientUserIds);
+  const shouldPlayLocally = audioTargetsUser(directive, game.user?.id);
+  if (shouldPlayLocally) {
+    if (!key || claimBrowserPublication('audio-publication', key)) {
+      latestAudioDirective = directive;
+      speakAudioDirective(directive, { source: 'local-publish' });
+    } else {
+      console.log('[Mestre Orc][Audio] diretiva duplicada bloqueada', { key });
+    }
+  }
 
-  if (game.user?.isGM && audioSetting('audioBroadcast', true)) {
+  const recipients = normalizeRecipientUserIds(directive.recipientUserIds);
+  const hasRecipient = recipients === null || recipients.length > 0;
+  if (game.user?.isGM && audioSetting('audioBroadcast', true) && hasRecipient) {
     game.socket?.emit?.(SOCKET_CHANNEL, {
       type: 'narration-audio',
       senderId: game.user.id,
@@ -211,8 +375,19 @@ function installAudioSocket() {
   game.socket?.on?.(SOCKET_CHANNEL, (payload) => {
     if (payload?.type !== 'narration-audio' || !payload.audio) return;
     if (payload.senderId && payload.senderId === game.user?.id) return;
+    if (!audioTargetsUser(payload.audio, game.user?.id)) {
+      console.debug('[Mestre Orc][Audio] diretiva destinada a outro usuário ignorada', {
+        publicationKey: payload.audio.publicationKey ?? null
+      });
+      return;
+    }
+    const publicationKey = String(payload.audio.publicationKey ?? '').trim();
+    if (publicationKey && !claimBrowserPublication('audio-publication', publicationKey)) {
+      console.log('[Mestre Orc][Audio] socket duplicado bloqueado', { publicationKey });
+      return;
+    }
     latestAudioDirective = payload.audio;
-    speakAudioDirective(payload.audio);
+    speakAudioDirective(payload.audio, { source: 'socket' });
   });
 }
 
@@ -269,6 +444,44 @@ function stripHtml(value) {
   return (element.textContent ?? '').replace(/\s+/g, ' ').trim();
 }
 
+const PRIVATE_JOURNAL_SELECTOR = [
+  '.secret',
+  '.gm-only',
+  '.gmonly',
+  '[data-visibility="gm"]',
+  '[data-visible-to="gm"]',
+  '[data-user-visibility="gm"]',
+  '[hidden]',
+  '[aria-hidden="true"]'
+].join(', ');
+
+function isPublicReadAloudElement(element) {
+  return Boolean(element) && !element.closest?.(PRIVATE_JOURNAL_SELECTOR);
+}
+
+function findReadAloudElement(container, { allowBlockquote = false } = {}) {
+  if (!container?.querySelectorAll) return null;
+  const explicit = [
+    ...(container.matches?.(READ_ALOUD_SELECTOR) ? [container] : []),
+    ...container.querySelectorAll(READ_ALOUD_SELECTOR)
+  ].find(isPublicReadAloudElement);
+  if (explicit) return explicit;
+  if (!allowBlockquote) return null;
+  return [...container.querySelectorAll('blockquote')].find(isPublicReadAloudElement) ?? null;
+}
+
+function readAloudElementContent(element) {
+  const content = stripHtml(element?.innerHTML ?? '');
+  return content ? content.slice(0, 5000) : '';
+}
+
+function markdownReadAloud(page, options = {}) {
+  const extracted = extractMarkdownReadAloud(page?.text?.markdown ?? '', options);
+  const content = String(extracted?.content ?? '').replace(/\s+/g, ' ').trim();
+  if (!content) return null;
+  return { content: content.slice(0, 5000), areaName: extracted?.areaName ?? null };
+}
+
 function normalizeSceneName(value) {
   return String(value ?? '')
     .replace(/\s*\((player|gm|jogador|mestre)\s*version\)\s*$/i, '')
@@ -294,6 +507,31 @@ function namesRelated(left, right) {
   const b = normalizeComparableName(right);
   if (!a || !b) return false;
   return a === b || (a.length >= 5 && b.includes(a)) || (b.length >= 5 && a.includes(b));
+}
+
+function journalFolderDocument(journal) {
+  if (journal?.folder && typeof journal.folder === 'object') return journal.folder;
+  return journal?.folder ? game.folders?.get?.(journal.folder) ?? null : null;
+}
+
+function journalFolderName(journal) {
+  return String(journalFolderDocument(journal)?.name ?? '').trim();
+}
+
+function journalFolderId(journal) {
+  return String(journalFolderDocument(journal)?.id ?? journal?.folder?.id ?? journal?.folder ?? '').trim();
+}
+
+function leadingRoomNumber(value) {
+  return String(value ?? '').trim().match(/^(\d+)\b/)?.[1] ?? null;
+}
+
+function journalBelongsToScene(scene, journal, relatedFolderId = '') {
+  const folderName = journalFolderName(journal);
+  const folderId = journalFolderId(journal);
+  return namesRelated(scene?.name, journal?.name) ||
+    namesRelated(scene?.name, folderName) ||
+    Boolean(relatedFolderId && folderId && folderId === relatedFolderId);
 }
 
 function findFlagValues(value, path = [], results = []) {
@@ -334,6 +572,14 @@ async function resolveJournalReferenceCandidate(candidate) {
 }
 
 
+function findJournalReadAloudPage(journal, sceneName) {
+  const pages = journal?.pages?.contents ?? [];
+  return pages.find((entry) => Boolean(extractStructuredReadAloud(entry, sceneName)))
+    ?? pages.find((entry) => namesRelated(sceneName, entry?.name) && Boolean(extractFirstReadAloud(entry)))
+    ?? pages.find((entry) => Boolean(extractFirstReadAloud(entry)))
+    ?? null;
+}
+
 function findJournalDirectlyByScene(scene) {
   const journals = game.journal?.contents ?? [];
   const target = normalizeComparableName(scene?.name);
@@ -341,26 +587,44 @@ function findJournalDirectlyByScene(scene) {
 
   const exact = journals.find((journal) => normalizeComparableName(journal?.name) === target);
   const related = exact ?? journals.find((journal) => namesRelated(scene?.name, journal?.name));
-  if (!related) return null;
+  const relatedFolderId = journalFolderId(related);
+  const candidates = journals.filter((journal) => journalBelongsToScene(scene, journal, relatedFolderId));
+  const matches = candidates.flatMap((journal) => {
+    const page = findJournalReadAloudPage(journal, scene?.name);
+    if (!page) return [];
+    const exactName = normalizeComparableName(journal?.name) === target;
+    const folderName = journalFolderName(journal);
+    const roomNumber = leadingRoomNumber(journal?.name) ?? leadingRoomNumber(page?.name);
+    const numericOrder = roomNumber ? Math.min(Number(roomNumber), 999) : 999;
+    const score = (exactName ? 2000 : namesRelated(scene?.name, journal?.name) ? 900 : 0) +
+      (normalizeComparableName(folderName) === target ? 1200 : namesRelated(scene?.name, folderName) ? 1000 : 0) +
+      (roomNumber === '1' ? 300 : roomNumber ? Math.max(0, 100 - numericOrder) : 0);
+    return [{ journal, page, exactName, score, numericOrder }];
+  }).sort((left, right) => right.score - left.score || left.numericOrder - right.numericOrder);
 
-  const pages = related.pages?.contents ?? [];
-  const page = pages.find((entry) => Boolean(extractStructuredReadAloud(entry, scene?.name)))
-    ?? pages.find((entry) => namesRelated(scene?.name, entry?.name) && Boolean(extractFirstReadAloud(entry)))
-    ?? pages.find((entry) => Boolean(extractFirstReadAloud(entry)))
-    ?? null;
+  const selected = matches[0] ?? null;
+  if (!selected && !related) return null;
+  const journal = selected?.journal ?? related;
+  const page = selected?.page ?? null;
+  const exactName = selected?.exactName ?? Boolean(exact);
+  const folderMatch = namesRelated(scene?.name, journalFolderName(journal));
 
   console.log('[Mestre Orc] Journal localizado diretamente no diretório', {
     scene: scene?.name ?? null,
-    journal: related.name,
+    journal: journal.name,
     page: page?.name ?? null,
-    exactName: Boolean(exact)
+    folder: journalFolderName(journal) || null,
+    exactName,
+    usedNumberedEntry: Boolean(leadingRoomNumber(journal?.name))
   });
 
   return {
-    journal: related,
+    journal,
     page,
     explicit: true,
-    source: exact ? 'journal-directory-exact' : 'journal-directory-related'
+    source: exactName
+      ? 'journal-directory-exact'
+      : folderMatch ? 'journal-directory-folder' : 'journal-directory-related'
   };
 }
 
@@ -426,12 +690,12 @@ function extractStructuredReadAloud(page, sceneName) {
   const startingArea = findStartingArea(sceneSection);
   if (!startingArea) return null;
 
-  const readAloud = startingArea.querySelector('.ve-rd__b-inset--readaloud');
-  const content = stripHtml(readAloud?.innerHTML ?? '');
+  const readAloud = findReadAloudElement(startingArea, { allowBlockquote: true });
+  const content = readAloudElementContent(readAloud);
   if (!content) return null;
 
   return {
-    content: content.slice(0, 5000),
+    content,
     sceneSectionName: String(sceneSection.dataset?.rollNameAncestor ?? '').trim(),
     areaName: String(startingArea.dataset?.rollNameAncestor ?? '').trim(),
     extractionMode: 'STRUCTURED_READ_ALOUD'
@@ -441,20 +705,29 @@ function extractStructuredReadAloud(page, sceneName) {
 
 function extractFirstReadAloud(page) {
   const html = String(page?.text?.content ?? '');
-  if (!html) return null;
+  if (html) {
+    const container = document.createElement('div');
+    container.innerHTML = html;
+    const readAloud = findReadAloudElement(container, { allowBlockquote: true });
+    const content = readAloudElementContent(readAloud);
+    if (content) {
+      const area = readAloud.closest?.('[data-roll-name-ancestor]');
+      return {
+        content,
+        sceneSectionName: null,
+        areaName: String(area?.dataset?.rollNameAncestor ?? page?.name ?? '').trim() || null,
+        extractionMode: 'DIRECT_JOURNAL_READ_ALOUD'
+      };
+    }
+  }
 
-  const container = document.createElement('div');
-  container.innerHTML = html;
-  const readAloud = container.querySelector('.ve-rd__b-inset--readaloud');
-  const content = stripHtml(readAloud?.innerHTML ?? '');
-  if (!content) return null;
-
-  const area = readAloud.closest?.('[data-roll-name-ancestor]');
+  const markdown = markdownReadAloud(page, { pageLabel: page?.name ?? '' });
+  if (!markdown) return null;
   return {
-    content: content.slice(0, 5000),
+    content: markdown.content,
     sceneSectionName: null,
-    areaName: String(area?.dataset?.rollNameAncestor ?? page?.name ?? '').trim() || null,
-    extractionMode: 'DIRECT_JOURNAL_READ_ALOUD'
+    areaName: markdown.areaName ?? page?.name ?? null,
+    extractionMode: 'MARKDOWN_BLOCKQUOTE_READ_ALOUD'
   };
 }
 
@@ -504,40 +777,86 @@ function isTokenInsideRoomMarker(token, marker) {
 
 function extractRoomNumberFromMarker(marker) {
   const document = marker?.document ?? marker ?? {};
-  const raw = String(document.label ?? document.text ?? document.name ?? '').trim();
-  return raw.match(/\d+/)?.[0] ?? null;
+  const linkedJournal = game.journal?.get?.(document.entryId ?? document.entry?.id ?? document.entry?._id);
+  const linkedPage = linkedJournal?.pages?.get?.(document.pageId ?? document.page?.id ?? document.page?._id);
+  const labels = [
+    document.label,
+    document.text,
+    document.name,
+    marker?.tooltip?.text,
+    marker?.tooltip?.textContent,
+    marker?.label?.text,
+    marker?.label?.textContent,
+    document.page?.name,
+    document.entry?.name,
+    linkedPage?.name,
+    linkedJournal?.name,
+    marker?.page?.name,
+    marker?.entry?.name
+  ];
+  for (const value of labels) {
+    const number = String(value ?? '').match(/\d+/)?.[0] ?? null;
+    if (number) return number;
+  }
+  return null;
 }
 
-function extractRoomReadAloud(page, roomLabel) {
+function extractRoomReadAloud(page, roomLabel, journalName = '') {
   const html = String(page?.text?.content ?? '');
-  if (!html) return null;
-  const container = document.createElement('div');
-  container.innerHTML = html;
-  const areas = [...container.querySelectorAll('[data-roll-name-ancestor]')];
-  const area = areas.find((element) => labelsRelated(roomLabel, element.dataset?.rollNameAncestor));
   const pageMatchesRoom = labelsRelated(roomLabel, page?.name);
-  const readAloud = area?.querySelector('.ve-rd__b-inset--readaloud')
-    ?? (pageMatchesRoom ? container.querySelector('.ve-rd__b-inset--readaloud') : null);
-  const content = stripHtml(readAloud?.innerHTML ?? '');
-  if (!content) return null;
+  const journalMatchesRoom = labelsRelated(roomLabel, journalName);
+  if (html) {
+    const container = document.createElement('div');
+    container.innerHTML = html;
+    const areas = [...container.querySelectorAll('[data-roll-name-ancestor]')];
+    const area = areas.find((element) => labelsRelated(roomLabel, element.dataset?.rollNameAncestor));
+    const readAloud = area
+      ? findReadAloudElement(area, { allowBlockquote: true })
+      : (pageMatchesRoom || journalMatchesRoom)
+        ? findReadAloudElement(container, { allowBlockquote: true })
+        : null;
+    const content = readAloudElementContent(readAloud);
+    if (content) {
+      return {
+        content,
+        areaName: String(area?.dataset?.rollNameAncestor ?? (journalMatchesRoom ? journalName : page?.name) ?? `Sala ${roomLabel}`).trim(),
+        extractionMode: area ? 'STRUCTURED_ROOM_READ_ALOUD' : 'NUMBERED_PAGE_READ_ALOUD'
+      };
+    }
+  }
+
+  const markdown = markdownReadAloud(page, {
+    sectionLabel: roomLabel,
+    pageLabel: journalMatchesRoom ? journalName : page?.name ?? ''
+  });
+  if (!markdown) return null;
   return {
-    content: content.slice(0, 5000),
-    areaName: String(area?.dataset?.rollNameAncestor ?? page?.name ?? `Sala ${roomLabel}`).trim(),
-    extractionMode: area ? 'STRUCTURED_ROOM_READ_ALOUD' : 'NUMBERED_PAGE_READ_ALOUD'
+    content: markdown.content,
+    areaName: markdown.areaName ?? (journalMatchesRoom ? journalName : page?.name) ?? `Sala ${roomLabel}`,
+    extractionMode: 'MARKDOWN_ROOM_READ_ALOUD'
   };
 }
 
 function findJournalSourceForRoom(scene, roomNumber) {
+  const journals = game.journal?.contents ?? [];
+  const exactSceneJournal = journals.find((journal) =>
+    normalizeComparableName(journal?.name) === normalizeComparableName(scene?.name)
+  );
+  const relatedFolderId = journalFolderId(exactSceneJournal);
+  const sceneJournals = journals.filter((journal) => journalBelongsToScene(scene, journal, relatedFolderId));
+  const journalsToSearch = sceneJournals.length ? sceneJournals : journals;
   const candidates = [];
-  for (const journal of game.journal?.contents ?? []) {
+  for (const journal of journalsToSearch) {
     const sceneMatch = normalizeComparableName(journal?.name) === normalizeComparableName(scene?.name);
     const sceneRelated = sceneMatch || namesRelated(scene?.name, journal?.name);
+    const folderRelated = namesRelated(scene?.name, journalFolderName(journal));
     for (const page of journal.pages?.contents ?? []) {
-      const extracted = extractRoomReadAloud(page, roomNumber);
+      const extracted = extractRoomReadAloud(page, roomNumber, journal?.name);
       if (!extracted?.content) continue;
       const pageNumber = String(page?.name ?? '').match(/\d+/)?.[0] ?? null;
-      const score = (sceneMatch ? 1000 : sceneRelated ? 800 : 0) +
-        (pageNumber === roomNumber ? 150 : 0) +
+      const journalNumber = leadingRoomNumber(journal?.name);
+      const score = (sceneMatch ? 1200 : folderRelated ? 1000 : sceneRelated ? 800 : 0) +
+        (pageNumber === roomNumber || journalNumber === roomNumber ? 300 : 0) +
         (namesRelated(scene?.name, page?.name) ? 50 : 0);
       candidates.push({ journal, page, extracted, score });
     }
@@ -546,7 +865,9 @@ function findJournalSourceForRoom(scene, roomNumber) {
 }
 
 function visiblePlayerTokens() {
-  const tokens = canvas?.tokens?.placeables ?? [];
+  const renderedTokens = canvas?.tokens?.placeables ?? [];
+  const sceneTokens = game.scenes?.active?.tokens?.contents ?? [];
+  const tokens = renderedTokens.length ? renderedTokens : sceneTokens;
   const candidates = tokens.filter((token) => {
     const document = token.document ?? token;
     const actor = document.actor ?? token.actor;
@@ -563,6 +884,89 @@ function visiblePlayerTokens() {
     const document = token.document ?? token;
     return !document.hidden && Boolean(document.actor ?? token.actor);
   });
+}
+
+function roomMarkersForScene(scene = game.scenes?.active) {
+  const renderedMarkers = canvas?.notes?.placeables ?? [];
+  const sceneMarkers = scene?.notes?.contents ?? [];
+  const markersById = new Map();
+  for (const marker of sceneMarkers) {
+    const document = marker?.document ?? marker;
+    const id = String(document?.id ?? document?._id ?? crypto.randomUUID());
+    markersById.set(id, marker);
+  }
+  for (const marker of renderedMarkers) {
+    const document = marker?.document ?? marker;
+    const id = String(document?.id ?? document?._id ?? crypto.randomUUID());
+    // O objeto renderizado expõe tooltip/texto; o documento da Scene permanece
+    // como fallback quando o canvas ainda não completou a renderização.
+    markersById.set(id, marker);
+  }
+  return [...markersById.values()];
+}
+
+function tokenTrackingId(token) {
+  const document = token?.document ?? token ?? {};
+  return String(document.id ?? document._id ?? token?.id ?? '');
+}
+
+function roomOccupancyForToken(token, scene, markers) {
+  const tokenId = tokenTrackingId(token);
+  const marker = findRoomMarkerForToken(token, markers);
+  const roomNumber = extractRoomNumberFromMarker(marker);
+  return {
+    tokenId,
+    marker,
+    roomNumber,
+    roomKey: roomNumber ? `${scene.id}:room-${roomNumber}` : null
+  };
+}
+
+function sceneTokensForVision(scene) {
+  const tokensById = new Map();
+  for (const [index, token] of (scene?.tokens?.contents ?? []).entries()) {
+    tokensById.set(tokenTrackingId(token) || `scene-token-${index}`, token);
+  }
+  for (const [index, token] of (canvas?.tokens?.placeables ?? []).entries()) {
+    tokensById.set(tokenTrackingId(token) || `rendered-token-${index}`, token);
+  }
+  return [...tokensById.values()];
+}
+
+function serializeRoomActor(actor) {
+  return {
+    id: String(actor?.id ?? actor?._id ?? '').trim(),
+    name: String(actor?.name ?? '').trim(),
+    type: String(actor?.type ?? 'npc').trim()
+  };
+}
+
+function roomViewForToken(token, scene, markers, roomKey) {
+  const gridSize = Number(canvas?.grid?.size ?? scene?.grid?.size ?? 100) || 100;
+  const observerId = tokenTrackingId(token);
+  const candidates = sceneTokensForVision(scene).filter((candidate) =>
+    tokenTrackingId(candidate) !== observerId &&
+    roomOccupancyForToken(candidate, scene, markers).roomKey === roomKey
+  );
+  const visibleTokens = visibleTokensFrom(token, candidates, { gridSize });
+  const actorsById = new Map();
+  for (const candidate of visibleTokens) {
+    const actor = candidate?.document?.actor ?? candidate?.actor ?? null;
+    if (!actor) continue;
+    const serialized = serializeRoomActor(actor);
+    const key = serialized.id || serialized.name;
+    if (key) actorsById.set(key, serialized);
+  }
+  return {
+    visibleActors: [...actorsById.values()],
+    perception: createTokenPerception(token, visibleTokens)
+  };
+}
+
+function tokenNarrationRecipientUserIds(token) {
+  const ownerLevel = globalThis.CONST?.DOCUMENT_OWNERSHIP_LEVELS?.OWNER ?? 3;
+  const users = game.users?.contents ?? game.users ?? [];
+  return [...new Set(ownerUserIdsForToken(token, users, ownerLevel))];
 }
 
 function findRoomMarkerForToken(token, markers) {
@@ -590,95 +994,203 @@ function findRoomMarkerForToken(token, markers) {
   return ranked[0]?.distance <= gridSize * 8 ? ranked[0].marker : null;
 }
 
-function resetRoomNarrationState() {
-  roomNarrationState.active = true;
-  roomNarrationState.sessionId = null;
-  roomNarrationState.narratedRooms.clear();
-  roomNarrationState.lastRoomCheck = 0;
+function resetRoomNarrationState(sessionId = null) {
+  clearTimeout(roomCheckTimer);
+  roomCheckTimer = null;
+  stopRoomMonitor();
+  roomNarrationState.reset().activate(sessionId);
+}
+
+function stopRoomMonitor() {
+  clearTimeout(roomMonitorTimer);
+  roomMonitorTimer = null;
+}
+
+function startRoomMonitor() {
+  stopRoomMonitor();
+  if (!roomNarrationState.active || !game.user?.isGM) return;
+  roomMonitorTimer = setTimeout(async () => {
+    try {
+      await checkRoomTransitions();
+    } finally {
+      if (roomNarrationState.active) startRoomMonitor();
+    }
+  }, ROOM_MONITOR_INTERVAL_MS);
+}
+
+function primeRoomOccupancy() {
+  if (!game.user?.isGM || !roomNarrationState.active || !game.scenes?.active) return false;
+  const scene = game.scenes.active;
+  const tokens = visiblePlayerTokens();
+  const markers = roomMarkersForScene(scene);
+  const detectedRoomNumbers = markers.map(extractRoomNumberFromMarker).filter(Boolean);
+  const occupancies = tokens
+    .map((token) => roomOccupancyForToken(token, scene, markers))
+    .filter((entry) => entry.tokenId && entry.roomKey);
+  roomNarrationState.prime(scene.id, occupancies);
+  console.log('[Mestre Orc][Room] posição inicial registrada sem narração duplicada', {
+    sceneId: scene.id,
+    tokens: tokens.length,
+    markers: markers.length,
+    occupancies: occupancies.map((entry) => ({ tokenId: entry.tokenId, roomNumber: entry.roomNumber }))
+  });
+  if (!tokens.length) {
+    ui.notifications?.warn?.('Mestre Orc: nenhum token de personagem foi encontrado na cena ativa.');
+  } else if (!detectedRoomNumbers.length) {
+    ui.notifications?.warn?.('Mestre Orc: nenhum marcador numerado foi reconhecido na cena ativa.');
+  } else if (!occupancies.length) {
+    ui.notifications?.warn?.('Mestre Orc: os marcadores foram encontrados, mas nenhum token está próximo de uma sala numerada.');
+  }
+  startRoomMonitor();
+  return true;
 }
 
 async function synchronizeRoomSessionState() {
   if (!game.user?.isGM) return false;
   const status = await request('/v1/session/status').catch(() => null);
   const active = status?.state === 'COLLECTING_ACTIONS' && Boolean(status.sessionId);
-  roomNarrationState.active = active;
-  roomNarrationState.sessionId = active ? status.sessionId : null;
+  if (active) resetRoomNarrationState(status.sessionId);
+  else {
+    stopRoomMonitor();
+    roomNarrationState.reset();
+  }
   if (active) {
-    console.info('[Mestre Orc][Room] sessão ativa recuperada automaticamente', {
+    console.log('[Mestre Orc][Room] sessão ativa recuperada automaticamente', {
       sessionId: status.sessionId,
       sceneId: status.sceneId ?? null
     });
-    scheduleRoomCheck();
+    primeRoomOccupancy();
   }
   return active;
 }
 
 async function checkRoomTransitions() {
-  if (!game.user?.isGM || !roomNarrationState.active || !game.scenes?.active) return;
+  if (!game.user?.isGM || !roomNarrationState.active || !game.scenes?.active || roomNarrationState.checking) return;
   const now = Date.now();
   if (now - roomNarrationState.lastRoomCheck < 1000) return;
   roomNarrationState.lastRoomCheck = now;
-
-  const scene = game.scenes.active;
-  const tokens = visiblePlayerTokens();
-  const roomMarkers = canvas?.notes?.placeables ?? scene.notes?.contents ?? [];
-  console.info('[Mestre Orc][Room] verificando transição', {
-    sceneId: scene.id,
-    playerTokens: tokens.length,
-    numberedRooms: roomMarkers.filter((marker) => extractRoomNumberFromMarker(marker)).length,
-    sessionId: roomNarrationState.sessionId
-  });
-  for (const token of tokens) {
-    const roomMarker = findRoomMarkerForToken(token, roomMarkers);
-    if (!roomMarker) continue;
-    const roomNumber = extractRoomNumberFromMarker(roomMarker);
-    if (!roomNumber) continue;
-    const roomKey = `${scene.id}:room-${roomNumber}`;
-    if (roomNarrationState.narratedRooms.has(roomKey)) continue;
-
-    const journalSource = findJournalSourceForRoom(scene, roomNumber);
-    if (!journalSource) {
-      console.warn('[Mestre Orc][Room] sala numerada sem seção correspondente no Journal', {
-        roomNumber,
-        scene: scene.name
-      });
-      continue;
+  roomNarrationState.checking = true;
+  try {
+    const scene = game.scenes.active;
+    if (!roomNarrationState.primed || roomNarrationState.sceneId !== String(scene.id)) {
+      primeRoomOccupancy();
+      return;
     }
-    const { journal, page, extracted } = journalSource;
-    const roomName = extracted.areaName || `Sala ${roomNumber}`;
 
-    const visibleActors = visiblePlayerTokens()
-      .filter((entry) => entry.document?.actor ?? entry.actor)
-      .map((entry) => serializeActor(entry.document?.actor ?? entry.actor));
-    const snapshot = {
-      room: { id: roomKey, name: roomName },
-      source: {
-        canonicalAnchor: true,
-        text: extracted.content,
-        type: 'ROOM_READ_ALOUD',
-        extractionMode: extracted.extractionMode
-      },
-      scene: { id: scene.id, name: scene.name, description: stripHtml(scene.description ?? '') },
-      campaign: { worldId: game.world?.id ?? '', title: game.world?.title ?? '' },
-      visibleActors
-    };
+    const tokens = visiblePlayerTokens();
+    const roomMarkers = roomMarkersForScene(scene);
+    const detectedRoomNumbers = roomMarkers.map(extractRoomNumberFromMarker).filter(Boolean);
+    console.log('[Mestre Orc][Room] verificando transição', {
+      sceneId: scene.id,
+      playerTokens: tokens.length,
+      numberedRooms: detectedRoomNumbers.length,
+      roomNumbers: [...new Set(detectedRoomNumbers)],
+      sessionId: roomNarrationState.sessionId
+    });
 
-    try {
-      const result = await request('/v1/session/room-entry', { method: 'POST', body: JSON.stringify(snapshot) });
-      roomNarrationState.narratedRooms.add(roomKey);
-      await ChatMessage.create({ speaker: { alias: 'Mestre Orc' }, content: narrationHtml(result.opening) });
-      publishNarrationAudio(result.audio, result.opening, scene.id);
-      console.info('[Mestre Orc][Room] transição narrada', {
-        roomNumber,
-        roomName,
-        journal: journal.name,
-        page: page.name
+    for (const token of tokens) {
+      const occupancy = roomOccupancyForToken(token, scene, roomMarkers);
+      const observation = roomNarrationState.observe(occupancy.tokenId, occupancy.roomKey);
+      if (!observation.entered || !observation.shouldNarrate || !occupancy.roomNumber) continue;
+      if (!roomNarrationState.begin(observation.entryKey)) continue;
+
+      console.log('[Mestre Orc][Room] entrada em nova sala detectada', {
+        tokenId: occupancy.tokenId,
+        previousRoom: observation.previous,
+        roomNumber: occupancy.roomNumber,
+        roomKey: occupancy.roomKey,
+        entryKey: observation.entryKey
       });
-    } catch (error) {
-      console.error('[Mestre Orc][Room] falha ao narrar transição', { roomKey, error });
-      ui.notifications?.warn?.(`Mestre Orc: não foi possível narrar a sala ${roomNumber}.`);
+
+      const journalSource = findJournalSourceForRoom(scene, occupancy.roomNumber);
+      if (!journalSource) {
+        roomNarrationState.fail(observation.entryKey);
+        console.warn('[Mestre Orc][Room] sala detectada, mas sem read-aloud correspondente', {
+          roomNumber: occupancy.roomNumber,
+          scene: scene.name
+        });
+        ui.notifications?.warn?.(`Mestre Orc: sala ${occupancy.roomNumber} detectada, mas o read-aloud correspondente não foi encontrado.`);
+        continue;
+      }
+      const { journal, page, extracted } = journalSource;
+      const roomName = extracted.areaName || `Sala ${occupancy.roomNumber}`;
+      const recipientUserIds = tokenNarrationRecipientUserIds(token);
+      const { visibleActors, perception } = roomViewForToken(
+        token,
+        scene,
+        roomMarkers,
+        occupancy.roomKey
+      );
+      if (!recipientUserIds.length) {
+        roomNarrationState.fail(observation.entryKey);
+        console.warn('[Mestre Orc][Room] nenhum jogador OWNER encontrado para o token que entrou', {
+          roomNumber: occupancy.roomNumber,
+          tokenId: occupancy.tokenId
+        });
+        ui.notifications?.warn?.(`Mestre Orc: sala ${occupancy.roomNumber} detectada, mas o token não possui dono ativo para receber o sussurro e o áudio.`);
+        continue;
+      }
+      const publicationKey = `room:${roomNarrationState.sessionId}:${occupancy.roomKey}:token:${occupancy.tokenId}`;
+      const snapshot = {
+        eventId: publicationKey,
+        room: { id: occupancy.roomKey, name: roomName },
+        source: {
+          canonicalAnchor: true,
+          text: extracted.content,
+          type: 'ROOM_READ_ALOUD',
+          extractionMode: extracted.extractionMode
+        },
+        scene: { id: scene.id, name: scene.name, description: stripHtml(scene.description ?? '') },
+        campaign: { worldId: game.world?.id ?? '', title: game.world?.title ?? '' },
+        visibleActors,
+        narrationExclusions: { actorNames: sceneActorNames(scene) },
+        perception
+      };
+
+      try {
+        const result = await request('/v1/session/room-entry', { method: 'POST', body: JSON.stringify(snapshot) });
+        if (result.duplicate) {
+          roomNarrationState.complete(observation.entryKey);
+          console.log('[Mestre Orc][Room] requisição duplicada bloqueada pelo Engine', {
+            roomNumber: occupancy.roomNumber,
+            roomKey: occupancy.roomKey,
+            tokenId: occupancy.tokenId
+          });
+          break;
+        }
+        await publishNarrationChat(result.opening, publicationKey, recipientUserIds);
+        publishNarrationAudio(
+          result.audio,
+          result.opening,
+          scene.id,
+          publicationKey,
+          recipientUserIds
+        );
+        roomNarrationState.complete(observation.entryKey);
+        console.log('[Mestre Orc][Room] transição narrada', {
+          roomNumber: occupancy.roomNumber,
+          roomName,
+          journal: journal.name,
+          page: page.name,
+          tokenId: occupancy.tokenId,
+          recipientUserIds,
+          perceptionMode: perception.mode,
+          visionSource: perception.sourceKind,
+          visibleActorCount: visibleActors.length
+        });
+      } catch (error) {
+        roomNarrationState.fail(observation.entryKey);
+        console.error('[Mestre Orc][Room] falha ao narrar transição', {
+          roomKey: occupancy.roomKey,
+          tokenId: occupancy.tokenId,
+          error
+        });
+        ui.notifications?.warn?.(`Mestre Orc: não foi possível narrar a sala ${occupancy.roomNumber}.`);
+      }
+      break;
     }
-    break;
+  } finally {
+    roomNarrationState.checking = false;
   }
 }
 
@@ -690,16 +1202,32 @@ function scheduleRoomCheck() {
 }
 
 function installRoomTracking() {
-  Hooks.on('updateToken', () => {
+  Hooks.on('updateToken', (document, changes = {}) => {
     // Executa somente no cliente do GM, independentemente de quem moveu o token.
     if (!game.user?.isGM) return;
+    if ('x' in changes || 'y' in changes) {
+      console.log('[Mestre Orc][Room] movimento de token recebido', {
+        tokenId: document?.id ?? document?._id ?? null,
+        x: changes.x ?? document?.x ?? null,
+        y: changes.y ?? document?.y ?? null
+      });
+    }
     scheduleRoomCheck();
   });
   Hooks.on('createToken', scheduleRoomCheck);
-  Hooks.on('deleteToken', scheduleRoomCheck);
-  Hooks.on('updateNote', scheduleRoomCheck);
+  Hooks.on('deleteToken', (document) => {
+    roomNarrationState.tokenRooms.delete(String(document?.id ?? document?._id ?? ''));
+    scheduleRoomCheck();
+  });
+  Hooks.on('updateNote', () => {
+    roomNarrationState.primed = false;
+    scheduleRoomCheck();
+  });
   Hooks.on('renderScene', scheduleRoomCheck);
-  Hooks.on('canvasReady', scheduleRoomCheck);
+  Hooks.on('canvasReady', () => {
+    roomNarrationState.primed = false;
+    scheduleRoomCheck();
+  });
   Hooks.on('onConflictResolution', scheduleRoomCheck);
 }
 
@@ -714,8 +1242,23 @@ async function ensureSessionActive() {
 }
 
 function messageAuthorIsGm(message) {
-  const user = message?.user ?? game.users?.get?.(message?.userId ?? message?.author?.id);
+  const candidate = message?.user ?? message?.author;
+  const user = candidate && typeof candidate === 'object'
+    ? candidate
+    : game.users?.get?.(candidate ?? message?.userId ?? message?.author?.id);
   return Boolean(user?.isGM);
+}
+
+function claimPlayerActionContent(content) {
+  const fingerprint = stableTextFingerprint(content);
+  const now = Date.now();
+  for (const [key, timestamp] of recentActionFingerprints) {
+    if (now - timestamp >= ACTION_DEDUPE_WINDOW_MS) recentActionFingerprints.delete(key);
+  }
+  const previous = recentActionFingerprints.get(fingerprint) ?? 0;
+  if (now - previous < ACTION_DEDUPE_WINDOW_MS) return false;
+  recentActionFingerprints.set(fingerprint, now);
+  return true;
 }
 
 async function processPlayerActionMessage(message) {
@@ -724,7 +1267,20 @@ async function processPlayerActionMessage(message) {
   if (messageId && processedActionMessages.has(messageId)) return;
   if (message.speaker?.alias === 'Mestre Orc' || messageAuthorIsGm(message)) return;
   const content = stripHtml(message.content ?? '').trim();
+  const rejectionReason = actionMessageRejectionReason(message, content);
+  const chatStyles = globalThis.CONST?.CHAT_MESSAGE_STYLES ?? globalThis.CONST?.CHAT_MESSAGE_TYPES ?? {};
+  if (rejectionReason || !isSupportedPlayerChatStyle(message, chatStyles)) {
+    console.debug('[Mestre Orc][Action] mensagem automática ignorada', {
+      messageId: messageId || null,
+      reason: rejectionReason ?? 'UNSUPPORTED_CHAT_STYLE'
+    });
+    return;
+  }
   if (content.length < 2 || content.startsWith('/')) return;
+  if (!claimPlayerActionContent(content)) {
+    console.debug('[Mestre Orc][Action] conteúdo repetido ignorado', { messageId: messageId || null });
+    return;
+  }
 
   const now = Date.now();
   if (now - lastPlayerActionAt < 500) return;
@@ -736,16 +1292,23 @@ async function processPlayerActionMessage(message) {
   }
 
   try {
+    const eventId = `chat:${messageId || stableTextFingerprint(content)}`;
     const result = await request('/v1/session/action', {
       method: 'POST',
       body: JSON.stringify({
         content,
-        actorId: message.speaker?.actor ?? message.speaker?.token ?? message.speaker?.id ?? null
+        actorId: message.speaker?.actor ?? message.speaker?.token ?? message.speaker?.id ?? null,
+        eventId
       })
     });
+    if (result?.duplicate) {
+      console.log('[Mestre Orc][Action] requisição duplicada bloqueada pelo Engine', { eventId });
+      return;
+    }
     if (!result?.narration) return;
-    await ChatMessage.create({ speaker: { alias: 'Mestre Orc' }, content: narrationHtml(result.narration) });
-    publishNarrationAudio(result.audio, result.narration, game.scenes?.active?.id ?? null);
+    const actionPublicationKey = `action:${roomNarrationState.sessionId}:${eventId}`;
+    await publishNarrationChat(result.narration, actionPublicationKey);
+    publishNarrationAudio(result.audio, result.narration, game.scenes?.active?.id ?? null, actionPublicationKey);
   } catch (error) {
     console.error(`${MODULE_ID} | falha ao processar ação`, error);
     ui.notifications?.warn?.('Mestre Orc: não foi possível processar a ação do jogador.');
@@ -758,16 +1321,6 @@ function installPlayerActionHook() {
 
   // Hook confiável no cliente do GM para mensagens criadas por qualquer jogador.
   Hooks.on('createChatMessage', (message) => void processPlayerActionMessage(message));
-
-  // Compatibilidade com instalações que encaminham o hook de composição ao GM.
-  Hooks.on('chatMessage', (_chatLog, rawMessage, chatData = {}) => {
-    if (typeof rawMessage !== 'string') return;
-    void processPlayerActionMessage({
-      content: rawMessage,
-      speaker: chatData.speaker ?? {},
-      user: game.user
-    });
-  });
 }
 
 function extractSceneSectionFromPage(page, sceneName) {
@@ -855,15 +1408,35 @@ function serializeJournalReference(journal, page, scene, { explicit = false, sou
   };
 }
 
-function serializeActor(actor) {
-  return {
-    id: actor.id,
-    uuid: actor.uuid,
-    name: actor.name,
-    type: actor.type,
-    system: actor.system ?? {},
-    flags: actor.flags ?? {}
-  };
+function openingActorsForScene(scene, sceneJournal) {
+  const openingRoomNumber = leadingRoomNumber(sceneJournal?.selectedPage?.areaName)
+    ?? leadingRoomNumber(sceneJournal?.selectedPage?.name);
+  if (!openingRoomNumber) return [];
+
+  const markers = roomMarkersForScene(scene);
+  const actorsById = new Map();
+  for (const token of sceneTokensForVision(scene)) {
+    const document = token?.document ?? token ?? {};
+    const actor = document.actor ?? token?.actor ?? null;
+    if (document.hidden || !actor) continue;
+    const occupancy = roomOccupancyForToken(token, scene, markers);
+    if (occupancy.roomNumber !== openingRoomNumber) continue;
+    const serialized = serializeRoomActor(actor);
+    const key = serialized.id || serialized.name;
+    if (key) actorsById.set(key, serialized);
+  }
+  return [...actorsById.values()];
+}
+
+function sceneActorNames(scene) {
+  const names = new Set();
+  for (const token of sceneTokensForVision(scene)) {
+    const document = token?.document ?? token ?? {};
+    const actor = document.actor ?? token?.actor ?? null;
+    const name = String(actor?.name ?? '').trim();
+    if (name) names.add(name);
+  }
+  return [...names];
 }
 
 async function collectSnapshot() {
@@ -871,15 +1444,9 @@ async function collectSnapshot() {
   if (!scene) throw new Error('Ative uma cena antes de iniciar a sessão.');
 
   const { journal, page, explicit, source } = await findSceneJournalReference(scene);
-  const visibleActors = [];
-  const seen = new Set();
-  for (const token of scene.tokens?.contents ?? []) {
-    if (token.hidden || !token.actor || seen.has(token.actor.id)) continue;
-    seen.add(token.actor.id);
-    visibleActors.push(serializeActor(token.actor));
-  }
-
   const sceneJournal = serializeJournalReference(journal, page, scene, { explicit, source });
+  const visibleActors = openingActorsForScene(scene, sceneJournal);
+  const excludedActorNames = sceneActorNames(scene);
   if (!sceneJournal?.selectedPage?.content && !stripHtml(scene.description ?? '')) {
     throw new Error('Journal localizado, mas nenhuma caixa read-aloud segura foi encontrada para a cena ativa.');
   }
@@ -889,6 +1456,8 @@ async function collectSnapshot() {
     page: sceneJournal?.selectedPage?.name ?? null,
     sceneSection: sceneJournal?.selectedPage?.sceneSectionName ?? null,
     area: sceneJournal?.selectedPage?.areaName ?? null,
+    actorsInOpeningRoom: visibleActors.length,
+    excludedSceneActorNames: excludedActorNames.length,
     extractionMode: sceneJournal?.selectedPage?.extractionMode ?? null,
     contentPreview: sceneJournal?.selectedPage?.content?.slice(0, 180) ?? ''
   });
@@ -909,6 +1478,7 @@ async function collectSnapshot() {
       systemVersion: game.system?.version ?? ''
     },
     visibleActors,
+    narrationExclusions: { actorNames: excludedActorNames },
     sceneJournal
   };
 }
@@ -930,6 +1500,39 @@ function narrationHtml(text) {
     .join('');
 }
 
+async function publishNarrationChat(text, publicationKey = '', recipientUserIds = null) {
+  const content = String(text ?? '').trim();
+  if (!content) return false;
+  const recipients = normalizeRecipientUserIds(recipientUserIds);
+  if (recipients !== null && !recipients.length) {
+    console.warn('[Mestre Orc][Chat] sussurro descartado porque não há destinatários', { publicationKey });
+    return false;
+  }
+  const key = String(publicationKey ?? '').trim();
+  if (key && (publishedNarrationKeys.has(key) || !claimBrowserPublication('chat-publication', key))) {
+    console.info('[Mestre Orc][Chat] publicação duplicada bloqueada', { key });
+    return false;
+  }
+  if (key) {
+    publishedNarrationKeys.add(key);
+    if (publishedNarrationKeys.size > 500) {
+      publishedNarrationKeys.delete(publishedNarrationKeys.values().next().value);
+    }
+  }
+  try {
+    const messageData = { speaker: { alias: 'Mestre Orc' }, content: narrationHtml(content) };
+    if (recipients !== null) messageData.whisper = recipients;
+    await ChatMessage.create(messageData);
+    return true;
+  } catch (error) {
+    if (key) {
+      publishedNarrationKeys.delete(key);
+      releaseBrowserPublication('chat-publication', key);
+    }
+    throw error;
+  }
+}
+
 async function startSession(button) {
   if (startInFlight) return;
   startInFlight = true;
@@ -943,11 +1546,10 @@ async function startSession(button) {
 
     const currentStatus = await request('/v1/session/status').catch(() => null);
     if (currentStatus?.state === 'COLLECTING_ACTIONS' && currentStatus.sessionId) {
-      resetRoomNarrationState();
-      roomNarrationState.sessionId = currentStatus.sessionId;
+      resetRoomNarrationState(currentStatus.sessionId);
+      primeRoomOccupancy();
       if (button) button.innerHTML = '<i class="fa-solid fa-circle-check"></i><span>Sessão reconectada</span>';
       ui.notifications.info('Mestre Orc: sessão existente reconectada.');
-      void checkRoomTransitions();
       setTimeout(() => {
         if (button?.isConnected) { button.innerHTML = original; button.disabled = false; }
         startInFlight = false;
@@ -965,13 +1567,15 @@ async function startSession(button) {
       body: JSON.stringify({ snapshot })
     });
 
-    await ChatMessage.create({
-      speaker: { alias: 'Mestre Orc' },
-      content: narrationHtml(result.opening)
-    });
-    publishNarrationAudio(result.audio, result.opening, snapshot.activeScene?.id ?? null);
     roomNarrationState.sessionId = result.sessionId ?? null;
-    void checkRoomTransitions();
+    await publishNarrationChat(result.opening, `opening:${result.sessionId ?? 'unknown'}`);
+    publishNarrationAudio(
+      result.audio,
+      result.opening,
+      snapshot.activeScene?.id ?? null,
+      `opening:${result.sessionId ?? 'unknown'}`
+    );
+    primeRoomOccupancy();
     if (button) button.innerHTML = '<i class="fa-solid fa-circle-check"></i><span>Sessão iniciada</span>';
     ui.notifications.info('Mestre Orc: abertura publicada no chat.');
     if (button) {
@@ -983,6 +1587,8 @@ async function startSession(button) {
       startInFlight = false;
     }
   } catch (error) {
+    stopRoomMonitor();
+    roomNarrationState.reset();
     console.error(`${MODULE_ID} | falha ao iniciar`, error);
     ui.notifications.error(`Mestre Orc: ${error.message}`);
     if (button?.isConnected) {
@@ -1051,7 +1657,7 @@ function scheduleInjection(root) {
 }
 
 
-console.log('[Mestre Orc] main.js carregado');
+console.log('[Mestre Orc] main.js carregado', { version: MODULE_BUILD });
 
 Hooks.on('getSceneControlButtons', (controls) => {
   try {
@@ -1093,6 +1699,11 @@ Hooks.once('init', () => {
   }
 });
 Hooks.once('ready', () => {
+  console.log('[Mestre Orc] módulo pronto', {
+    build: MODULE_BUILD,
+    installedVersion: game.modules?.get?.(MODULE_ID)?.version ?? null
+  });
+  ui.notifications?.info?.(`Mestre Orc ${MODULE_BUILD} carregado.`);
   installAudioSocket();
   scheduleInjection(document);
   void synchronizeRoomSessionState();

@@ -15,6 +15,7 @@ function createInputApi(initial = {}) {
     async getActiveScene() { return snapshot.activeScene ?? snapshot.scene ?? null; },
     async getCampaignMetadata() { return snapshot.campaign ?? null; },
     async getVisibleActors() { return snapshot.visibleActors ?? snapshot.actors ?? []; },
+    async getNarrationExclusions() { return snapshot.narrationExclusions ?? { actorNames: [] }; },
     async getLinkedSceneJournal() { return snapshot.sceneJournal ?? snapshot.journal ?? null; }
   };
 }

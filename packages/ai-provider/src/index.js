@@ -22,8 +22,81 @@ function compactText(value, limit = 9000) {
   return text.length > limit ? `${text.slice(0, limit)}…` : text;
 }
 
+function normalizeSearchText(value) {
+  return String(value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+}
+
+const ENVIRONMENT_PROFILES = Object.freeze({
+  DUNGEON: {
+    label: 'MASMORRA, CAVERNA OU AMBIENTE SUBTERRÂNEO',
+    tone: 'sussurrado, tenso e contido, como se a voz evitasse perturbar o espaço',
+    technique: 'Use frases muito curtas nos impactos, reticências para respiração suspensa e uma pausa antes do detalhe final.',
+    markers: '[sussurro], [tenso], [medo], [pausa], [suspiro]'
+  },
+  FOREST: {
+    label: 'FLORESTA, BOSQUE OU TRILHA SELVAGEM',
+    tone: 'misterioso, atento e imersivo, capaz de mudar rapidamente de serenidade para alerta',
+    technique: 'Use travessões para mudanças bruscas de atenção, frases médias para conduzir o olhar e uma frase curta quando houver ruptura confirmada.',
+    markers: '[foco], [calmo], [hesitante], [tenso], [pausa], [grito]'
+  },
+  CITY: {
+    label: 'CIDADE, VILA, TAVERNA OU AMBIENTE SOCIAL',
+    tone: 'vibrante, caloroso e projetado, com mais fôlego e clareza',
+    technique: 'Use frases mais cheias e cadenciadas, interjeições apenas quando naturais e pausas curtas para destacar mudanças de foco.',
+    markers: '[alegre], [entusiasmado], [risada], [foco], [pausa]'
+  },
+  GENERAL: {
+    label: 'AMBIENTE GERAL',
+    tone: 'cinematográfico, humano e adaptado ao conteúdo canônico da cena',
+    technique: 'Misture frases curtas de impacto com frases médias ou longas de progressão, usando pausas apenas nos pontos dramáticos.',
+    markers: '[calmo], [foco], [tenso], [hesitante], [pausa], [suspiro]'
+  }
+});
+
+export function classifyNarrationEnvironment(context = {}) {
+  const haystack = normalizeSearchText([
+    context.scene?.name,
+    context.scene?.description,
+    context.room?.name,
+    context.source?.name,
+    context.source?.areaName,
+    context.source?.sceneSectionName,
+    context.source?.text
+  ].filter(Boolean).join(' '));
+
+  const contains = (terms) => terms.some((term) => haystack.includes(term));
+  if (contains(['masmorra', 'dungeon', 'caverna', 'gruta', 'cripta', 'catacumba', 'subterraneo', 'subsolo', 'calabouco', 'tunel', 'corredor de pedra', 'ruina subterranea'])) {
+    return { id: 'DUNGEON', ...ENVIRONMENT_PROFILES.DUNGEON };
+  }
+  if (contains(['floresta', 'bosque', 'mata', 'selva', 'arvore', 'trilha selvagem', 'clareira', 'vegetacao cerrada'])) {
+    return { id: 'FOREST', ...ENVIRONMENT_PROFILES.FOREST };
+  }
+  if (contains(['taverna', 'taberna', 'estalagem', 'cidade', 'vila', 'mercado', 'praca', 'rua', 'beco', 'porto', 'salao', 'hidromel'])) {
+    return { id: 'CITY', ...ENVIRONMENT_PROFILES.CITY };
+  }
+  return { id: 'GENERAL', ...ENVIRONMENT_PROFILES.GENERAL };
+}
+
+function expressiveScriptInstructions(context) {
+  const environment = classifyNarrationEnvironment(context);
+  return [
+    'ROTEIRO DE VOZ EXPRESSIVA:',
+    `Perfil detectado: ${environment.label}.`,
+    `Interpretação vocal: ${environment.tone}.`,
+    `Técnica de pontuação: ${environment.technique}`,
+    `Marcações permitidas para este perfil: ${environment.markers}.`,
+    'Insira de 2 a 5 marcações entre colchetes, imediatamente antes do trecho cuja interpretação elas orientam.',
+    'As marcações não são falas nem fatos da cena. Elas controlam respiração, ritmo e entonação; não use uma marcação para justificar a invenção de ameaça, som, criatura ou emoção dos personagens.',
+    'Use [pausa] com moderação. Reticências, travessões e quebras de parágrafo devem produzir hesitação ou mudança de foco de modo natural.',
+    'Varie claramente o ritmo: combine ao menos uma frase curta e impactante com uma frase mais longa e cadenciada.',
+    'Nunca explique as marcações e nunca escreva cabeçalhos no texto final.'
+  ].join('\n');
+}
+
 function openingPrompt(context) {
-  const actors = (context.visibleActors ?? []).map((actor) => actor.name).filter(Boolean).slice(0, 8);
   const plan = context.narrativePlan ?? {};
   const previous = (context.novelty?.avoidOpenings ?? [])
     .map((entry, index) => {
@@ -35,17 +108,28 @@ function openingPrompt(context) {
   return [
     'Você é o narrador cinematográfico de uma mesa de RPG e está abrindo a sessão na cena ativa.',
     'O texto-fonte é uma âncora canônica: extraia seus fatos observáveis, interprete-os e reescreva a cena com clareza e atmosfera.',
+    '',
+    'VOZ HUMANA E CINEMATOGRÁFICA:',
+    'Escreva como um mestre experiente falando ao vivo: fluido, evocativo e natural, nunca como relatório, resumo técnico ou lista de objetos.',
+    'Construa a cena em três movimentos conectados: uma imagem inicial forte, uma progressão espacial ou sensorial e um detalhe final que sustente a expectativa.',
+    'A emoção deve nascer da cadência, das pausas, do contraste, da escala e da ordem de revelação. Não diga que “há tensão” e não informe o que os jogadores sentem.',
+    'Prefira verbos concretos e ativos para o próprio cenário. Varie deliberadamente o tamanho das frases: uma curta para impacto, outra mais ampla para conduzir o olhar.',
+    'Use uma metáfora curta somente quando ela reformular um fato visível, sem sugerir ameaça, história ou segredo oculto.',
+    '',
+    expressiveScriptInstructions(context),
+    '',
+    'FIDELIDADE E SEGURANÇA:',
     'NÃO traduza literalmente, NÃO copie frases e NÃO mantenha a mesma ordem de ideias do texto-fonte.',
     'Preserve os fatos visíveis e descreva cada elemento canônico apenas uma vez.',
-    'Só acrescente consequências sensoriais diretas do que já está confirmado, como o som natural da água ou a escuridão de uma abertura.',
+    'Só acrescente consequências sensoriais inevitáveis do que já está confirmado, como o som natural de água em movimento ou a perda de detalhe onde a luz realmente termina.',
     'Não invente chuva, vento, névoa, musgo, aromas, pegadas, vozes, presságios, história do lugar, ameaças, segredos ou mistérios não confirmados.',
     'Não use frases especulativas como “como se”, “parece esconder”, “sensação de que” ou “algo importante”.',
     'Não invente inimigos visíveis, armadilhas, tesouros, sangue, cadáveres, magia, rastros ou acontecimentos futuros.',
     'Não revele informações de condução, estatísticas, segredos, áreas futuras ou pensamentos de NPCs.',
     'Não controle falas, emoções, decisões, olhares, expectativas ou ações dos personagens jogadores.',
-    'Quando houver atores visíveis, mencione seus nomes no máximo uma vez e apenas para registrar que estão presentes no local.',
+    'A abertura descreve somente o ambiente. Não cite nomes de tokens, personagens jogadores, membros do grupo ou atores da Scene.',
     'É proibido mencionar livro, aventura, capítulo, Journal, Scene, Foundry, sistema, mestre, instruções ou material-fonte.',
-    'Escreva apenas a narração que os jogadores ouvirão, em português do Brasil.',
+    'Escreva apenas a narração que os jogadores ouvirão, em português do Brasil, com oralidade elegante e sem linguagem rebuscada demais.',
     'Produza 2 ou 3 parágrafos, entre 80 e 150 palavras antes da pergunta final.',
     'Termine exatamente com: O que vocês fazem?',
     '',
@@ -72,29 +156,83 @@ function openingPrompt(context) {
     `Nome da cena: ${context.scene?.name ?? 'sem nome'}`,
     `Área: ${context.source?.areaName ?? context.source?.sceneSectionName ?? 'não identificada'}`,
     `Descrição própria da cena: ${compactText(context.scene?.description, 1400) || 'não informada'}`,
-    `Âncora canônica (${context.source?.type ?? 'SCENE_ONLY'} — ${context.source?.name ?? 'cena'}): ${compactText(context.source?.text, 4200) || 'nenhum texto adicional seguro'}`,
-    `Atores visíveis: ${actors.length ? actors.join(', ') : 'nenhum identificado'}`
+    `Âncora canônica (${context.source?.type ?? 'SCENE_ONLY'} — ${context.source?.name ?? 'cena'}): ${compactText(context.source?.text, 4200) || 'nenhum texto adicional seguro'}`
   ].join('\n');
 }
 
 function roomEntryPrompt(context) {
-  const actors = (context.visibleActors ?? []).map((actor) => actor.name).filter(Boolean).slice(0, 8);
+  const actors = (context.visibleActors ?? [])
+    .filter((actor) => String(actor?.type ?? '').toLowerCase() !== 'character')
+    .map((actor) => actor.name)
+    .filter(Boolean)
+    .slice(0, 8);
+  const perception = context.perception ?? {};
+  const visionInstruction = perception.blinded
+    ? 'A visão do observador está bloqueada. Não descreva atores nem detalhes visuais da sala; use somente informação não visual que esteja escrita de forma explícita na âncora.'
+    : perception.visionAvailable
+      ? 'A lista de atores já foi filtrada pela fonte de visão individual do token. Somente esses atores estão comprovadamente visíveis.'
+      : 'A geometria de visão não estava disponível. Seja extremamente conservador: não mencione atores e escolha apenas um ou dois detalhes imediatos da entrada.';
+  const sensoryInstruction = perception.blinded
+    ? 'Como a visão está bloqueada, qualquer som, cheiro ou temperatura precisa estar escrito explicitamente na âncora; não derive nem complete esses detalhes.'
+    : 'Nas salas, permaneça no visual: luz, sombra, escala, distância, textura e geometria confirmadas. A emoção deve vir do modo de narrar esses fatos.';
+  const previous = (context.novelty?.avoidOpenings ?? [])
+    .map((item, index) => `DESCRIÇÃO ANTERIOR ${index + 1}: ${compactText(item.excerpt, 500)}`)
+    .join('\n');
+  const rejected = (context.quality?.rejected ?? [])
+    .map((item, index) => {
+      const corrections = [...(item.styleIssues ?? []), ...(item.hardIssues ?? []), ...(item.issues ?? [])]
+        .map((issue) => ({
+          REPORT_OPENING: 'abandone a fórmula “a sala apresenta/possui”',
+          REPORT_SPACE: 'não descreva o ambiente como relatório',
+          EXISTENCE_REPORT: 'troque “há/existe/encontra-se” por uma imagem com verbo concreto',
+          INVENTORY_LIST: 'substitua a enumeração por progressão espacial',
+          UNIFORM_SENTENCE_RHYTHM: 'altere claramente o comprimento das frases',
+          TOLD_EMOTION: 'produza emoção pela cadência em vez de nomeá-la',
+          NON_VISUAL_ROOM_DETAIL: 'remova sons, cheiros ou temperatura e permaneça no recorte visual'
+        })[issue] ?? issue);
+      return `TENTATIVA REJEITADA ${index + 1}: ${corrections.join('; ') || 'reescreva com outra estrutura'}`;
+    })
+    .join('\n');
+  const direction = context.styleDirection ?? {};
   return [
-    'Você é o narrador cinematográfico de uma mesa de RPG descrevendo a sala em que o grupo acaba de entrar.',
-    'Use a âncora canônica somente como fonte de fatos observáveis; interprete e reescreva, sem copiar frases ou a ordem original.',
-    'Não invente ameaças, inimigos, armadilhas, tesouros, acontecimentos, segredos ou detalhes não confirmados.',
+    'Narre a entrada em uma sala de RPG com a voz fluida de um mestre experiente falando ao vivo.',
+    'Escreva apenas o recorte visual que alcança esse personagem agora. Não faça um resumo da sala, uma inspeção completa nem antecipe o que existe atrás de paredes, portas, curvas ou áreas escuras.',
+    visionInstruction,
+    '',
+    'VOZ, EMOÇÃO E RITMO:',
+    'Faça o texto respirar. Construa três batidas ligadas: impacto imediato, movimento do olhar e um detalhe final que permaneça na imaginação.',
+    'Crie emoção e tensão pela escolha dos verbos, pela pausa, pelo contraste e pela ordem de revelação; nunca diga simplesmente que o lugar “é tenso” ou “causa uma sensação”.',
+    'Alterne frases curtas e médias. Use o ponto final como pausa dramática e conecte os detalhes como um movimento contínuo, não como inventário.',
+    'Dê movimento ao cenário com verbos concretos — a luz recorta, uma passagem interrompe, uma parede estreita — somente quando essa relação já estiver confirmada pela âncora.',
+    'Uma metáfora breve é permitida apenas para intensificar um fato visível. Ela não pode sugerir presença, perigo, intenção, passado ou segredo.',
+    `Tom desta tentativa: ${direction.tone ?? 'tensão contida sem declarar perigo'}.`,
+    `Entrada: ${direction.opening ?? 'comece pela imagem concreta mais forte'}.`,
+    `Progressão: ${direction.movement ?? 'conduza o olhar do primeiro plano ao fundo'}.`,
+    `Fecho: ${direction.closing ?? 'termine num detalhe visível sem interpretá-lo'}.`,
+    '',
+    expressiveScriptInstructions(context),
+    '',
+    'LIMITES CANÔNICOS:',
+    'A âncora canônica é o limite dos fatos, não uma lista a ser esgotada. Escolha poucos detalhes que estejam no campo de visão imediato e omita qualquer detalhe cuja visibilidade seja incerta.',
+    'Evite tom de relatório e fórmulas como “a sala apresenta”, “o espaço permanece”, “é possível observar”, “elementos visíveis”, “cada detalhe confirmado” ou “oferecendo uma leitura”.',
+    sensoryInstruction,
+    'Não invente sons, cheiros, temperatura, ameaças, inimigos, armadilhas, tesouros, acontecimentos, segredos ou detalhes não confirmados.',
+    'Não cite o nome do personagem observador nem de outros personagens jogadores. Só mencione um NPC ou criatura se ele estiver na lista de atores comprovadamente visíveis.',
     'Não revele estatísticas, instruções do mestre, áreas futuras ou pensamentos de NPCs.',
     'Não controle ações, emoções, falas ou decisões dos personagens jogadores.',
-    'Não mencione Journal, Note, Foundry, livro, aventura, capítulo, sistema, mestre ou material-fonte.',
-    'Escreva em português do Brasil, em 1 ou 2 parágrafos, entre 50 e 120 palavras.',
+    'Não diga que o personagem “vê”, “observa”, “nota” ou “percebe”; apresente a imagem diretamente.',
+    'Não mencione token, linha de visão, campo de visão, grade, marcador, Journal, Note, Foundry, livro, aventura, capítulo, sistema, mestre ou material-fonte.',
+    'Escreva em português do Brasil, em 1 ou 2 parágrafos curtos, entre 55 e 110 palavras, com oralidade natural e sem excesso de adjetivos.',
     'Não faça pergunta final e não termine com “O que vocês fazem?”.',
+    '',
     `Cena: ${context.scene?.name ?? 'sem nome'}`,
     `Sala: ${context.room?.name ?? 'sem nome'}`,
     `Âncora canônica: ${compactText(context.source?.text, 4200)}`,
-    `Atores presentes: ${actors.length ? actors.join(', ') : 'nenhum identificado'}`,
-    context.novelty?.avoidOpenings?.length
-      ? `Evite repetir estas descrições anteriores: ${context.novelty.avoidOpenings.map((item) => compactText(item.excerpt, 500)).join(' | ')}`
-      : 'Não há descrição anterior registrada para esta sala.'
+    `Atores comprovadamente visíveis pelo token: ${perception.visionAvailable && actors.length ? actors.join(', ') : 'nenhum'}`,
+    `Modo de percepção: ${perception.mode ?? 'CANONICAL_ONLY'}`,
+    '',
+    previous || 'Nenhuma descrição anterior registrada para esta sala.',
+    rejected || 'Nenhuma correção pendente de tentativas anteriores.'
   ].join('\n');
 }
 
@@ -119,10 +257,11 @@ export class GroqNarrativeProvider {
   }
 
   async createRoomEntry(context) {
+    const attempt = Math.max(1, Number(context.novelty?.attempt) || 1);
     return this.#requestText(roomEntryPrompt(context), {
       maxTokens: 400,
-      temperature: 0.7,
-      topP: 0.9
+      temperature: Math.min(0.91, 0.76 + attempt * 0.03),
+      topP: 0.94
     });
   }
 
@@ -133,7 +272,9 @@ export class GroqNarrativeProvider {
       : 'Nenhum NPC específico identificado.';
     const prompt = [
       'Você é o narrador de uma mesa de RPG. Narre as consequências da ação abaixo.',
-      'Seja direto e cinematográfico. Não explique regras, não refaça eventos e preserve a agência dos jogadores.',
+      'Soa como um mestre falando ao vivo: use uma consequência imediata, uma reação visível do cenário e uma imagem final clara.',
+      'Seja direto, fluido e cinematográfico. Varie o ritmo das frases, não explique regras, não refaça eventos e preserve a agência dos jogadores.',
+      expressiveScriptInstructions(context),
       'Não invente resultados mecânicos além dos dados fornecidos. Termine em um resultado ou ponto claro de decisão.',
       `Cena: ${context?.scene?.name ?? 'sem nome'}`,
       `Ação do personagem: ${intent?.content ?? 'ação não especificada'}`,
@@ -162,7 +303,7 @@ export class GroqNarrativeProvider {
         body: JSON.stringify({
           model: this.model,
           messages: [
-            { role: 'system', content: 'Você produz narração de RPG em texto natural. Nunca responda em JSON.' },
+            { role: 'system', content: 'Você produz narração oral de RPG com voz humana, fluida, evocativa e cinematográfica. Use marcações expressivas entre colchetes quando solicitado, crie emoção pela cadência sem inventar fatos e nunca responda em JSON.' },
             { role: 'user', content: prompt }
           ],
           temperature,
@@ -200,3 +341,12 @@ export function createNarrativeProviderFromEnv({ logger = console } = {}) {
   }
   return new GroqNarrativeProvider({ apiKey, model, logger });
 }
+
+export const aiProviderInternals = {
+  compactText,
+  normalizeSearchText,
+  classifyNarrationEnvironment,
+  expressiveScriptInstructions,
+  openingPrompt,
+  roomEntryPrompt
+};

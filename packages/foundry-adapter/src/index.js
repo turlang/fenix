@@ -7,6 +7,7 @@ export class FoundryAdapter {
       activeScene,
       campaign: await this.api.getCampaignMetadata?.(),
       visibleActors: await this.api.getVisibleActors?.(activeScene.id) ?? [],
+      narrationExclusions: await this.api.getNarrationExclusions?.(activeScene.id) ?? { actorNames: [] },
       sceneJournal: await this.api.getLinkedSceneJournal?.(activeScene.id) ?? null
     };
   }

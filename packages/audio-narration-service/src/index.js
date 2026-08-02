@@ -4,6 +4,16 @@ function clamp(value, minimum, maximum, fallback) {
   return Math.min(maximum, Math.max(minimum, numeric));
 }
 
+function normalizeCinematicText(value) {
+  return String(value ?? '')
+    .replace(/\r\n?/g, '\n')
+    .split('\n')
+    .map((line) => line.replace(/[ \t]+/g, ' ').trim())
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 export class AudioNarrationService {
   constructor({
     enabled = true,
@@ -25,7 +35,7 @@ export class AudioNarrationService {
 
   createDirective(text, metadata = {}) {
     if (!this.enabled) return null;
-    const normalizedText = String(text ?? '').replace(/\s+/g, ' ').trim();
+    const normalizedText = normalizeCinematicText(text);
     if (!normalizedText) return null;
 
     const directive = {
@@ -65,3 +75,5 @@ export function createAudioNarrationServiceFromEnv({ logger = console } = {}) {
     logger
   });
 }
+
+export const audioNarrationInternals = { normalizeCinematicText };

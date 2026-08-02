@@ -8,6 +8,9 @@ test('busca Journal diretamente no diretório antes de flags da Scene', async ()
   const source = await readFile(mainPath, 'utf8');
   assert.match(source, /findJournalDirectlyByScene/);
   assert.match(source, /journal-directory-exact/);
+  assert.match(source, /journal-directory-folder/);
+  assert.match(source, /journalFolderName/);
+  assert.match(source, /usedNumberedEntry/);
   assert.match(source, /DIRECT_JOURNAL_READ_ALOUD/);
   const functionIndex = source.indexOf('async function findSceneJournalReference');
   const directIndex = source.indexOf('findJournalDirectlyByScene(scene)', functionIndex);

@@ -5,6 +5,7 @@ import { createSessionRuntime } from '../packages/session-runtime/src/index.js';
 const snapshot = {
   activeScene: { id: 'scene-1', name: 'Cragmaw Hideout', description: 'Um riacho sai da caverna.' },
   visibleActors: [{ id: 'actor-1', name: 'Hurszar', type: 'character' }],
+  narrationExclusions: { actorNames: ['Hurszar'] },
   sceneJournal: {
     id: 'journal-1',
     name: 'Cragmaw Hideout',
@@ -23,7 +24,7 @@ function createNarrator() {
     async createOpening() {
       return `A trilha alcança a base de uma colina onde a vegetação cobre parte da pedra. Entre os espinheiros, uma abertura larga e escura marca a entrada da caverna. O curso da água acompanha o terreno e conduz o olhar até a passagem.
 
-Um riacho raso sai do interior e atravessa o caminho diante de Hurszar. À direita da correnteza, uma faixa de solo firme segue rente à parede rochosa antes de desaparecer na sombra. O espaço diante da entrada permite observar o local e escolher por onde avançar.`;
+Um riacho raso sai do interior e atravessa o caminho diante da caverna. À direita da correnteza, uma faixa de solo firme segue rente à parede rochosa antes de desaparecer na sombra. O espaço diante da entrada deixa nítidas as duas formas de aproximação.`;
     },
     async narrateResolution() {
       return 'A observação revela detalhes na entrada, enquanto o riacho continua correndo.';

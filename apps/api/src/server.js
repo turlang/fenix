@@ -1,4 +1,5 @@
 import Fastify from 'fastify';
+import { readFileSync } from 'node:fs';
 import { createSessionRuntime } from '../../../packages/session-runtime/src/index.js';
 import { createNarrativeProviderFromEnv } from '../../../packages/ai-provider/src/index.js';
 import { createNarrationMemoryFromEnv } from '../../../packages/narration-memory/src/index.js';
@@ -8,6 +9,7 @@ import { createConfig, isOriginAllowed, loadEnvFile } from '../../../packages/co
 
 loadEnvFile();
 const config = createConfig();
+const packageMetadata = JSON.parse(readFileSync(new URL('../../../package.json', import.meta.url), 'utf8'));
 
 const app = Fastify({ logger: true, bodyLimit: config.bodyLimit, trustProxy: config.trustProxy });
 const narrator = createNarrativeProviderFromEnv({ logger: app.log });
@@ -29,7 +31,7 @@ app.addHook('onRequest', async (request, reply) => {
 app.get('/health', { logLevel: 'silent' }, async () => ({
   status: 'ok',
   service: 'mestre-orc-engine',
-  version: '0.1.0-alpha.17',
+  version: packageMetadata.version,
   ai: narrator ? 'groq' : 'not-configured',
   narrativeMemory: 'persistent-file',
   audio: audioNarrationService.enabled ? audioNarrationService.mode : 'disabled',
@@ -61,7 +63,8 @@ app.post('/v1/session/action', {
       additionalProperties: true,
       properties: {
         content: { type: 'string', minLength: 1, maxLength: 4000 },
-        actorId: { anyOf: [{ type: 'string', maxLength: 200 }, { type: 'null' }] }
+        actorId: { anyOf: [{ type: 'string', maxLength: 200 }, { type: 'null' }] },
+        eventId: { type: 'string', minLength: 1, maxLength: 300 }
       }
     }
   }
@@ -77,6 +80,7 @@ app.post('/v1/session/room-entry', {
       required: ['room', 'source'],
       additionalProperties: false,
       properties: {
+        eventId: { type: 'string', minLength: 1, maxLength: 300 },
         room: {
           type: 'object', required: ['id', 'name'], additionalProperties: false,
           properties: { id: { type: 'string', minLength: 1, maxLength: 200 }, name: { type: 'string', minLength: 1, maxLength: 300 } }
@@ -89,7 +93,44 @@ app.post('/v1/session/room-entry', {
           }
         },
         scene: { type: 'object', additionalProperties: true },
-        visibleActors: { type: 'array', maxItems: 100, items: { type: 'object', additionalProperties: true } },
+        visibleActors: {
+          type: 'array', maxItems: 100,
+          items: {
+            type: 'object', additionalProperties: false,
+            properties: {
+              id: { type: 'string', maxLength: 200 },
+              name: { type: 'string', minLength: 1, maxLength: 300 },
+              type: { type: 'string', maxLength: 100 }
+            }
+          }
+        },
+        narrationExclusions: {
+          type: 'object', additionalProperties: false,
+          properties: {
+            actorNames: {
+              type: 'array', maxItems: 200,
+              items: { type: 'string', minLength: 1, maxLength: 300 }
+            }
+          }
+        },
+        perception: {
+          type: 'object', additionalProperties: false,
+          properties: {
+            mode: { type: 'string', enum: ['TOKEN_VISION', 'CANONICAL_ONLY'] },
+            observer: {
+              type: 'object', additionalProperties: false,
+              properties: {
+                tokenId: { type: 'string', maxLength: 200 },
+                actorId: { type: 'string', maxLength: 200 }
+              }
+            },
+            visionAvailable: { type: 'boolean' },
+            blinded: { type: 'boolean' },
+            sourceKind: { type: 'string', enum: ['LIGHT', 'FOV', 'SHAPE', 'LOS', 'NONE'] },
+            limitedToLineOfSight: { type: 'boolean' },
+            visibleActorCount: { type: 'integer', minimum: 0, maximum: 100 }
+          }
+        },
         campaign: { type: 'object', additionalProperties: true }
       }
     }
