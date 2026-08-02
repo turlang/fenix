@@ -19,6 +19,14 @@ export class NarrativeProvider {
   async narrateRound(payload) {
     return this.generateText({ purpose: 'ROUND_RESOLUTION', responseMode: 'text', ...payload });
   }
+
+  async narrateCombatTurn(payload) {
+    return this.generateText({ purpose: 'COMBAT_TURN_RESOLUTION', responseMode: 'text', ...payload });
+  }
+
+  async narrateCombatRound(payload) {
+    return this.generateText({ purpose: 'COMBAT_ROUND_SUMMARY', responseMode: 'text', ...payload });
+  }
 }
 
 function compactText(value, limit = 9000) {
@@ -332,6 +340,58 @@ export class GroqNarrativeProvider {
       'Use esta memória apenas para manter continuidade. Não revele fatos secretos, não trate lembranças como sucesso automático e não contradiga a cena atual.'
     ].join('\n');
     return this.#requestText(prompt, { maxTokens: 850, temperature: 0.68, topP: 0.92 });
+  }
+
+
+  async narrateCombatTurn({ combat = {}, turn = {}, resolutions = [], context }) {
+    const actionLines = resolutions.map((resolution, index) => {
+      const action = resolution.action ?? {};
+      const intent = resolution.intent ?? {};
+      const roll = resolution.rules?.combat?.roll ?? {};
+      const rollLine = roll.authoritative
+        ? `Rolagem confirmada pelo Foundry: total ${roll.total ?? 'não informado'}${roll.damageTotal !== null && roll.damageTotal !== undefined ? `; dano ${roll.damageTotal}${roll.damageType ? ` ${roll.damageType}` : ''}` : ''}${roll.outcome ? `; resultado ${roll.outcome}` : ''}.`
+        : 'Nenhum resultado mecânico confirmado; não determine acerto, falha, dano ou condição.';
+      return [
+        `${index + 1}. ${action.actorName ?? action.actorId ?? 'Combatente'} — ${action.economyType ?? 'ACTION'}: ${action.content ?? intent.content ?? 'ação não especificada'}`,
+        action.itemName ? `   Recurso: ${action.itemName}.` : null,
+        `   Intenção: ${intent.type ?? 'GENERAL'}; alvo: ${intent.target ?? 'não identificado'}.`,
+        `   ${rollLine}`
+      ].filter(Boolean).join('\n');
+    });
+    const prompt = [
+      `Narre brevemente o turno de combate de ${turn.actorName ?? combat.activeCombatant?.name ?? 'um combatente'}, na rodada ${turn.round ?? combat.round ?? ''}.`,
+      'Produza um ou dois parágrafos, entre 55 e 130 palavras, com ritmo rápido e linguagem cinematográfica de mesa.',
+      'Respeite rigorosamente a economia de ações informada: ação, ação bônus, movimento, ação livre e reação não podem ser confundidos.',
+      'Somente trate acerto, falha, dano, crítico, cura ou condição como confirmados quando os dados do Foundry estiverem marcados como autoritativos.',
+      'Não invente rolagens, números, alvos, deslocamentos, falas, reações ou consequências mecânicas. Preserve a agência e descreva apenas o que foi declarado ou confirmado.',
+      'Termine no estado imediato do campo de batalha, sem resumir a rodada inteira e sem fazer perguntas.',
+      expressiveScriptInstructions(context),
+      `Cena: ${context?.scene?.name ?? 'sem nome'}.`,
+      `Combate: ${combat.combatId ?? combat.id ?? 'sem id'}; turno ${turn.turn ?? combat.turn ?? 0}.`,
+      '',
+      'EVENTOS CONFIRMADOS DO TURNO:',
+      ...actionLines
+    ].join('\n');
+    return this.#requestText(prompt, { maxTokens: 480, temperature: 0.58, topP: 0.9 });
+  }
+
+  async narrateCombatRound({ combat = {}, roundNumber, turns = [], context }) {
+    const turnLines = turns.map((turn, index) => {
+      const actionSummary = (turn.actions ?? []).map((action) => `${action.economyType}: ${action.content}`).join(' | ');
+      return `${index + 1}. ${turn.actorName ?? turn.combatant?.name ?? 'Combatente'}: ${actionSummary || 'turno resolvido'} — Narração: ${compactText(turn.narration, 700)}`;
+    });
+    const prompt = [
+      `Resuma cinematograficamente a rodada ${roundNumber ?? combat.round ?? ''} de um combate de RPG.`,
+      'Use dois ou três parágrafos, entre 90 e 180 palavras. Conecte os turnos em ordem de iniciativa, destaque mudanças confirmadas e encerre no novo equilíbrio do campo.',
+      'Não repita cada turno integralmente. Não invente dano, mortes, condições, deslocamentos, recursos consumidos ou resultados que não apareçam nos registros.',
+      'Não explique regras, iniciativa ou bastidores. Preserve a agência dos personagens e mantenha tom de mestre ao vivo.',
+      expressiveScriptInstructions(context),
+      `Cena: ${context?.scene?.name ?? 'sem nome'}.`,
+      '',
+      'TURNOS RESOLVIDOS:',
+      ...turnLines
+    ].join('\n');
+    return this.#requestText(prompt, { maxTokens: 650, temperature: 0.62, topP: 0.91 });
   }
 
   async narrateResolution({ intent, rules, relationship, context }) {

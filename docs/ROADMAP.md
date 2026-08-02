@@ -41,11 +41,17 @@
 - [x] API de consulta, atualização e remoção;
 - [x] proteção de registros secretos contra vazamento na narração.
 
-## Marco 4 — Combate
-- integração com Combat Tracker;
-- resolução por turno;
-- ações, bônus e reações;
-- narração breve por turno e resumo da rodada.
+## Marco 4 — Combate ✅ — alpha.40
+- [x] integração automática com o Combat Tracker;
+- [x] sincronização de combate, rodada, turno e combatente ativo;
+- [x] economia separada de ação, ação bônus, reação, movimento e ação livre;
+- [x] substituição segura de eventos do mesmo tipo antes da resolução;
+- [x] uma reação por personagem em cada rodada;
+- [x] leitura conservadora de rolagens confirmadas pelo Foundry;
+- [x] narração breve e idempotente por turno;
+- [x] resumo cinematográfico da rodada;
+- [x] resolução automática ao avançar a iniciativa, com controles manuais do mestre;
+- [x] registro dos turnos e resumos na memória persistente.
 
 ## Fora de escopo até os marcos anteriores funcionarem
 - importação semântica de PDF/DOCX;

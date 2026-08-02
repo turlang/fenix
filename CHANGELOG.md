@@ -17,6 +17,35 @@ Este projeto segue o formato do [Keep a Changelog](https://keepachangelog.com/pt
 - Comando `npm run release:prepare` para gerar uma pasta de distribuição higienizada em `dist/`.
 - Comando `npm run check:offline` para validar estrutura e testes quando a auditoria remota do npm estiver indisponível.
 
+## [0.1.0-alpha.40] - 2026-08-02
+
+### Adicionado
+
+- `CombatService` independente para sincronizar combate, rodada, turno, combatente ativo e economia de ações.
+- Integração do módulo Foundry com os hooks `combatStart`, `updateCombat`, criação/remoção de combatentes e encerramento do combate.
+- Registro separado de ação, ação bônus, reação, movimento e ação livre, com substituição segura por slot.
+- Limite de uma reação por personagem em cada rodada.
+- Extração conservadora de item, alvos e rolagens confirmadas de mensagens do Foundry e cards do D&D 5e.
+- Narração breve por turno e resumo cinematográfico da rodada, ambos com áudio e idempotência.
+- Botões manuais **Narrar turno** e **Resumo da rodada de combate** no chat e nos controles da cena.
+- Opções para narrar automaticamente ao avançar a iniciativa e resumir automaticamente na mudança de rodada.
+- Endpoints de sincronização, ação, resolução de turno, resumo de rodada e encerramento do combate.
+- Persistência de eventos e resumos de combate na memória da campanha.
+- Testes para economia de ações, reações, referência de turno, rolagens e integração completa do runtime.
+
+### Alterado
+
+- Rodadas fora de combate ficam bloqueadas enquanto o Combat Tracker está ativo.
+- Eventos mecânicos confirmados pelo Foundry são preservados no contexto de regras; resultados não confirmados permanecem consultivos.
+- A ordem narrativa do turno passa a ser determinística: movimento, ação, ação bônus, ação livre e reação.
+
+### Segurança e confiabilidade
+
+- A API rejeita ações de outro combate ou de um turno que não seja o atual.
+- Ações comuns só podem pertencer ao combatente ativo; reações são anexadas ao turno corrente sem alterar a iniciativa.
+- Falhas de IA ou publicação não marcam o turno como resolvido e preservam seus eventos para nova tentativa.
+- O módulo não aplica dano, condições ou consumo de recursos automaticamente e não inventa resultados ausentes.
+
 ## [0.1.0-alpha.39] - 2026-08-02
 
 ### Adicionado

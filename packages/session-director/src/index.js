@@ -2,6 +2,7 @@ import { SessionState } from '../../core/src/index.js';
 import { NPCCoordinator } from '../../npc-coordinator/src/index.js';
 import { WorldStateService } from '../../world-state/src/index.js';
 import { InMemoryCampaignMemory } from '../../memory/src/index.js';
+import { CombatService } from '../../combat-service/src/index.js';
 
 function shortId(value) {
   return String(value ?? '').trim().slice(0, 200);
@@ -67,6 +68,7 @@ export class SessionDirector {
     npcCoordinator = null,
     worldStateService = null,
     campaignMemory = null,
+    combatService = null,
     audioNarrationService = null,
     foundryPublisher,
     logger = console
@@ -77,6 +79,7 @@ export class SessionDirector {
     this.npcCoordinator = npcCoordinator ?? new NPCCoordinator({ logger });
     this.worldStateService = worldStateService ?? new WorldStateService({ logger });
     this.campaignMemory = campaignMemory ?? new InMemoryCampaignMemory({ logger });
+    this.combatService = combatService ?? new CombatService({ logger });
     this.audioNarrationService = audioNarrationService;
     this.logger = logger;
     this.state = SessionState.IDLE;
@@ -111,6 +114,7 @@ export class SessionDirector {
       sceneId: this.session?.context?.scene?.id ?? null,
       campaignId: this.session?.campaignId ?? null,
       round: this.roundStatus(),
+      combat: this.combatService.status(),
       worldState: worldState ? {
         sceneId: worldState.sceneId,
         roundNumber: worldState.roundNumber,
@@ -148,6 +152,7 @@ export class SessionDirector {
     try {
       if (![SessionState.IDLE, SessionState.ENDED].includes(this.state)) throw new Error('Já existe uma sessão em andamento.');
       this.state = SessionState.SYNCING;
+      this.combatService.reset();
       const raw = await this.foundryAdapter.sync();
       const normalizedContext = this.contextBuilder.build(raw);
       const campaignId = shortId(normalizedContext.campaign?.worldId ?? normalizedContext.campaign?.id) || 'default';
@@ -185,7 +190,10 @@ export class SessionDirector {
         idempotency: {
           actions: { results: new Map(), pending: new Map() },
           rounds: { results: new Map(), pending: new Map() },
-          rooms: { results: new Map(), pending: new Map() }
+          rooms: { results: new Map(), pending: new Map() },
+          combatActions: { results: new Map(), pending: new Map() },
+          combatTurns: { results: new Map(), pending: new Map() },
+          combatRounds: { results: new Map(), pending: new Map() }
         }
       };
       this.state = SessionState.COLLECTING_ACTIONS;
@@ -196,6 +204,7 @@ export class SessionDirector {
         opening,
         audio,
         round: this.roundStatus(),
+        combat: this.combatService.status(),
         worldState: this.worldStateService.snapshot(),
         memory: this.campaignMemory.summary(memory)
       };
@@ -212,6 +221,7 @@ export class SessionDirector {
     return this.runOnce('actions', eventKey, async () => {
       try {
         if (this.state !== SessionState.COLLECTING_ACTIONS) throw new Error('Sessão não está pronta para receber ações.');
+        if (this.combatService.status().active) throw new Error('Há um combate ativo; registre a ação pelo Combat Tracker.');
         const declaration = declarationFrom(input);
         const previous = this.session.round.actionsByActor.get(declaration.actorId) ?? null;
         this.session.round.actionsByActor.set(declaration.actorId, declaration);
@@ -238,6 +248,7 @@ export class SessionDirector {
       const declarations = [...this.session.round.actionsByActor.values()]
         .sort((left, right) => left.declaredAt.localeCompare(right.declaredAt));
       if (!declarations.length) throw new Error('Nenhuma ação foi declarada nesta rodada.');
+      if (this.combatService.status().active) throw new Error('Há um combate ativo; resolva o turno pelo Combat Tracker.');
       if (this.state !== SessionState.COLLECTING_ACTIONS) throw new Error('A sessão não está pronta para resolver a rodada.');
 
       try {
@@ -331,6 +342,164 @@ export class SessionDirector {
     });
   }
 
+
+  async syncCombat(input = {}) {
+    if (!this.session) throw new Error('Inicie a sessão antes de sincronizar o combate.');
+    if (this.state !== SessionState.COLLECTING_ACTIONS) throw new Error('A sessão não está pronta para sincronizar o combate.');
+    const combat = this.combatService.sync(input);
+    return { state: this.state, sessionId: this.session.id, combat };
+  }
+
+  async processCombatAction(input = {}) {
+    if (!this.session) throw new Error('Inicie a sessão antes de registrar ações de combate.');
+    const eventKey = String(input?.eventId ?? '').trim();
+    return this.runOnce('combatActions', eventKey, async () => {
+      if (this.state !== SessionState.COLLECTING_ACTIONS) throw new Error('A sessão não está pronta para receber ações de combate.');
+      const result = this.combatService.registerAction(input);
+      return { state: this.state, sessionId: this.session.id, ...result };
+    });
+  }
+
+  async resolveCombatTurn(input = {}) {
+    if (!this.session) throw new Error('Inicie a sessão antes de resolver o turno.');
+    const status = this.combatService.status();
+    if (!status.active) throw new Error('Nenhum combate ativo foi sincronizado.');
+    const reference = {
+      combatId: input.combatId ?? status.combatId,
+      round: input.round ?? status.round,
+      turn: input.turn ?? status.turn,
+      combatantId: input.combatantId ?? status.activeCombatant?.id,
+      actorId: input.actorId ?? status.activeCombatant?.actorId,
+      actorName: input.actorName ?? status.activeCombatant?.name
+    };
+    const eventKey = String(input.eventId ?? `combat-turn:${reference.combatId}:${reference.round}:${reference.turn}:${reference.combatantId}`).trim();
+    return this.runOnce('combatTurns', eventKey, async () => {
+      const actions = this.combatService.actionsForTurn(reference);
+      if (!actions.length) throw new Error('Nenhuma ação foi registrada neste turno.');
+      const existingTurn = this.combatService.getTurn(reference);
+      if (existingTurn?.resolved) throw new Error('Este turno já foi resolvido.');
+
+      try {
+        const normalizedContext = this.contextBuilder.build({
+          ...this.session.context,
+          messages: actions.map((entry) => ({ id: entry.id, actorId: entry.actorId, content: entry.content }))
+        });
+        const context = {
+          ...normalizedContext,
+          memory: this.campaignMemory.contextForNarration(this.session.memory),
+          combat: this.combatService.status()
+        };
+        this.state = SessionState.RESOLVING;
+        const resolutions = [];
+        for (const action of actions) {
+          const declaration = {
+            id: action.id, eventId: action.eventId, actorId: action.actorId, actorName: action.actorName,
+            tokenId: action.tokenId, content: action.content, declaredAt: action.declaredAt
+          };
+          const intent = await this.intentInterpreter.interpret(declaration);
+          const rules = await this.rulesService.resolve({ intent, context });
+          rules.combat = {
+            economyType: action.economyType, itemId: action.itemId, itemName: action.itemName,
+            targetIds: action.targetIds, source: action.source, roll: action.roll
+          };
+          if (action.roll?.authoritative) {
+            rules.result.roll = { ...action.roll };
+            rules.result.authoritative = true;
+            rules.result.pendingMasterDecision = false;
+          }
+          const relationship = await this.relationshipService.resolve({ intent, context });
+          resolutions.push({ action, declaration, intent, rules, relationship });
+        }
+
+        this.state = SessionState.NARRATING;
+        const narration = await this.narrationService.narrateCombatTurn({
+          combat: this.combatService.status(),
+          turn: { ...reference, key: existingTurn?.key ?? null },
+          resolutions,
+          context
+        });
+        const audio = this.audioNarrationService?.createDirective(narration, {
+          sceneId: context.scene?.id ?? null, sessionId: this.session.id
+        }) ?? null;
+        await this.foundryPublisher.postNarration(narration);
+        const turn = this.combatService.markTurnResolved(reference, {
+          actions, resolutions, narration, audio
+        });
+        const memory = typeof this.campaignMemory.recordCombatTurn === 'function'
+          ? await this.campaignMemory.recordCombatTurn({
+              campaign: context.campaign ?? this.session.campaignId, eventId: eventKey, sessionId: this.session.id,
+              combat: this.combatService.status(), turn: reference, resolutions, narration, context,
+              worldState: this.worldStateService.snapshot()
+            })
+          : this.session.memory;
+        this.session.memory = memory;
+        this.session.context = { ...context, memory: this.campaignMemory.contextForNarration(memory) };
+        this.state = SessionState.COLLECTING_ACTIONS;
+        return {
+          state: this.state, sessionId: this.session.id, combat: this.combatService.status(),
+          resolvedTurn: reference, actions, resolutions, narration, audio, turn,
+          memory: this.campaignMemory.summary(memory)
+        };
+      } catch (error) {
+        this.state = this.session ? SessionState.COLLECTING_ACTIONS : SessionState.IDLE;
+        this.logger.error?.('[Mestre Orc][Combat] falha ao resolver turno', { message: error.message, stack: error.stack });
+        throw error;
+      }
+    });
+  }
+
+  async summarizeCombatRound(input = {}) {
+    if (!this.session) throw new Error('Inicie a sessão antes de resumir o combate.');
+    const status = this.combatService.status();
+    if (!status.active) throw new Error('Nenhum combate ativo foi sincronizado.');
+    const roundNumber = Math.max(0, Number(input.round ?? status.round) || 0);
+    const eventKey = String(input.eventId ?? `combat-round:${status.combatId}:${roundNumber}`).trim();
+    return this.runOnce('combatRounds', eventKey, async () => {
+      const turns = this.combatService.resolvedTurns(roundNumber);
+      if (!turns.length) throw new Error('Nenhum turno resolvido está disponível para resumir esta rodada.');
+      const roundStatus = this.combatService.roundStatus(roundNumber);
+      if (roundStatus.summarized) throw new Error('Esta rodada de combate já foi resumida.');
+      try {
+        const context = {
+          ...this.session.context,
+          memory: this.campaignMemory.contextForNarration(this.session.memory),
+          combat: status
+        };
+        this.state = SessionState.NARRATING;
+        const narration = await this.narrationService.narrateCombatRound({
+          combat: status, roundNumber, turns, context
+        });
+        const audio = this.audioNarrationService?.createDirective(narration, {
+          sceneId: context.scene?.id ?? null, sessionId: this.session.id
+        }) ?? null;
+        await this.foundryPublisher.postNarration(narration);
+        const summary = this.combatService.markRoundSummarized(roundNumber, { narration, audio, turnCount: turns.length });
+        const memory = typeof this.campaignMemory.recordCombatRound === 'function'
+          ? await this.campaignMemory.recordCombatRound({
+              campaign: context.campaign ?? this.session.campaignId, eventId: eventKey, sessionId: this.session.id,
+              combat: status, roundNumber, turns, narration, context, worldState: this.worldStateService.snapshot()
+            })
+          : this.session.memory;
+        this.session.memory = memory;
+        this.session.context = { ...context, memory: this.campaignMemory.contextForNarration(memory) };
+        this.state = SessionState.COLLECTING_ACTIONS;
+        return {
+          state: this.state, sessionId: this.session.id, combat: this.combatService.status(),
+          roundNumber, turns, narration, audio, summary, memory: this.campaignMemory.summary(memory)
+        };
+      } catch (error) {
+        this.state = this.session ? SessionState.COLLECTING_ACTIONS : SessionState.IDLE;
+        this.logger.error?.('[Mestre Orc][Combat] falha ao resumir rodada', { message: error.message, stack: error.stack });
+        throw error;
+      }
+    });
+  }
+
+  async endCombat() {
+    const combat = this.combatService.end();
+    return { state: this.state, sessionId: this.session?.id ?? null, combat };
+  }
+
   async describeRoom(roomContext = {}) {
     if (!this.session) throw new Error('Sessão não está pronta para narrar transições de sala.');
     const eventKey = String(roomContext.eventId ?? roomContext.room?.id ?? '').trim();
@@ -405,6 +574,7 @@ export class SessionDirector {
         worldState: this.worldStateService.snapshot()
       });
     }
+    this.combatService.reset();
     this.session = null;
     this.state = SessionState.ENDED;
     return {

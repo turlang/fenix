@@ -10,6 +10,7 @@ import { AudioNarrationService } from '../../audio-narration-service/src/index.j
 import { NPCCoordinator } from '../../npc-coordinator/src/index.js';
 import { WorldStateService } from '../../world-state/src/index.js';
 import { InMemoryCampaignMemory } from '../../memory/src/index.js';
+import { CombatService } from '../../combat-service/src/index.js';
 
 function createInputApi(initial = {}) {
   let snapshot = initial;
@@ -47,6 +48,7 @@ export function createSessionRuntime({
     relationshipService: new RelationshipService({ logger }),
     npcCoordinator: new NPCCoordinator({ logger }),
     worldStateService: new WorldStateService({ logger }),
+    combatService: new CombatService({ logger }),
     campaignMemory: persistentMemory,
     narrationService: new NarrationService({
       provider: narrator,
@@ -69,6 +71,11 @@ export function createSessionRuntime({
     },
     processAction: (input) => director.processAction(input),
     resolveRound: (input) => director.resolveRound(input),
+    syncCombat: (input) => director.syncCombat(input),
+    processCombatAction: (input) => director.processCombatAction(input),
+    resolveCombatTurn: (input) => director.resolveCombatTurn(input),
+    summarizeCombatRound: (input) => director.summarizeCombatRound(input),
+    endCombat: () => director.endCombat(),
     describeRoom: (roomContext) => director.describeRoom(roomContext),
     end: () => director.end(),
     getCampaignMemory: async (campaignId) => {

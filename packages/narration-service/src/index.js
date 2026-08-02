@@ -651,6 +651,43 @@ export class NarrationService {
     }
   }
 
+
+  async narrateCombatTurn({ combat, turn, resolutions = [], context }) {
+    try {
+      if (!resolutions.length) {
+        throw createServiceError('O turno não possui ações para narrar.', { statusCode: 400, code: 'EMPTY_COMBAT_TURN' });
+      }
+      if (this.provider?.narrateCombatTurn) {
+        return await this.provider.narrateCombatTurn({ combat, turn, resolutions, context });
+      }
+      throw createServiceError(
+        'A Groq não está configurada para narrar o turno de combate.',
+        { statusCode: 503, code: 'AI_NOT_CONFIGURED' }
+      );
+    } catch (error) {
+      this.logger.error?.('[Mestre Orc][Narration] falha no turno de combate', { message: error.message });
+      throw error;
+    }
+  }
+
+  async narrateCombatRound({ combat, roundNumber, turns = [], context }) {
+    try {
+      if (!turns.length) {
+        throw createServiceError('A rodada não possui turnos resolvidos para resumir.', { statusCode: 400, code: 'EMPTY_COMBAT_ROUND' });
+      }
+      if (this.provider?.narrateCombatRound) {
+        return await this.provider.narrateCombatRound({ combat, roundNumber, turns, context });
+      }
+      throw createServiceError(
+        'A Groq não está configurada para resumir a rodada de combate.',
+        { statusCode: 503, code: 'AI_NOT_CONFIGURED' }
+      );
+    } catch (error) {
+      this.logger.error?.('[Mestre Orc][Narration] falha no resumo do combate', { message: error.message });
+      throw error;
+    }
+  }
+
   async narrateResolution({ intent, rules, relationship, context }) {
     try {
       if (this.provider?.narrateResolution) {

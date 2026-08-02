@@ -424,6 +424,99 @@ class CampaignMemoryBase {
     });
   }
 
+
+  async recordCombatTurn({ campaign, eventId, sessionId, combat = {}, turn = {}, resolutions = [], narration = null, context = {}, worldState = null } = {}) {
+    return this.mutate((database) => {
+      const descriptor = campaignDescriptor(campaign ?? context.campaign);
+      const current = database.campaigns[descriptor.worldId] ?? emptyCampaign(descriptor);
+      const safeEventId = id(eventId, 300) || `combat-turn:${combat.combatId ?? combat.id ?? 'combat'}:${turn.round ?? combat.round ?? 0}:${turn.turn ?? combat.turn ?? 0}`;
+      if ((current.processedEventIds ?? []).includes(safeEventId)) return current;
+
+      for (const resolution of resolutions) {
+        const action = resolution?.action ?? {};
+        const actorName = text(action.actorName, 300) || id(action.actorId) || 'Combatente';
+        const roll = resolution?.rules?.combat?.roll ?? {};
+        const confirmed = roll.authoritative
+          ? `; rolagem confirmada ${roll.total ?? 'sem total'}${roll.damageTotal !== null && roll.damageTotal !== undefined ? `; dano ${roll.damageTotal}` : ''}${roll.outcome ? `; ${roll.outcome}` : ''}`
+          : '';
+        upsertInto(current, 'facts', {
+          id: stableId('fact', `${safeEventId}:${action.actorId ?? actorName}:${action.economyType ?? 'ACTION'}`),
+          key: `${safeEventId}:${action.actorId ?? actorName}:${action.economyType ?? 'ACTION'}`,
+          text: `${actorName} usou ${action.economyType ?? 'ACTION'}: ${text(action.content, 900) || 'ação registrada'}${confirmed}.`,
+          category: 'COMBAT_TURN',
+          source: 'COMBAT_TRACKER',
+          sceneId: context.scene?.id ?? null,
+          roundNumber: Number(turn.round ?? combat.round) || null,
+          visibility: 'known'
+        });
+
+        const relationship = resolution?.relationship ?? {};
+        if (relationship.npcId || relationship.npcName) {
+          upsertInto(current, 'npcs', {
+            id: relationship.npcId,
+            name: relationship.npcName,
+            status: relationship.effect ?? relationship.relationshipType ?? 'IN_COMBAT',
+            location: context.scene?.name ?? null,
+            lastSeenAt: nowIso()
+          });
+        }
+      }
+
+      current.recentEvents = [...(current.recentEvents ?? []), {
+        id: safeEventId,
+        type: 'COMBAT_TURN_RESOLVED',
+        sessionId: id(sessionId) || null,
+        combatId: id(combat.combatId ?? combat.id) || null,
+        roundNumber: Number(turn.round ?? combat.round) || null,
+        turn: Number(turn.turn ?? combat.turn) || 0,
+        combatantId: id(turn.combatantId) || null,
+        actorId: id(turn.actorId) || null,
+        narration: text(narration, 1500) || null,
+        createdAt: nowIso()
+      }].slice(-100);
+      current.processedEventIds = [...(current.processedEventIds ?? []), safeEventId].slice(-500);
+      current.worldState = clone(worldState ?? current.worldState);
+      current.updatedAt = nowIso();
+      database.campaigns[descriptor.worldId] = current;
+      return current;
+    });
+  }
+
+  async recordCombatRound({ campaign, eventId, sessionId, combat = {}, roundNumber, turns = [], narration = null, context = {}, worldState = null } = {}) {
+    return this.mutate((database) => {
+      const descriptor = campaignDescriptor(campaign ?? context.campaign);
+      const current = database.campaigns[descriptor.worldId] ?? emptyCampaign(descriptor);
+      const safeRound = Math.max(0, Number(roundNumber ?? combat.round) || 0);
+      const safeEventId = id(eventId, 300) || `combat-round:${combat.combatId ?? combat.id ?? 'combat'}:${safeRound}`;
+      if ((current.processedEventIds ?? []).includes(safeEventId)) return current;
+      upsertInto(current, 'facts', {
+        id: stableId('fact', safeEventId),
+        key: safeEventId,
+        text: `Rodada ${safeRound} do combate concluída com ${turns.length} turno(s) narrado(s). ${text(narration, 900)}`,
+        category: 'COMBAT_ROUND',
+        source: 'COMBAT_TRACKER',
+        sceneId: context.scene?.id ?? null,
+        roundNumber: safeRound,
+        visibility: 'known'
+      });
+      current.recentEvents = [...(current.recentEvents ?? []), {
+        id: safeEventId,
+        type: 'COMBAT_ROUND_SUMMARIZED',
+        sessionId: id(sessionId) || null,
+        combatId: id(combat.combatId ?? combat.id) || null,
+        roundNumber: safeRound,
+        turnCount: turns.length,
+        narration: text(narration, 1800) || null,
+        createdAt: nowIso()
+      }].slice(-100);
+      current.processedEventIds = [...(current.processedEventIds ?? []), safeEventId].slice(-500);
+      current.worldState = clone(worldState ?? current.worldState);
+      current.updatedAt = nowIso();
+      database.campaigns[descriptor.worldId] = current;
+      return current;
+    });
+  }
+
   async recordRoomEntry({ campaign, eventId, sessionId, room = {}, context = {}, narration = null, worldState = null } = {}) {
     return this.mutate((database) => {
       const descriptor = campaignDescriptor(campaign ?? context.campaign);

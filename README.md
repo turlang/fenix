@@ -1,6 +1,6 @@
 # Mestre Orc Engine
 
-Versão `0.1.0-alpha.39` — Node.js 20–24 e Foundry VTT 13.
+Versão `0.1.0-alpha.40` — Node.js 20–24 e Foundry VTT 13.
 
 O fluxo atual localiza a Scene ativa, procura o Journal correspondente no diretório do Foundry e extrai exclusivamente uma caixa read-aloud reconhecida. São aceitos os formatos antigo e atual do Plutonium/5eTools, `blockquote` HTML e citação Markdown; blocos secretos ou exclusivos do GM são ignorados. A âncora canônica é interpretada com Groq, validada e publicada no chat com áudio.
 
@@ -49,7 +49,7 @@ Abra `http://localhost:3001/health`. Os campos esperados são `"ai":"groq"`, `"a
 
 ## Memória persistente da campanha
 
-A alpha.39 grava em `data/campaign-memory.json` os fatos observados, o estado e a localização dos NPCs, as relações entre personagens e NPCs, as missões, os itens e o último `World State`. Cada campanha é isolada pelo `worldId` do Foundry. O arquivo é ignorado pelo Git e removido automaticamente das entregas limpas.
+A alpha.40 mantém em `data/campaign-memory.json` os fatos observados, o estado e a localização dos NPCs, as relações entre personagens e NPCs, as missões, os itens e o último `World State`. Cada campanha é isolada pelo `worldId` do Foundry. O arquivo é ignorado pelo Git e removido automaticamente das entregas limpas.
 
 Ao reiniciar a API, a próxima sessão recupera o estado persistido e continua a numeração das rodadas. Eventos repetidos com o mesmo `eventId` não são gravados duas vezes. Registros marcados como `secret` continuam disponíveis no painel do mestre, mas não entram no contexto enviado à narração.
 
@@ -60,6 +60,28 @@ O mestre pode abrir **Memória da campanha** no chat ou nos controles da cena pa
 - `DELETE /v1/campaign-memory/:campaignId/:collection/:recordId`
 
 As coleções válidas são `facts`, `npcs`, `relationships`, `quests` e `items`.
+
+
+
+## Combate e Combat Tracker
+
+A alpha.40 sincroniza o combate ativo do Foundry com o Engine. O turno atual, o combatente ativo, a rodada e a lista de combatentes são normalizados antes de qualquer resolução. Enquanto o Combat Tracker estiver ativo, o fluxo de rodada fora de combate fica suspenso para evitar duas resoluções concorrentes.
+
+Mensagens e cards do sistema entram na economia de ações do turno como `ACTION`, `BONUS_ACTION`, `REACTION`, `MOVEMENT` ou `FREE_ACTION`. Prefixos como `Ação bônus:`, `Reação:` e `Movimento:` também são reconhecidos. Uma nova declaração do mesmo personagem e do mesmo tipo substitui a anterior antes da narração; tipos diferentes permanecem separados. A reação pode vir de outro combatente, mas é limitada a uma por personagem em cada rodada.
+
+O Engine só trata total, dano, crítico ou falha como confirmados quando a mensagem do Foundry contém uma rolagem marcada como autoritativa. Sem esse dado, a IA recebe uma proibição explícita de inventar acerto, dano, condição, deslocamento ou consumo de recurso.
+
+Por padrão, o mestre pode avançar a iniciativa normalmente: o módulo narra o turno anterior e, na mudança de rodada, produz um resumo cinematográfico. As opções **Narrar turno automaticamente** e **Resumir rodada de combate automaticamente** podem ser desligadas nas configurações. Os botões **Narrar turno** e **Resumo da rodada de combate** continuam disponíveis para controle manual.
+
+Endpoints do combate:
+
+- `POST /v1/session/combat/sync`
+- `POST /v1/session/combat/action`
+- `POST /v1/session/combat/turn/resolve`
+- `POST /v1/session/combat/round/summary`
+- `POST /v1/session/combat/end`
+
+Turnos narrados e resumos de rodada são gravados na memória da campanha com deduplicação por evento. A aplicação de dano, condições ou consumo de recursos continua sob responsabilidade do sistema e do mestre; o Mestre Orc narra os resultados confirmados, mas não altera fichas automaticamente.
 
 ## Segurança e operação
 
@@ -77,7 +99,7 @@ Copie o conteúdo de `apps/foundry-module` para:
 FoundryVTT/Data/modules/mestre-orc/
 ```
 
-A pasta precisa conter diretamente `module.json`, `scripts/main.js`, `scripts/read-aloud.js`, `scripts/room-transition-state.js`, `scripts/chat-action-filter.js`, `scripts/audio-routing.js`, `scripts/token-vision.js`, `scripts/cinematic-speech.js`, `scripts/voice-input.js` e `styles/mestre-orc.css`.
+A pasta precisa conter diretamente `module.json`, `scripts/main.js`, `scripts/read-aloud.js`, `scripts/room-transition-state.js`, `scripts/chat-action-filter.js`, `scripts/audio-routing.js`, `scripts/token-vision.js`, `scripts/cinematic-speech.js`, `scripts/voice-input.js`, `scripts/combat-tracker.js` e `styles/mestre-orc.css`.
 
 O botão **Áudio ligado/desligado** aparece junto ao chat para cada usuário. Nas configurações do módulo é possível ajustar voz, velocidade, tom e volume. O mestre pode desativar a transmissão para os demais clientes.
 

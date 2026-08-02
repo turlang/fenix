@@ -80,6 +80,58 @@
   filter: saturate(0.55);
 }
 
+
+#mestre-orc-combat-turn,
+#mestre-orc-combat-round {
+  width: calc(100% - 12px);
+  min-height: 36px;
+  margin: 0 6px 6px;
+  padding: 7px 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 6px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: border-color 120ms ease, box-shadow 120ms ease, transform 120ms ease;
+}
+
+#mestre-orc-combat-turn {
+  border: 1px solid rgba(190, 93, 67, 0.86);
+  background: linear-gradient(180deg, rgba(79, 38, 29, 0.98), rgba(46, 24, 20, 0.98));
+  color: #ffe5dc;
+}
+
+#mestre-orc-combat-round {
+  border: 1px solid rgba(181, 139, 58, 0.86);
+  background: linear-gradient(180deg, rgba(67, 51, 24, 0.98), rgba(39, 31, 18, 0.98));
+  color: #fff0c7;
+}
+
+#mestre-orc-combat-turn:not(:disabled):hover,
+#mestre-orc-combat-turn:not(:disabled):focus-visible {
+  border-color: #ef947a;
+  box-shadow: 0 0 0 1px rgba(239, 148, 122, 0.3), 0 2px 7px rgba(0, 0, 0, 0.5);
+}
+
+#mestre-orc-combat-round:not(:disabled):hover,
+#mestre-orc-combat-round:not(:disabled):focus-visible {
+  border-color: #e6bd68;
+  box-shadow: 0 0 0 1px rgba(230, 189, 104, 0.3), 0 2px 7px rgba(0, 0, 0, 0.5);
+}
+
+#mestre-orc-combat-turn i { color: #ef947a; }
+#mestre-orc-combat-round i { color: #e6bd68; }
+#mestre-orc-combat-turn:not(:disabled):active,
+#mestre-orc-combat-round:not(:disabled):active { transform: translateY(1px); }
+#mestre-orc-combat-turn:disabled,
+#mestre-orc-combat-round:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  filter: saturate(0.55);
+}
+
 #mestre-orc-voice-input {
   width: calc(100% - 12px);
   min-height: 36px;

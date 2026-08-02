@@ -25,9 +25,14 @@ import {
   speechRecognitionSupported,
   VoiceInputController
 } from './voice-input.js';
+import {
+  combatActionPayloadFromMessage,
+  combatSnapshotFromDocument,
+  combatSnapshotKey
+} from './combat-tracker.js';
 
 const MODULE_ID = 'mestre-orc';
-const MODULE_BUILD = '0.1.0-alpha.39';
+const MODULE_BUILD = '0.1.0-alpha.40';
 const BUTTON_ID = 'mestre-orc-start';
 const ROUND_BUTTON_ID = 'mestre-orc-resolve-round';
 const AUDIO_BUTTON_ID = 'mestre-orc-audio-toggle';
@@ -35,10 +40,16 @@ const VOICE_BUTTON_ID = 'mestre-orc-voice-input';
 const VOICE_PREVIEW_ID = 'mestre-orc-voice-preview';
 const MEMORY_BUTTON_ID = 'mestre-orc-memory';
 const MEMORY_PANEL_ID = 'mestre-orc-memory-panel';
+const COMBAT_TURN_BUTTON_ID = 'mestre-orc-combat-turn';
+const COMBAT_ROUND_BUTTON_ID = 'mestre-orc-combat-round';
 const SOCKET_CHANNEL = `module.${MODULE_ID}`;
 const API_URL = 'http://localhost:3001';
 let startInFlight = false;
 let roundResolveInFlight = false;
+let combatTurnResolveInFlight = false;
+let combatRoundSummaryInFlight = false;
+let lastCombatSnapshot = null;
+let combatHookQueue = Promise.resolve();
 let lastAudioDirectiveId = null;
 let speechVoices = [];
 let activeUtterance = null;
@@ -96,10 +107,55 @@ async function refreshRoundButton(round = null) {
     return;
   }
   const status = await request('/v1/session/status').catch(() => null);
-  const active = status?.state === 'COLLECTING_ACTIONS' && Boolean(status.sessionId);
+  const active = status?.state === 'COLLECTING_ACTIONS' && Boolean(status.sessionId) && !status?.combat?.active;
   applyRoundButtonState(status?.round ?? null, active);
 }
 
+
+function applyCombatButtonState(combat = null, sessionActive = true) {
+  const turnButton = document.getElementById(COMBAT_TURN_BUTTON_ID);
+  const roundButton = document.getElementById(COMBAT_ROUND_BUTTON_ID);
+  const active = Boolean(sessionActive && combat?.active);
+  const turn = combat?.currentTurn ?? null;
+  const round = combat?.currentRound ?? null;
+  const actorName = combat?.activeCombatant?.name ?? turn?.actorName ?? 'combatente';
+  const actionCount = Math.max(0, Number(turn?.actionCount) || 0);
+  const roundNumber = Math.max(0, Number(combat?.round) || 0);
+
+  if (turnButton) {
+    turnButton.dataset.actionCount = String(actionCount);
+    turnButton.disabled = combatTurnResolveInFlight || !active || !turn?.canResolve;
+    turnButton.innerHTML = combatTurnResolveInFlight
+      ? '<i class="fa-solid fa-spinner fa-spin"></i><span>Narrando turno...</span>'
+      : `<i class="fa-solid fa-hand-fist"></i><span>Narrar turno — ${actorName} (${actionCount})</span>`;
+    turnButton.title = active
+      ? `${actionCount} evento(s) registrado(s) no turno ${Number(combat?.turn) + 1 || 1}.`
+      : 'Aguardando um combate ativo no Combat Tracker.';
+  }
+
+  if (roundButton) {
+    const resolvedTurnCount = Math.max(0, Number(round?.resolvedTurnCount) || 0);
+    roundButton.disabled = combatRoundSummaryInFlight || !active || !round?.canSummarize;
+    roundButton.innerHTML = combatRoundSummaryInFlight
+      ? '<i class="fa-solid fa-spinner fa-spin"></i><span>Resumindo combate...</span>'
+      : `<i class="fa-solid fa-shield-halved"></i><span>Resumo da rodada ${roundNumber} (${resolvedTurnCount})</span>`;
+    roundButton.title = active
+      ? `${resolvedTurnCount} turno(s) resolvido(s) disponíveis para o resumo.`
+      : 'Aguardando um combate ativo no Combat Tracker.';
+  }
+}
+
+async function refreshCombatButtons(combat = null) {
+  if (!game.user?.isGM) return;
+  if (combat) {
+    applyCombatButtonState(combat, Boolean(roomNarrationState.active));
+    return;
+  }
+  const status = await request('/v1/session/status').catch(() => null);
+  const sessionActive = status?.state === 'COLLECTING_ACTIONS' && Boolean(status.sessionId);
+  applyCombatButtonState(status?.combat ?? null, sessionActive);
+  applyRoundButtonState(status?.round ?? null, sessionActive && !status?.combat?.active);
+}
 
 
 function registerAudioSettings() {
@@ -178,6 +234,24 @@ function registerAudioSettings() {
     config: true,
     type: Boolean,
     default: true
+  });
+  game.settings.register(MODULE_ID, 'combatAutoNarrateTurn', {
+    name: 'Narrar turno ao avançar o Combat Tracker',
+    hint: 'Resolve automaticamente os eventos registrados quando o mestre avança para o próximo combatente.',
+    scope: 'world',
+    config: true,
+    type: Boolean,
+    default: true,
+    restricted: true
+  });
+  game.settings.register(MODULE_ID, 'combatAutoSummarizeRound', {
+    name: 'Resumir rodada de combate automaticamente',
+    hint: 'Publica um resumo depois que o Combat Tracker avança para uma nova rodada.',
+    scope: 'world',
+    config: true,
+    type: Boolean,
+    default: true,
+    restricted: true
   });
 }
 
@@ -1605,7 +1679,16 @@ function playerActionIdentity(message) {
   const tokenId = String(message?.speaker?.token ?? '').trim() || null;
   const actor = actorId ? game.actors?.get?.(actorId) : null;
   const actorName = String(actor?.name ?? message?.speaker?.alias ?? user?.name ?? '').trim() || null;
-  return { actorId, actorName, tokenId };
+  const combatant = Array.from(game.combat?.combatants?.contents ?? game.combat?.combatants ?? [])
+    .find((entry) => String(entry.actorId ?? entry.actor?.id ?? '') === actorId || (tokenId && String(entry.tokenId ?? entry.token?.id ?? '') === tokenId));
+  const targetIds = [...(user?.targets ?? game.user?.targets ?? [])]
+    .map((token) => String(token?.id ?? token?.document?.id ?? ''))
+    .filter(Boolean);
+  return {
+    actorId, actorName, tokenId,
+    combatantId: combatant ? String(combatant.id ?? combatant._id ?? '') : null,
+    targetIds
+  };
 }
 
 function claimPlayerActionContent(content, actorId = '') {
@@ -1620,13 +1703,75 @@ function claimPlayerActionContent(content, actorId = '') {
   return true;
 }
 
+async function syncCombatDocument(combat = game.combat) {
+  if (!game.user?.isGM || !combat) return null;
+  const snapshot = combatSnapshotFromDocument(combat);
+  if (!snapshot.id || !snapshot.started) return null;
+  const result = await request('/v1/session/combat/sync', {
+    method: 'POST',
+    body: JSON.stringify(snapshot)
+  });
+  lastCombatSnapshot = snapshot;
+  await refreshCombatButtons(result?.combat ?? null);
+  return result;
+}
+
+async function processCombatActionMessage(message, content, identity) {
+  const snapshot = combatSnapshotFromDocument(game.combat);
+  if (!snapshot.id || !snapshot.started || !snapshot.activeCombatant) return false;
+  if (!identity.actorId) return false;
+  const payload = combatActionPayloadFromMessage(message, { content, identity, combat: snapshot });
+  if (!payload.content || payload.content.length < 2 || payload.content.startsWith('/')) return false;
+  if (payload.economyType !== 'REACTION' && identity.actorId !== snapshot.activeCombatant.actorId) {
+    console.debug('[Mestre Orc][Combat] mensagem ignorada porque não pertence ao combatente ativo', {
+      actorId: identity.actorId, activeActorId: snapshot.activeCombatant.actorId, economyType: payload.economyType
+    });
+    return false;
+  }
+  if (!await ensureSessionActive()) return false;
+
+  const messageId = String(message.id ?? message._id ?? '');
+  const eventId = `combat-chat:${messageId || stableTextFingerprint(`${identity.actorId}:${payload.economyType}:${payload.content}`)}`;
+  try {
+    await syncCombatDocument(game.combat);
+    const result = await request('/v1/session/combat/action', {
+      method: 'POST',
+      body: JSON.stringify({ ...payload, eventId })
+    });
+    if (!result?.duplicate) {
+      const label = result?.replaced ? 'atualizada' : 'registrada';
+      const typeLabels = { ACTION: 'ação', BONUS_ACTION: 'ação bônus', REACTION: 'reação', MOVEMENT: 'movimento', FREE_ACTION: 'ação livre' };
+      ui.notifications?.info?.(`Mestre Orc: ${typeLabels[payload.economyType] ?? 'ação'} de ${identity.actorName ?? 'combatente'} ${label}.`);
+    }
+    await refreshCombatButtons(result?.combat ?? null);
+    return true;
+  } catch (error) {
+    console.error('[Mestre Orc][Combat] falha ao registrar evento', error);
+    ui.notifications?.warn?.(`Mestre Orc: ${error.message || 'não foi possível registrar a ação de combate.'}`);
+    return false;
+  }
+}
+
 async function processPlayerActionMessage(message) {
   if (!game.user?.isGM || !roomNarrationState.active || !message) return;
   const messageId = String(message.id ?? message._id ?? '');
   if (messageId && processedActionMessages.has(messageId)) return;
   const voiceInputMessage = Boolean(message.flags?.[MODULE_ID]?.voiceInput);
-  if (message.speaker?.alias === 'Mestre Orc' || (messageAuthorIsGm(message) && !voiceInputMessage)) return;
-  const content = stripHtml(message.content ?? '').trim();
+  if (message.speaker?.alias === 'Mestre Orc') return;
+  const combatActive = Boolean(game.combat?.started && game.combat?.combatant);
+  if (!combatActive && messageAuthorIsGm(message) && !voiceInputMessage) return;
+  const content = stripHtml(message.content ?? message.flavor ?? '').trim();
+  const identity = playerActionIdentity(message);
+
+  if (combatActive) {
+    const accepted = await processCombatActionMessage(message, content, identity);
+    if (accepted && messageId) {
+      processedActionMessages.add(messageId);
+      if (processedActionMessages.size > 250) processedActionMessages.delete(processedActionMessages.values().next().value);
+    }
+    return;
+  }
+
   const rejectionReason = actionMessageRejectionReason(message, content);
   const chatStyles = globalThis.CONST?.CHAT_MESSAGE_STYLES ?? globalThis.CONST?.CHAT_MESSAGE_TYPES ?? {};
   if (rejectionReason || !isSupportedPlayerChatStyle(message, chatStyles)) {
@@ -1638,7 +1783,6 @@ async function processPlayerActionMessage(message) {
   }
   if (content.length < 2 || content.startsWith('/')) return;
 
-  const identity = playerActionIdentity(message);
   if (!identity.actorId) {
     console.warn('[Mestre Orc][Action] declaração ignorada por não estar vinculada a um personagem', {
       messageId: messageId || null,
@@ -1669,11 +1813,7 @@ async function processPlayerActionMessage(message) {
     const result = await request('/v1/session/action', {
       method: 'POST',
       body: JSON.stringify({
-        content,
-        actorId: identity.actorId,
-        actorName: identity.actorName,
-        tokenId: identity.tokenId,
-        eventId
+        content, actorId: identity.actorId, actorName: identity.actorName, tokenId: identity.tokenId, eventId
       })
     });
     if (result?.duplicate) {
@@ -2197,6 +2337,162 @@ async function resolveRound(button) {
   }
 }
 
+
+async function resolveCombatTurn(snapshot = null, { automatic = false } = {}) {
+  if (combatTurnResolveInFlight) return null;
+  combatTurnResolveInFlight = true;
+  try {
+    const status = await request('/v1/session/status');
+    const combat = status?.combat;
+    if (status?.state !== 'COLLECTING_ACTIONS' || !status.sessionId || !combat?.active) {
+      if (automatic) return null;
+      throw new Error('nenhum combate ativo está pronto para narrar o turno.');
+    }
+    if (!combat.currentTurn?.actionCount) {
+      if (automatic) return null;
+      throw new Error('nenhuma ação foi registrada neste turno.');
+    }
+    const reference = snapshot ?? {
+      id: combat.combatId, round: combat.round, turn: combat.turn, activeCombatant: combat.activeCombatant
+    };
+    const eventId = `combat-turn:${reference.id}:${reference.round}:${reference.turn}:${reference.activeCombatant?.id ?? 'unknown'}`;
+    const result = await request('/v1/session/combat/turn/resolve', {
+      method: 'POST',
+      body: JSON.stringify({
+        eventId,
+        combatId: reference.id,
+        round: reference.round,
+        turn: reference.turn,
+        combatantId: reference.activeCombatant?.id ?? null,
+        actorId: reference.activeCombatant?.actorId ?? null,
+        actorName: reference.activeCombatant?.name ?? null
+      })
+    });
+    if (!result?.duplicate && result?.narration) {
+      const publicationKey = `combat-turn:${reference.id}:${reference.round}:${reference.turn}:${reference.activeCombatant?.id ?? 'unknown'}`;
+      await publishNarrationChat(result.narration, publicationKey);
+      publishNarrationAudio(result.audio, result.narration, game.scenes?.active?.id ?? null, publicationKey);
+    }
+    if (!automatic) {
+      ui.notifications?.info?.(`Mestre Orc: turno de ${reference.activeCombatant?.name ?? 'combatente'} narrado.`);
+    }
+    await refreshCombatButtons(result?.combat ?? null);
+    return result;
+  } catch (error) {
+    console.error('[Mestre Orc][Combat] falha ao narrar turno', error);
+    if (!automatic) ui.notifications?.warn?.(`Mestre Orc: ${error.message}`);
+    return null;
+  } finally {
+    combatTurnResolveInFlight = false;
+    await refreshCombatButtons();
+  }
+}
+
+async function summarizeCombatRound(roundNumber = null, snapshot = null, { automatic = false } = {}) {
+  if (combatRoundSummaryInFlight) return null;
+  combatRoundSummaryInFlight = true;
+  try {
+    const status = await request('/v1/session/status');
+    const combat = status?.combat;
+    if (status?.state !== 'COLLECTING_ACTIONS' || !status.sessionId || !combat?.active) {
+      if (automatic) return null;
+      throw new Error('nenhum combate ativo está pronto para resumir a rodada.');
+    }
+    const targetRound = Math.max(0, Number(roundNumber ?? snapshot?.round ?? combat.round) || 0);
+    const roundStatus = targetRound === combat.round ? combat.currentRound : null;
+    if (roundStatus && !roundStatus.canSummarize) {
+      if (automatic) return null;
+      throw new Error('nenhum turno resolvido está disponível para o resumo.');
+    }
+    const eventId = `combat-round:${snapshot?.id ?? combat.combatId}:${targetRound}`;
+    const result = await request('/v1/session/combat/round/summary', {
+      method: 'POST',
+      body: JSON.stringify({ eventId, round: targetRound })
+    });
+    if (!result?.duplicate && result?.narration) {
+      const publicationKey = `combat-round:${snapshot?.id ?? combat.combatId}:${targetRound}`;
+      await publishNarrationChat(result.narration, publicationKey);
+      publishNarrationAudio(result.audio, result.narration, game.scenes?.active?.id ?? null, publicationKey);
+    }
+    if (!automatic) ui.notifications?.info?.(`Mestre Orc: rodada ${targetRound} do combate resumida.`);
+    await refreshCombatButtons(result?.combat ?? null);
+    return result;
+  } catch (error) {
+    console.error('[Mestre Orc][Combat] falha ao resumir rodada', error);
+    if (!automatic) ui.notifications?.warn?.(`Mestre Orc: ${error.message}`);
+    return null;
+  } finally {
+    combatRoundSummaryInFlight = false;
+    await refreshCombatButtons();
+  }
+}
+
+function enqueueCombatHook(operation) {
+  combatHookQueue = combatHookQueue.then(operation, operation);
+  return combatHookQueue;
+}
+
+async function reconcileCombatDocument(combat) {
+  if (!game.user?.isGM || !roomNarrationState.active) return;
+  const next = combatSnapshotFromDocument(combat);
+  if (!next.id || !next.started) return;
+  const previous = lastCombatSnapshot;
+  const changedTurn = previous?.started && previous.id === next.id && combatSnapshotKey(previous) !== combatSnapshotKey(next);
+
+  if (changedTurn) {
+    const statusBeforeAdvance = await request('/v1/session/status').catch(() => null);
+    const previousTurn = statusBeforeAdvance?.combat?.currentTurn ?? null;
+    const hadPendingEvents = Boolean(previousTurn?.actionCount && !previousTurn?.resolved);
+    let previousTurnReady = !hadPendingEvents;
+    if (audioSetting('combatAutoNarrateTurn', true) && hadPendingEvents) {
+      previousTurnReady = Boolean(await resolveCombatTurn(previous, { automatic: true }));
+    }
+    if (previous.round !== next.round && previousTurnReady && audioSetting('combatAutoSummarizeRound', true)) {
+      await summarizeCombatRound(previous.round, previous, { automatic: true });
+    }
+  }
+
+  const result = await request('/v1/session/combat/sync', {
+    method: 'POST',
+    body: JSON.stringify(next)
+  }).catch((error) => {
+    console.warn('[Mestre Orc][Combat] sincronização do Combat Tracker falhou', error);
+    return null;
+  });
+  lastCombatSnapshot = next;
+  await refreshCombatButtons(result?.combat ?? null);
+}
+
+async function closeCombatDocument(combat) {
+  if (!game.user?.isGM || !roomNarrationState.active) return;
+  const previous = lastCombatSnapshot ?? combatSnapshotFromDocument(combat);
+  if (previous?.id) {
+    const statusBeforeClose = await request('/v1/session/status').catch(() => null);
+    const currentTurn = statusBeforeClose?.combat?.currentTurn ?? null;
+    const hadPendingEvents = Boolean(currentTurn?.actionCount && !currentTurn?.resolved);
+    let currentTurnReady = !hadPendingEvents;
+    if (audioSetting('combatAutoNarrateTurn', true) && hadPendingEvents) {
+      currentTurnReady = Boolean(await resolveCombatTurn(previous, { automatic: true }));
+    }
+    if (currentTurnReady && audioSetting('combatAutoSummarizeRound', true)) {
+      await summarizeCombatRound(previous.round, previous, { automatic: true });
+    }
+  }
+  await request('/v1/session/combat/end', { method: 'POST', body: '{}' }).catch(() => null);
+  lastCombatSnapshot = null;
+  await refreshCombatButtons({ active: false });
+}
+
+function installCombatTrackerHooks() {
+  if (document.documentElement.dataset.mestreOrcCombatHooks === '1') return;
+  document.documentElement.dataset.mestreOrcCombatHooks = '1';
+  Hooks.on('combatStart', (combat) => void enqueueCombatHook(() => reconcileCombatDocument(combat)));
+  Hooks.on('updateCombat', (combat) => void enqueueCombatHook(() => reconcileCombatDocument(combat)));
+  Hooks.on('createCombatant', (combatant) => void enqueueCombatHook(() => reconcileCombatDocument(combatant?.parent ?? game.combat)));
+  Hooks.on('deleteCombatant', (combatant) => void enqueueCombatHook(() => reconcileCombatDocument(combatant?.parent ?? game.combat)));
+  Hooks.on('deleteCombat', (combat) => void enqueueCombatHook(() => closeCombatDocument(combat)));
+}
+
 async function startSession(button) {
   if (startInFlight) return;
   startInFlight = true;
@@ -2214,6 +2510,8 @@ async function startSession(button) {
       primeRoomOccupancy();
       await refreshRoundButton(currentStatus.round ?? null);
       broadcastVoiceSessionStatus(true, currentStatus.round ?? null);
+      if (game.combat?.started) await syncCombatDocument(game.combat).catch(() => null);
+      else await refreshCombatButtons(currentStatus.combat ?? null);
       if (button) button.innerHTML = '<i class="fa-solid fa-circle-check"></i><span>Sessão reconectada</span>';
       ui.notifications.info('Mestre Orc: sessão existente reconectada.');
       setTimeout(() => {
@@ -2245,6 +2543,8 @@ async function startSession(button) {
     primeRoomOccupancy();
     await refreshRoundButton(result.round ?? null);
     broadcastVoiceSessionStatus(true, result.round ?? null);
+    if (game.combat?.started) await syncCombatDocument(game.combat).catch(() => null);
+    else await refreshCombatButtons(result.combat ?? null);
     if (button) button.innerHTML = '<i class="fa-solid fa-circle-check"></i><span>Sessão iniciada</span>';
     ui.notifications.info('Mestre Orc: abertura publicada no chat.');
     if (button) {
@@ -2259,6 +2559,7 @@ async function startSession(button) {
     stopRoomMonitor();
     roomNarrationState.reset();
     applyRoundButtonState(null, false);
+    applyCombatButtonState(null, false);
     broadcastVoiceSessionStatus(false);
     console.error(`${MODULE_ID} | falha ao iniciar`, error);
     ui.notifications.error(`Mestre Orc: ${error.message}`);
@@ -2331,6 +2632,51 @@ function injectResolveRoundButton(root = document) {
 }
 
 
+function injectCombatButtons(root = document) {
+  if (!game.user?.isGM) return false;
+  const chat = findChatContainer(root);
+  if (!chat) return false;
+  let inserted = false;
+
+  if (!document.getElementById(COMBAT_TURN_BUTTON_ID)) {
+    const button = document.createElement('button');
+    button.id = COMBAT_TURN_BUTTON_ID;
+    button.type = 'button';
+    button.dataset.mestreOrcAction = 'resolve-combat-turn';
+    button.disabled = true;
+    button.innerHTML = '<i class="fa-solid fa-hand-fist"></i><span>Narrar turno — aguardando combate</span>';
+    button.onclick = (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      void resolveCombatTurn(null, { automatic: false });
+    };
+    const roundButton = document.getElementById(ROUND_BUTTON_ID);
+    if (roundButton?.parentElement) roundButton.insertAdjacentElement('afterend', button);
+    else chat.prepend(button);
+    inserted = true;
+  }
+
+  if (!document.getElementById(COMBAT_ROUND_BUTTON_ID)) {
+    const button = document.createElement('button');
+    button.id = COMBAT_ROUND_BUTTON_ID;
+    button.type = 'button';
+    button.dataset.mestreOrcAction = 'summarize-combat-round';
+    button.disabled = true;
+    button.innerHTML = '<i class="fa-solid fa-shield-halved"></i><span>Resumo da rodada de combate</span>';
+    button.onclick = (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      void summarizeCombatRound(null, null, { automatic: false });
+    };
+    const turnButton = document.getElementById(COMBAT_TURN_BUTTON_ID);
+    if (turnButton?.parentElement) turnButton.insertAdjacentElement('afterend', button);
+    else chat.prepend(button);
+    inserted = true;
+  }
+
+  void refreshCombatButtons();
+  return inserted;
+}
 
 
 function injectMemoryButton(root = document) {
@@ -2349,9 +2695,11 @@ function injectMemoryButton(root = document) {
     void openCampaignMemoryPanel();
   };
 
+  const combatRoundButton = document.getElementById(COMBAT_ROUND_BUTTON_ID);
   const roundButton = document.getElementById(ROUND_BUTTON_ID);
   const audioButton = document.getElementById(AUDIO_BUTTON_ID);
-  if (roundButton?.parentElement) roundButton.insertAdjacentElement('afterend', button);
+  if (combatRoundButton?.parentElement) combatRoundButton.insertAdjacentElement('afterend', button);
+  else if (roundButton?.parentElement) roundButton.insertAdjacentElement('afterend', button);
   else if (audioButton?.parentElement) audioButton.parentElement.insertBefore(button, audioButton);
   else chat.prepend(button);
   return true;
@@ -2363,7 +2711,7 @@ function installDelegatedStartHandler() {
 
   document.addEventListener('click', (event) => {
     const target = event.target instanceof Element
-      ? event.target.closest('[data-mestre-orc-action="start-session"], [data-mestre-orc-action="resolve-round"], [data-mestre-orc-action="open-memory"], #mestre-orc-start, #mestre-orc-resolve-round, #mestre-orc-memory')
+      ? event.target.closest('[data-mestre-orc-action="start-session"], [data-mestre-orc-action="resolve-round"], [data-mestre-orc-action="resolve-combat-turn"], [data-mestre-orc-action="summarize-combat-round"], [data-mestre-orc-action="open-memory"], #mestre-orc-start, #mestre-orc-resolve-round, #mestre-orc-combat-turn, #mestre-orc-combat-round, #mestre-orc-memory')
       : null;
     if (!target) return;
 
@@ -2371,6 +2719,8 @@ function installDelegatedStartHandler() {
     event.stopImmediatePropagation();
     console.log('[Mestre Orc] handler delegado acionado', { action: target.dataset.mestreOrcAction });
     if (target.dataset.mestreOrcAction === 'resolve-round' || target.id === ROUND_BUTTON_ID) void resolveRound(target);
+    else if (target.dataset.mestreOrcAction === 'resolve-combat-turn' || target.id === COMBAT_TURN_BUTTON_ID) void resolveCombatTurn(null, { automatic: false });
+    else if (target.dataset.mestreOrcAction === 'summarize-combat-round' || target.id === COMBAT_ROUND_BUTTON_ID) void summarizeCombatRound(null, null, { automatic: false });
     else if (target.dataset.mestreOrcAction === 'open-memory' || target.id === MEMORY_BUTTON_ID) void openCampaignMemoryPanel();
     else void startSession(target);
   }, true);
@@ -2380,12 +2730,14 @@ function scheduleInjection(root) {
   requestAnimationFrame(() => {
     injectStartButton(root);
     injectResolveRoundButton(root);
+    injectCombatButtons(root);
     injectMemoryButton(root);
     injectAudioToggleButton(root);
     injectVoiceInputButton(root);
     setTimeout(() => {
       injectStartButton(document);
       injectResolveRoundButton(document);
+      injectCombatButtons(document);
       injectMemoryButton(document);
       injectAudioToggleButton(document);
       injectVoiceInputButton(document);
@@ -2393,6 +2745,7 @@ function scheduleInjection(root) {
     setTimeout(() => {
       injectStartButton(document);
       injectResolveRoundButton(document);
+      injectCombatButtons(document);
       injectMemoryButton(document);
       injectAudioToggleButton(document);
       injectVoiceInputButton(document);
@@ -2438,6 +2791,26 @@ Hooks.on('getSceneControlButtons', (controls) => {
       }
     };
 
+    tokenControls.tools.mestreOrcCombatTurn = {
+      name: 'mestreOrcCombatTurn',
+      title: 'Mestre Orc — Narrar turno de combate',
+      icon: 'fa-solid fa-hand-fist',
+      order: Object.keys(tokenControls.tools).length,
+      button: true,
+      visible: true,
+      onChange: () => void resolveCombatTurn(null, { automatic: false })
+    };
+
+    tokenControls.tools.mestreOrcCombatRound = {
+      name: 'mestreOrcCombatRound',
+      title: 'Mestre Orc — Resumo da rodada de combate',
+      icon: 'fa-solid fa-shield-halved',
+      order: Object.keys(tokenControls.tools).length,
+      button: true,
+      visible: true,
+      onChange: () => void summarizeCombatRound(null, null, { automatic: false })
+    };
+
     tokenControls.tools.mestreOrcMemory = {
       name: 'mestreOrcMemory',
       title: 'Mestre Orc — Memória da campanha',
@@ -2463,6 +2836,7 @@ Hooks.once('init', () => {
   installDelegatedStartHandler();
   installRoomTracking();
   installPlayerActionHook();
+  installCombatTrackerHooks();
   ensureVoiceInputController();
   if (supportsSpeechSynthesis()) {
     refreshSpeechVoices();
@@ -2477,7 +2851,12 @@ Hooks.once('ready', () => {
   ui.notifications?.info?.(`Mestre Orc ${MODULE_BUILD} carregado.`);
   installAudioSocket();
   scheduleInjection(document);
-  if (game.user?.isGM) void synchronizeRoomSessionState();
+  if (game.user?.isGM) {
+    void synchronizeRoomSessionState().then(() => {
+      if (game.combat?.started) return reconcileCombatDocument(game.combat);
+      return refreshCombatButtons();
+    });
+  }
   else {
     requestVoiceSessionStatus();
     setTimeout(requestVoiceSessionStatus, 1200);

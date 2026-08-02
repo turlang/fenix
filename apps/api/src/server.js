@@ -93,6 +93,61 @@ app.post('/v1/session/round/resolve', {
   catch (error) { return reply.code(Number(error.statusCode) || 400).send({ code: error.code || 'ROUND_RESOLUTION_FAILED', message: error.message }); }
 });
 
+
+app.post('/v1/session/combat/sync', { schema: objectBodySchema }, async (request, reply) => {
+  try { return await runtime.syncCombat(request.body ?? {}); }
+  catch (error) { return reply.code(400).send({ code: 'COMBAT_SYNC_FAILED', message: error.message }); }
+});
+
+app.post('/v1/session/combat/action', {
+  schema: {
+    body: {
+      type: 'object',
+      required: ['content', 'actorId', 'combatId', 'round', 'turn'],
+      additionalProperties: true,
+      properties: {
+        content: { type: 'string', minLength: 1, maxLength: 4000 },
+        actorId: { type: 'string', minLength: 1, maxLength: 200 },
+        actorName: { anyOf: [{ type: 'string', maxLength: 300 }, { type: 'null' }] },
+        tokenId: { anyOf: [{ type: 'string', maxLength: 200 }, { type: 'null' }] },
+        combatantId: { anyOf: [{ type: 'string', maxLength: 200 }, { type: 'null' }] },
+        combatId: { type: 'string', minLength: 1, maxLength: 200 },
+        round: { type: 'integer', minimum: 0 },
+        turn: { type: 'integer', minimum: 0 },
+        economyType: { type: 'string', enum: ['ACTION', 'BONUS_ACTION', 'REACTION', 'MOVEMENT', 'FREE_ACTION'] },
+        eventId: { type: 'string', minLength: 1, maxLength: 300 },
+        itemId: { anyOf: [{ type: 'string', maxLength: 200 }, { type: 'null' }] },
+        itemName: { anyOf: [{ type: 'string', maxLength: 300 }, { type: 'null' }] },
+        targetIds: { type: 'array', maxItems: 30, items: { type: 'string', maxLength: 200 } },
+        source: { type: 'string', maxLength: 80 },
+        roll: { type: 'object', additionalProperties: true }
+      }
+    }
+  }
+}, async (request, reply) => {
+  try { return await runtime.processCombatAction(request.body ?? {}); }
+  catch (error) { return reply.code(400).send({ code: 'COMBAT_ACTION_FAILED', message: error.message }); }
+});
+
+app.post('/v1/session/combat/turn/resolve', { schema: objectBodySchema }, async (request, reply) => {
+  try { return await runtime.resolveCombatTurn(request.body ?? {}); }
+  catch (error) {
+    return reply.code(Number(error.statusCode) || 400).send({ code: error.code || 'COMBAT_TURN_RESOLUTION_FAILED', message: error.message });
+  }
+});
+
+app.post('/v1/session/combat/round/summary', { schema: objectBodySchema }, async (request, reply) => {
+  try { return await runtime.summarizeCombatRound(request.body ?? {}); }
+  catch (error) {
+    return reply.code(Number(error.statusCode) || 400).send({ code: error.code || 'COMBAT_ROUND_SUMMARY_FAILED', message: error.message });
+  }
+});
+
+app.post('/v1/session/combat/end', async (_request, reply) => {
+  try { return await runtime.endCombat(); }
+  catch (error) { return reply.code(400).send({ code: 'COMBAT_END_FAILED', message: error.message }); }
+});
+
 app.post('/v1/session/room-entry', {
   schema: {
     body: {
