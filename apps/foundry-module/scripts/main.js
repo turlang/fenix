@@ -20,12 +20,19 @@ import {
   parseCinematicSpeechScript,
   stripCinematicMarkers
 } from './cinematic-speech.js';
+import {
+  normalizeVoiceTranscript,
+  speechRecognitionSupported,
+  VoiceInputController
+} from './voice-input.js';
 
 const MODULE_ID = 'mestre-orc';
-const MODULE_BUILD = '0.1.0-alpha.37';
+const MODULE_BUILD = '0.1.0-alpha.38';
 const BUTTON_ID = 'mestre-orc-start';
 const ROUND_BUTTON_ID = 'mestre-orc-resolve-round';
 const AUDIO_BUTTON_ID = 'mestre-orc-audio-toggle';
+const VOICE_BUTTON_ID = 'mestre-orc-voice-input';
+const VOICE_PREVIEW_ID = 'mestre-orc-voice-preview';
 const SOCKET_CHANNEL = `module.${MODULE_ID}`;
 const API_URL = 'http://localhost:3001';
 let startInFlight = false;
@@ -36,6 +43,10 @@ let activeUtterance = null;
 let activePauseTimer = null;
 let activeNarrationRun = 0;
 let latestAudioDirective = null;
+let voiceInputController = null;
+let voiceSubmissionInFlight = false;
+let latestVoicePreview = '';
+let voiceSessionActive = false;
 let roomCheckTimer = null;
 let roomMonitorTimer = null;
 const lastPlayerActionAtByActor = new Map();
@@ -139,6 +150,32 @@ function registerAudioSettings() {
     type: Number,
     default: 1,
     range: { min: 0, max: 1, step: 0.05 }
+  });
+  game.settings.register(MODULE_ID, 'voiceInputEnabled', {
+    name: 'Ativar entrada por voz',
+    hint: 'Exibe o botão Falar ação no chat e usa o reconhecimento de voz disponível no navegador.',
+    scope: 'client',
+    config: true,
+    type: Boolean,
+    default: true,
+    onChange: () => refreshVoiceInputButton()
+  });
+  game.settings.register(MODULE_ID, 'voiceInputLanguage', {
+    name: 'Idioma do reconhecimento de voz',
+    hint: 'Código de idioma usado pelo navegador, por exemplo pt-BR, en-US ou es-ES.',
+    scope: 'client',
+    config: true,
+    type: String,
+    default: 'pt-BR',
+    onChange: (language) => voiceInputController?.setLanguage?.(language)
+  });
+  game.settings.register(MODULE_ID, 'voiceInputAutoSend', {
+    name: 'Enviar transcrição automaticamente',
+    hint: 'Quando ativado, publica a ação reconhecida no chat. Quando desativado, apenas preenche o campo de mensagem para revisão.',
+    scope: 'client',
+    config: true,
+    type: Boolean,
+    default: true
   });
 }
 
@@ -400,8 +437,47 @@ function publishNarrationAudio(audio, fallbackText, sceneId = null, publicationK
   return directive;
 }
 
+function setVoiceSessionActive(active) {
+  voiceSessionActive = Boolean(active);
+  refreshVoiceInputButton();
+}
+
+function broadcastVoiceSessionStatus(active = roomNarrationState.active, round = null) {
+  if (!game.user?.isGM) return;
+  setVoiceSessionActive(active);
+  game.socket?.emit?.(SOCKET_CHANNEL, {
+    type: 'session-status',
+    senderId: game.user?.id ?? null,
+    active: Boolean(active),
+    round
+  });
+}
+
+function requestVoiceSessionStatus() {
+  if (game.user?.isGM) return;
+  game.socket?.emit?.(SOCKET_CHANNEL, {
+    type: 'session-status-request',
+    senderId: game.user?.id ?? null
+  });
+}
+
 function installAudioSocket() {
   game.socket?.on?.(SOCKET_CHANNEL, (payload) => {
+    if (payload?.type === 'session-status-request') {
+      if (game.user?.isGM) broadcastVoiceSessionStatus(roomNarrationState.active);
+      return;
+    }
+    if (payload?.type === 'session-status') {
+      const sender = game.users?.get?.(payload.senderId);
+      if (!sender?.isGM) {
+        console.warn('[Mestre Orc][Voice] estado de sessão ignorado por não vir do GM', {
+          senderId: payload.senderId ?? null
+        });
+        return;
+      }
+      setVoiceSessionActive(payload.active);
+      return;
+    }
     if (payload?.type !== 'narration-audio' || !payload.audio) return;
     if (payload.senderId && payload.senderId === game.user?.id) return;
     if (!audioTargetsUser(payload.audio, game.user?.id)) {
@@ -471,6 +547,244 @@ function stripHtml(value) {
   const element = document.createElement('div');
   element.innerHTML = String(value ?? '');
   return (element.textContent ?? '').replace(/\s+/g, ' ').trim();
+}
+
+function currentVoiceActorIdentity() {
+  const speaker = ChatMessage.getSpeaker?.() ?? {};
+  const controlledToken = canvas?.tokens?.controlled?.find?.((token) => token?.actor) ?? null;
+  const actorId = String(speaker.actor ?? controlledToken?.actor?.id ?? game.user?.character?.id ?? '').trim();
+  const actor = actorId ? game.actors?.get?.(actorId) ?? controlledToken?.actor ?? game.user?.character ?? null : null;
+  const tokenId = String(speaker.token ?? controlledToken?.document?.id ?? controlledToken?.id ?? '').trim() || null;
+  if (!actor?.id) return null;
+
+  const ownsActor = Boolean(game.user?.isGM || actor.isOwner || actor.testUserPermission?.(game.user, 'OWNER'));
+  if (!ownsActor) return null;
+
+  return {
+    actor,
+    actorId: String(actor.id),
+    actorName: String(actor.name ?? speaker.alias ?? game.user?.name ?? 'Personagem'),
+    tokenId,
+    speaker: {
+      ...speaker,
+      actor: String(actor.id),
+      token: tokenId,
+      alias: String(actor.name ?? speaker.alias ?? game.user?.name ?? 'Personagem')
+    }
+  };
+}
+
+function voiceComposerElement() {
+  return document.querySelector('#chat-message, #chat-form textarea, .chat-form textarea, textarea[name="message"], [contenteditable="true"][data-placeholder]');
+}
+
+function fillVoiceTranscriptInComposer(transcript) {
+  const composer = voiceComposerElement();
+  if (!composer) return false;
+  if ('value' in composer) composer.value = transcript;
+  else composer.textContent = transcript;
+  composer.dispatchEvent(new Event('input', { bubbles: true }));
+  composer.focus?.();
+  return true;
+}
+
+function setVoicePreview(text = '', { final = false } = {}) {
+  latestVoicePreview = normalizeVoiceTranscript(text);
+  const preview = document.getElementById(VOICE_PREVIEW_ID);
+  if (!preview) return;
+  preview.textContent = latestVoicePreview;
+  preview.dataset.visible = String(Boolean(latestVoicePreview));
+  preview.dataset.final = String(Boolean(final));
+}
+
+function refreshVoiceInputButton() {
+  const button = document.getElementById(VOICE_BUTTON_ID);
+  if (!button) return;
+  const enabled = Boolean(audioSetting('voiceInputEnabled', true));
+  const supported = speechRecognitionSupported(globalThis);
+  const state = voiceInputController?.state ?? (supported ? 'idle' : 'unsupported');
+  const processing = state === 'starting' || state === 'processing' || voiceSubmissionInFlight;
+  button.dataset.state = voiceSubmissionInFlight ? 'submitting' : state;
+  button.dataset.enabled = String(enabled);
+
+  if (!enabled) {
+    button.disabled = true;
+    button.innerHTML = '<i class="fa-solid fa-microphone-slash"></i><span>Entrada por voz desligada</span>';
+    button.title = 'Ative a entrada por voz nas configurações do módulo.';
+    return;
+  }
+  if (!supported || state === 'unsupported') {
+    button.disabled = true;
+    button.innerHTML = '<i class="fa-solid fa-microphone-slash"></i><span>Voz indisponível</span>';
+    button.title = 'Este navegador não oferece SpeechRecognition. Use Chrome ou Edge atualizado.';
+    return;
+  }
+  if (!voiceSessionActive && state !== 'listening') {
+    button.disabled = true;
+    button.innerHTML = '<i class="fa-solid fa-microphone-lines-slash"></i><span>Inicie a sessão para falar</span>';
+    button.title = 'A entrada por voz só registra ações durante uma sessão ativa do Mestre Orc.';
+    return;
+  }
+  if (state === 'listening') {
+    button.disabled = false;
+    button.innerHTML = '<i class="fa-solid fa-stop"></i><span>Ouvindo… clique para parar</span>';
+    button.title = 'Clique para encerrar a captura e enviar a transcrição.';
+    return;
+  }
+  if (processing) {
+    button.disabled = true;
+    button.innerHTML = voiceSubmissionInFlight
+      ? '<i class="fa-solid fa-spinner fa-spin"></i><span>Enviando ação…</span>'
+      : '<i class="fa-solid fa-spinner fa-spin"></i><span>Transcrevendo…</span>';
+    button.title = 'Processando a fala reconhecida.';
+    return;
+  }
+
+  button.disabled = false;
+  button.innerHTML = '<i class="fa-solid fa-microphone"></i><span>Falar ação</span>';
+  button.title = 'Clique, dite a ação do personagem e clique novamente para parar.';
+}
+
+async function submitVoiceTranscript(rawTranscript) {
+  const transcript = normalizeVoiceTranscript(rawTranscript);
+  if (!transcript) throw new Error('nenhuma fala válida foi reconhecida.');
+  const identity = currentVoiceActorIdentity();
+  if (!identity) throw new Error('selecione um token próprio ou vincule um personagem ao seu usuário.');
+
+  if (!Boolean(audioSetting('voiceInputAutoSend', true))) {
+    if (!fillVoiceTranscriptInComposer(transcript)) throw new Error('o campo de mensagem do chat não foi encontrado.');
+    setVoicePreview(transcript, { final: true });
+    ui.notifications?.info?.('Mestre Orc: transcrição inserida no chat para revisão.');
+    return { queued: false, draft: true, transcript };
+  }
+
+  voiceSubmissionInFlight = true;
+  refreshVoiceInputButton();
+  try {
+    const escapeHTML = globalThis.foundry?.utils?.escapeHTML ?? ((value) => String(value)
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#039;'));
+    const styles = globalThis.CONST?.CHAT_MESSAGE_STYLES ?? globalThis.CONST?.CHAT_MESSAGE_TYPES ?? {};
+    const messageData = {
+      speaker: identity.speaker,
+      content: `<p>${escapeHTML(transcript)}</p>`,
+      flags: {
+        [MODULE_ID]: {
+          voiceInput: true,
+          language: String(audioSetting('voiceInputLanguage', 'pt-BR')),
+          capturedAt: Date.now()
+        }
+      }
+    };
+    const textStyle = styles.IC ?? styles.OOC;
+    if (textStyle != null) messageData.style = textStyle;
+    await ChatMessage.create(messageData);
+    setVoicePreview(transcript, { final: true });
+    ui.notifications?.info?.(`Mestre Orc: ação de ${identity.actorName} reconhecida e enviada.`);
+    return { queued: true, draft: false, transcript, actorId: identity.actorId };
+  } finally {
+    voiceSubmissionInFlight = false;
+    refreshVoiceInputButton();
+    setTimeout(() => {
+      if (latestVoicePreview === transcript) setVoicePreview('');
+    }, 5000);
+  }
+}
+
+function ensureVoiceInputController() {
+  if (voiceInputController) return voiceInputController;
+  voiceInputController = new VoiceInputController({
+    scope: globalThis,
+    language: String(audioSetting('voiceInputLanguage', 'pt-BR')),
+    onStateChange: () => refreshVoiceInputButton(),
+    onInterim: (interim, finalText) => {
+      const preview = normalizeVoiceTranscript([finalText, interim].filter(Boolean).join(' '));
+      setVoicePreview(preview, { final: Boolean(finalText && !interim) });
+    },
+    onFinal: (transcript) => submitVoiceTranscript(transcript),
+    onError: ({ code, message }) => {
+      refreshVoiceInputButton();
+      if (code === 'aborted') return;
+      ui.notifications?.warn?.(`Mestre Orc: ${message}`);
+    },
+    logger: console
+  });
+  return voiceInputController;
+}
+
+function startOrStopVoiceInput() {
+  const controller = ensureVoiceInputController();
+  if (controller.state === 'listening') {
+    controller.stop();
+    refreshVoiceInputButton();
+    return;
+  }
+  if (controller.state === 'starting' || controller.state === 'processing' || voiceSubmissionInFlight) return;
+  if (!Boolean(audioSetting('voiceInputEnabled', true))) {
+    ui.notifications?.warn?.('Mestre Orc: a entrada por voz está desativada nas configurações do módulo.');
+    return;
+  }
+  if (!speechRecognitionSupported(globalThis)) {
+    ui.notifications?.warn?.('Mestre Orc: reconhecimento de voz indisponível. Abra o Foundry no Chrome ou Edge atualizado.');
+    return;
+  }
+  if (!voiceSessionActive) {
+    ui.notifications?.warn?.('Mestre Orc: inicie a sessão antes de declarar uma ação por voz.');
+    return;
+  }
+  const identity = currentVoiceActorIdentity();
+  if (!identity) {
+    ui.notifications?.warn?.('Mestre Orc: selecione um token próprio ou vincule um personagem ao seu usuário.');
+    return;
+  }
+
+  // Evita que a narração TTS do Mestre Orc seja reconhecida como ação do jogador.
+  stopNarrationAudio();
+  setVoicePreview(`Ouvindo ${identity.actorName}…`);
+  controller.setLanguage(String(audioSetting('voiceInputLanguage', 'pt-BR')));
+  if (!controller.start()) {
+    setVoicePreview('');
+    refreshVoiceInputButton();
+  }
+}
+
+function injectVoiceInputButton(root = document) {
+  if (document.getElementById(VOICE_BUTTON_ID)) {
+    refreshVoiceInputButton();
+    return true;
+  }
+  const chat = findChatContainer(root);
+  if (!chat) return false;
+
+  const button = document.createElement('button');
+  button.id = VOICE_BUTTON_ID;
+  button.type = 'button';
+  button.dataset.mestreOrcAction = 'voice-input';
+  button.onclick = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    startOrStopVoiceInput();
+  };
+
+  const preview = document.createElement('div');
+  preview.id = VOICE_PREVIEW_ID;
+  preview.className = 'mestre-orc-voice-preview';
+  preview.dataset.visible = 'false';
+  preview.dataset.final = 'false';
+  preview.setAttribute('aria-live', 'polite');
+
+  const chatForm = chat.querySelector('#chat-form, .chat-form, form.chat-form');
+  if (chatForm?.parentElement) {
+    chatForm.parentElement.insertBefore(button, chatForm);
+    chatForm.parentElement.insertBefore(preview, chatForm);
+  } else {
+    chat.append(button, preview);
+  }
+  refreshVoiceInputButton();
+  return true;
 }
 
 const PRIVATE_JOURNAL_SELECTOR = [
@@ -1091,6 +1405,7 @@ async function synchronizeRoomSessionState() {
     primeRoomOccupancy();
   }
   applyRoundButtonState(status?.round ?? null, active);
+  broadcastVoiceSessionStatus(active, status?.round ?? null);
   return active;
 }
 
@@ -1307,7 +1622,8 @@ async function processPlayerActionMessage(message) {
   if (!game.user?.isGM || !roomNarrationState.active || !message) return;
   const messageId = String(message.id ?? message._id ?? '');
   if (messageId && processedActionMessages.has(messageId)) return;
-  if (message.speaker?.alias === 'Mestre Orc' || messageAuthorIsGm(message)) return;
+  const voiceInputMessage = Boolean(message.flags?.[MODULE_ID]?.voiceInput);
+  if (message.speaker?.alias === 'Mestre Orc' || (messageAuthorIsGm(message) && !voiceInputMessage)) return;
   const content = stripHtml(message.content ?? '').trim();
   const rejectionReason = actionMessageRejectionReason(message, content);
   const chatStyles = globalThis.CONST?.CHAT_MESSAGE_STYLES ?? globalThis.CONST?.CHAT_MESSAGE_TYPES ?? {};
@@ -1648,6 +1964,7 @@ async function startSession(button) {
       resetRoomNarrationState(currentStatus.sessionId);
       primeRoomOccupancy();
       await refreshRoundButton(currentStatus.round ?? null);
+      broadcastVoiceSessionStatus(true, currentStatus.round ?? null);
       if (button) button.innerHTML = '<i class="fa-solid fa-circle-check"></i><span>Sessão reconectada</span>';
       ui.notifications.info('Mestre Orc: sessão existente reconectada.');
       setTimeout(() => {
@@ -1659,6 +1976,7 @@ async function startSession(button) {
 
     if (button) button.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i><span>Lendo a cena ativa...</span>';
     const snapshot = await collectSnapshot();
+    setVoiceSessionActive(false);
     resetRoomNarrationState();
 
     if (button) button.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i><span>Gerando abertura...</span>';
@@ -1677,6 +1995,7 @@ async function startSession(button) {
     );
     primeRoomOccupancy();
     await refreshRoundButton(result.round ?? null);
+    broadcastVoiceSessionStatus(true, result.round ?? null);
     if (button) button.innerHTML = '<i class="fa-solid fa-circle-check"></i><span>Sessão iniciada</span>';
     ui.notifications.info('Mestre Orc: abertura publicada no chat.');
     if (button) {
@@ -1691,6 +2010,7 @@ async function startSession(button) {
     stopRoomMonitor();
     roomNarrationState.reset();
     applyRoundButtonState(null, false);
+    broadcastVoiceSessionStatus(false);
     console.error(`${MODULE_ID} | falha ao iniciar`, error);
     ui.notifications.error(`Mestre Orc: ${error.message}`);
     if (button?.isConnected) {
@@ -1785,8 +2105,19 @@ function scheduleInjection(root) {
     injectStartButton(root);
     injectResolveRoundButton(root);
     injectAudioToggleButton(root);
-    setTimeout(() => { injectStartButton(document); injectResolveRoundButton(document); injectAudioToggleButton(document); }, 250);
-    setTimeout(() => { injectStartButton(document); injectResolveRoundButton(document); injectAudioToggleButton(document); }, 1000);
+    injectVoiceInputButton(root);
+    setTimeout(() => {
+      injectStartButton(document);
+      injectResolveRoundButton(document);
+      injectAudioToggleButton(document);
+      injectVoiceInputButton(document);
+    }, 250);
+    setTimeout(() => {
+      injectStartButton(document);
+      injectResolveRoundButton(document);
+      injectAudioToggleButton(document);
+      injectVoiceInputButton(document);
+    }, 1000);
   });
 }
 
@@ -1840,6 +2171,7 @@ Hooks.once('init', () => {
   installDelegatedStartHandler();
   installRoomTracking();
   installPlayerActionHook();
+  ensureVoiceInputController();
   if (supportsSpeechSynthesis()) {
     refreshSpeechVoices();
     window.speechSynthesis.addEventListener?.('voiceschanged', refreshSpeechVoices);
@@ -1853,7 +2185,12 @@ Hooks.once('ready', () => {
   ui.notifications?.info?.(`Mestre Orc ${MODULE_BUILD} carregado.`);
   installAudioSocket();
   scheduleInjection(document);
-  void synchronizeRoomSessionState();
+  if (game.user?.isGM) void synchronizeRoomSessionState();
+  else {
+    requestVoiceSessionStatus();
+    setTimeout(requestVoiceSessionStatus, 1200);
+    setTimeout(requestVoiceSessionStatus, 3500);
+  }
 });
 Hooks.on('renderChatLog', (_app, html) => scheduleInjection(asElement(html) ?? document));
 Hooks.on('renderSidebarTab', (app, html) => {

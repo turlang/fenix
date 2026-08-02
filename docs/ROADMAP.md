@@ -19,6 +19,17 @@
 - [x] narração e áudio consolidados;
 - [x] preservação da fila quando a resolução falha.
 
+## Marco 2.1 — Entrada por voz ✅ — alpha.38
+- [x] botão pressionar para falar no chat;
+- [x] reconhecimento nativo `SpeechRecognition`/`webkitSpeechRecognition`;
+- [x] transcrição parcial em tempo real;
+- [x] identificação do token ou personagem vinculado;
+- [x] envio automático para a fila da rodada;
+- [x] modo de revisão no campo do chat;
+- [x] sincronização do estado da sessão entre GM e jogadores;
+- [x] interrupção do TTS durante a escuta;
+- [x] tratamento de permissão, microfone, idioma, rede e navegador incompatível.
+
 ## Marco 3 — Memória — próximo
 - fatos persistentes;
 - estado dos NPCs;

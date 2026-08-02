@@ -1,6 +1,6 @@
 # Mestre Orc Engine
 
-Versão `0.1.0-alpha.37` — Node.js 20–24 e Foundry VTT 13.
+Versão `0.1.0-alpha.38` — Node.js 20–24 e Foundry VTT 13.
 
 O fluxo atual localiza a Scene ativa, procura o Journal correspondente no diretório do Foundry e extrai exclusivamente uma caixa read-aloud reconhecida. São aceitos os formatos antigo e atual do Plutonium/5eTools, `blockquote` HTML e citação Markdown; blocos secretos ou exclusivos do GM são ignorados. A âncora canônica é interpretada com Groq, validada e publicada no chat com áudio.
 
@@ -61,9 +61,13 @@ Copie o conteúdo de `apps/foundry-module` para:
 FoundryVTT/Data/modules/mestre-orc/
 ```
 
-A pasta precisa conter diretamente `module.json`, `scripts/main.js`, `scripts/read-aloud.js`, `scripts/room-transition-state.js`, `scripts/chat-action-filter.js`, `scripts/audio-routing.js`, `scripts/token-vision.js`, `scripts/cinematic-speech.js` e `styles/mestre-orc.css`.
+A pasta precisa conter diretamente `module.json`, `scripts/main.js`, `scripts/read-aloud.js`, `scripts/room-transition-state.js`, `scripts/chat-action-filter.js`, `scripts/audio-routing.js`, `scripts/token-vision.js`, `scripts/cinematic-speech.js`, `scripts/voice-input.js` e `styles/mestre-orc.css`.
 
 O botão **Áudio ligado/desligado** aparece junto ao chat para cada usuário. Nas configurações do módulo é possível ajustar voz, velocidade, tom e volume. O mestre pode desativar a transmissão para os demais clientes.
+
+O botão **Falar ação** permite entrada por voz durante uma sessão ativa. O jogador precisa controlar um token próprio ou possuir um personagem vinculado ao usuário. Ao clicar, o módulo interrompe temporariamente o TTS para não capturar a própria narração, mostra a transcrição parcial e publica o resultado como mensagem do personagem. O cliente do GM recebe essa mensagem pelo hook normal do chat e a registra na fila da rodada. A opção **Enviar transcrição automaticamente** pode ser desativada para preencher o campo do chat e permitir revisão antes do envio.
+
+O reconhecimento usa `SpeechRecognition`/`webkitSpeechRecognition` do navegador, com idioma configurável e `pt-BR` como padrão. Recomenda-se Chrome ou Edge atualizado, com permissão de microfone e acesso ao Foundry por HTTPS ou `localhost`. Quando o navegador não oferece o recurso, o botão informa que a entrada por voz está indisponível sem afetar o chat textual.
 
 O roteiro pode conter marcações como `[sussurro]`, `[tenso]`, `[pausa]`, `[suspiro]`, `[risada]` e `[grito]`. O módulo não pronuncia os colchetes: ele separa a narração em trechos, altera ritmo, tom e volume e aplica pausas reais para reticências, travessões e quebras de linha. As marcações desconhecidas permanecem no texto para não apagar conteúdo canônico por engano.
 
@@ -81,7 +85,7 @@ O chat e o áudio da sala são direcionados exclusivamente aos jogadores ativos 
 
 As publicações de áudio usam uma chave estável por sessão e uma impressão digital do texto compartilhada entre as abas do mesmo navegador. O Engine também mantém idempotência por sala e ação, impedindo duas chamadas concorrentes de gerar respostas diferentes para o mesmo evento.
 
-Durante uma sessão ativa, mensagens públicas e textuais de jogadores no chat são registradas como declarações da rodada fora de combate. Cada personagem mantém somente sua declaração mais recente; uma nova mensagem do mesmo personagem substitui a anterior sem apagar as ações dos demais. Whispers, avisos de módulos, cards automatizados, rolagens, comandos iniciados por `/`, mensagens do GM e mensagens do próprio Mestre Orc são ignorados.
+Durante uma sessão ativa, mensagens públicas e textuais de jogadores no chat são registradas como declarações da rodada fora de combate. Cada personagem mantém somente sua declaração mais recente; uma nova mensagem do mesmo personagem substitui a anterior sem apagar as ações dos demais. Whispers, avisos de módulos, cards automatizados, rolagens, comandos iniciados por `/`, mensagens manuais do GM e mensagens do próprio Mestre Orc são ignorados. Uma mensagem do GM marcada pelo módulo como entrada de voz é aceita quando estiver vinculada a um personagem.
 
 O botão **Resolver rodada** mostra o número da rodada e a quantidade de personagens que já declararam ações. Ao acioná-lo, o Engine executa uma única vez o pipeline `Action Interpreter → Rules Adapter → Relationship Service → NPC Coordinator → World State → narração consolidada`. O adaptador do sistema ativo opera em modo consultivo e não inventa rolagens, dano ou resultados mecânicos. A narração e o áudio são publicados uma única vez para a rodada inteira; se a IA falhar, as declarações permanecem na fila para nova tentativa.
 
@@ -103,6 +107,7 @@ Início de sessão
 → abertura no chat e áudio
 
 Rodada fora de combate
+→ texto digitado ou ação reconhecida por voz
 → uma declaração por personagem
 → Action Interpreter
 → Rules Adapter do sistema ativo
@@ -123,7 +128,7 @@ Crie um repositório vazio no GitHub e execute na raiz do projeto:
 git init
 git branch -M main
 git add .
-git commit -m "feat: complete non-combat round alpha.37"
+git commit -m "feat: add voice action input alpha.38"
 git remote add origin https://github.com/SEU-USUARIO/SEU-REPOSITORIO.git
 git push -u origin main
 ```

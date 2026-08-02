@@ -7,6 +7,7 @@ const required = [
   'apps/foundry-module/module.json',
   'apps/foundry-module/scripts/read-aloud.js',
   'apps/foundry-module/scripts/cinematic-speech.js',
+  'apps/foundry-module/scripts/voice-input.js',
   'apps/foundry-module/scripts/room-transition-state.js',
   'apps/foundry-module/scripts/token-vision.js',
   'packages/session-director/src/index.js',

@@ -79,3 +79,72 @@
   cursor: not-allowed;
   filter: saturate(0.55);
 }
+
+#mestre-orc-voice-input {
+  width: calc(100% - 12px);
+  min-height: 36px;
+  margin: 0 6px 6px;
+  padding: 7px 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid rgba(91, 158, 112, 0.82);
+  border-radius: 6px;
+  background: linear-gradient(180deg, rgba(32, 66, 43, 0.98), rgba(20, 43, 29, 0.98));
+  color: #e0f7e7;
+  font-weight: 700;
+  cursor: pointer;
+  transition: border-color 120ms ease, box-shadow 120ms ease, transform 120ms ease;
+}
+
+#mestre-orc-voice-input:not(:disabled):hover,
+#mestre-orc-voice-input:not(:disabled):focus-visible {
+  border-color: #82d99c;
+  color: #ffffff;
+  box-shadow: 0 0 0 1px rgba(130, 217, 156, 0.3), 0 2px 7px rgba(0, 0, 0, 0.5);
+}
+
+#mestre-orc-voice-input:not(:disabled):active { transform: translateY(1px); }
+#mestre-orc-voice-input i { color: #82d99c; }
+#mestre-orc-voice-input:disabled {
+  opacity: 0.58;
+  cursor: not-allowed;
+  filter: saturate(0.55);
+}
+
+#mestre-orc-voice-input[data-state="listening"] {
+  border-color: rgba(232, 92, 92, 0.95);
+  background: linear-gradient(180deg, rgba(91, 35, 35, 0.98), rgba(55, 22, 22, 0.98));
+  box-shadow: 0 0 0 2px rgba(232, 92, 92, 0.18), 0 0 14px rgba(232, 92, 92, 0.2);
+  animation: mestre-orc-listening-pulse 1.15s ease-in-out infinite;
+}
+
+#mestre-orc-voice-input[data-state="listening"] i { color: #ff9b9b; }
+
+.mestre-orc-voice-preview {
+  display: none;
+  width: calc(100% - 12px);
+  min-height: 28px;
+  margin: -1px 6px 6px;
+  padding: 6px 9px;
+  border-left: 3px solid rgba(130, 217, 156, 0.75);
+  border-radius: 3px;
+  background: rgba(17, 28, 21, 0.88);
+  color: #d8eadf;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.mestre-orc-voice-preview[data-visible="true"] { display: block; }
+.mestre-orc-voice-preview[data-final="true"] { border-left-color: #d6a84f; }
+
+@keyframes mestre-orc-listening-pulse {
+  0%, 100% { box-shadow: 0 0 0 2px rgba(232, 92, 92, 0.15), 0 0 8px rgba(232, 92, 92, 0.14); }
+  50% { box-shadow: 0 0 0 4px rgba(232, 92, 92, 0.08), 0 0 18px rgba(232, 92, 92, 0.3); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #mestre-orc-voice-input[data-state="listening"] { animation: none; }
+}

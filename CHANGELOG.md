@@ -17,6 +17,30 @@ Este projeto segue o formato do [Keep a Changelog](https://keepachangelog.com/pt
 - Comando `npm run release:prepare` para gerar uma pasta de distribuição higienizada em `dist/`.
 - Comando `npm run check:offline` para validar estrutura e testes quando a auditoria remota do npm estiver indisponível.
 
+## [0.1.0-alpha.38] - 2026-08-02
+
+### Adicionado
+
+- Botão **Falar ação** disponível no chat para jogadores e mestre.
+- Reconhecimento de voz nativo com suporte a `SpeechRecognition` e `webkitSpeechRecognition`.
+- Transcrição parcial visível durante a fala e normalização do texto final.
+- Idioma de reconhecimento configurável, com `pt-BR` como padrão.
+- Opção para enviar automaticamente ou inserir a transcrição no campo do chat para revisão.
+- Sincronização por socket do estado da sessão entre o cliente do GM e os jogadores.
+- Testes unitários do controlador de voz e testes de integração com o pipeline do chat.
+
+### Alterado
+
+- O TTS é interrompido quando o microfone começa a escutar, evitando que a narração seja capturada como ação.
+- Mensagens de voz usam o personagem ou token controlado como `speaker` e entram pela mesma fila segura das mensagens digitadas.
+- Mensagens manuais do GM continuam ignoradas, mas ações de voz do GM vinculadas a um personagem são aceitas.
+
+### Segurança e confiabilidade
+
+- A captura só inicia durante uma sessão ativa e exige personagem próprio ou token controlado.
+- Estados de início, escuta, transcrição e envio impedem capturas simultâneas ou envios duplicados.
+- Erros de permissão, ausência de microfone, rede, idioma e falta de fala produzem mensagens específicas sem quebrar o chat textual.
+
 ## [0.1.0-alpha.37] - 2026-08-02
 
 ### Adicionado
