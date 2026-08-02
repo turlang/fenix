@@ -27,6 +27,7 @@ function shouldCopy(source) {
   if (excludedFileNames.has(fileName)) return false;
   if (fileName.startsWith('.env.') && fileName !== '.env.example') return false;
   if (fileName.endsWith('.log')) return false;
+  if (relativePath.startsWith('data/') && fileName.endsWith('.json')) return false;
 
   return true;
 }
@@ -51,6 +52,7 @@ const forbiddenPaths = [
   'node_modules',
   '.env',
   'data/narration-history.json',
+  'data/campaign-memory.json',
   'dist'
 ];
 
@@ -74,7 +76,7 @@ const manifest = {
     'dist/',
     'coverage/',
     '.env e variantes locais',
-    'data/narration-history.json',
+    'data/*.json',
     '*.log'
   ]
 };

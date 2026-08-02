@@ -1,8 +1,8 @@
 {
   "id": "mestre-orc",
   "title": "Mestre Orc",
-  "description": "Narrações cinematográficas expressivas, entrada de ações por voz, rodadas fora de combate consolidadas, visão individual do token, chat privado e áudio TTS contextual.",
-  "version": "0.1.0-alpha.38",
+  "description": "Narrações cinematográficas, ações por voz, rodadas consolidadas e memória persistente de fatos, NPCs, relações, missões e itens.",
+  "version": "0.1.0-alpha.39",
   "compatibility": {
     "minimum": "13",
     "verified": "13"

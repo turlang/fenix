@@ -27,12 +27,14 @@ import {
 } from './voice-input.js';
 
 const MODULE_ID = 'mestre-orc';
-const MODULE_BUILD = '0.1.0-alpha.38';
+const MODULE_BUILD = '0.1.0-alpha.39';
 const BUTTON_ID = 'mestre-orc-start';
 const ROUND_BUTTON_ID = 'mestre-orc-resolve-round';
 const AUDIO_BUTTON_ID = 'mestre-orc-audio-toggle';
 const VOICE_BUTTON_ID = 'mestre-orc-voice-input';
 const VOICE_PREVIEW_ID = 'mestre-orc-voice-preview';
+const MEMORY_BUTTON_ID = 'mestre-orc-memory';
+const MEMORY_PANEL_ID = 'mestre-orc-memory-panel';
 const SOCKET_CHANNEL = `module.${MODULE_ID}`;
 const API_URL = 'http://localhost:3001';
 let startInFlight = false;
@@ -1865,6 +1867,253 @@ async function request(path, options = {}) {
   return payload;
 }
 
+
+
+function memoryEscape(value) {
+  const escapeHTML = globalThis.foundry?.utils?.escapeHTML;
+  if (escapeHTML) return escapeHTML(String(value ?? ''));
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
+}
+
+function memoryCollectionLabel(collection) {
+  return ({ facts: 'Fatos', npcs: 'NPCs', relationships: 'Relações', quests: 'Missões', items: 'Itens' })[collection] ?? collection;
+}
+
+function memoryRecordTitle(collection, record = {}) {
+  if (collection === 'facts') return record.text ?? 'Fato sem texto';
+  if (collection === 'relationships') return `${record.actorName ?? record.actorId ?? 'Personagem'} → ${record.npcName ?? record.npcId ?? 'NPC'}`;
+  return record.name ?? record.title ?? record.id ?? 'Registro';
+}
+
+function memoryRecordDetail(collection, record = {}) {
+  if (collection === 'facts') return [record.category, record.source].filter(Boolean).join(' · ');
+  if (collection === 'npcs') return [record.status, record.location].filter(Boolean).join(' · ');
+  if (collection === 'relationships') return `${record.type ?? 'NEUTRAL'} · ${Number(record.score) || 0}`;
+  if (collection === 'quests') return [record.status, record.objective].filter(Boolean).join(' · ');
+  if (collection === 'items') return [record.status, `Qtd. ${Number(record.quantity) || 0}`, record.ownerActorName].filter(Boolean).join(' · ');
+  return '';
+}
+
+function memoryActorOptions(type) {
+  const actors = Array.from(game.actors ?? []).filter((actor) => {
+    const actorType = String(actor?.type ?? '').toLowerCase();
+    return type === 'npc' ? actorType === 'npc' : actorType !== 'npc';
+  });
+  return actors.map((actor) => `<option value="${memoryEscape(actor.id)}" data-name="${memoryEscape(actor.name)}">${memoryEscape(actor.name)}</option>`).join('');
+}
+
+function memoryRecords(snapshot, collection) {
+  return Array.isArray(snapshot?.records?.[collection]) ? snapshot.records[collection] : [];
+}
+
+function memoryCollectionHtml(snapshot, collection) {
+  const records = memoryRecords(snapshot, collection)
+    .sort((left, right) => String(right.updatedAt ?? right.lastSeenAt ?? '').localeCompare(String(left.updatedAt ?? left.lastSeenAt ?? '')))
+    .slice(0, 30);
+  if (!records.length) return '<p class="mestre-orc-memory-empty">Nenhum registro.</p>';
+  return `<ul class="mestre-orc-memory-list">${records.map((record) => `
+    <li>
+      <div>
+        <strong>${memoryEscape(memoryRecordTitle(collection, record))}</strong>
+        <small>${memoryEscape(memoryRecordDetail(collection, record))}</small>
+      </div>
+      <button type="button" class="mestre-orc-memory-delete" data-collection="${memoryEscape(collection)}" data-record-id="${memoryEscape(record.id)}" title="Remover registro"><i class="fa-solid fa-trash"></i></button>
+    </li>`).join('')}</ul>`;
+}
+
+function memoryPanelHtml(snapshot) {
+  const counts = snapshot?.counts ?? {};
+  return `
+    <div id="${MEMORY_PANEL_ID}" class="mestre-orc-memory-overlay" role="dialog" aria-modal="true" aria-labelledby="mestre-orc-memory-title">
+      <section class="mestre-orc-memory-panel">
+        <header>
+          <div>
+            <span class="mestre-orc-memory-kicker">Campanha ${memoryEscape(snapshot?.campaignId ?? game.world?.id ?? '')}</span>
+            <h2 id="mestre-orc-memory-title">Memória persistente</h2>
+            <p>Fatos e estados recuperados automaticamente após reiniciar o Engine.</p>
+          </div>
+          <button type="button" data-memory-action="close" aria-label="Fechar"><i class="fa-solid fa-xmark"></i></button>
+        </header>
+
+        <div class="mestre-orc-memory-stats">
+          ${['facts', 'npcs', 'relationships', 'quests', 'items'].map((collection) => `
+            <article><strong>${Number(counts[collection]) || 0}</strong><span>${memoryCollectionLabel(collection)}</span></article>`).join('')}
+        </div>
+
+        <div class="mestre-orc-memory-grid">
+          ${['facts', 'npcs', 'relationships', 'quests', 'items'].map((collection) => `
+            <section class="mestre-orc-memory-section">
+              <h3>${memoryCollectionLabel(collection)}</h3>
+              ${memoryCollectionHtml(snapshot, collection)}
+            </section>`).join('')}
+        </div>
+
+        <form class="mestre-orc-memory-form">
+          <h3>Adicionar ou atualizar registro</h3>
+          <label>Categoria
+            <select name="collection">
+              <option value="facts">Fato</option>
+              <option value="npcs">NPC</option>
+              <option value="relationships">Relação</option>
+              <option value="quests">Missão</option>
+              <option value="items">Item</option>
+            </select>
+          </label>
+
+          <div data-memory-fields="facts">
+            <label>Fato<textarea name="factText" maxlength="4000" placeholder="Ex.: A ponte de Crimmor foi interditada."></textarea></label>
+            <label>Categoria<input name="factCategory" maxlength="100" value="GENERAL"></label>
+          </div>
+
+          <div data-memory-fields="npcs" hidden>
+            <label>Nome do NPC<input name="npcName" maxlength="300"></label>
+            <label>Estado atual<input name="npcStatus" maxlength="500" placeholder="Ex.: ferido, desconfiado, desaparecido"></label>
+            <label>Localização<input name="npcLocation" maxlength="300"></label>
+          </div>
+
+          <div data-memory-fields="relationships" hidden>
+            <label>Personagem<select name="relationshipActorId"><option value="">Selecione</option>${memoryActorOptions('character')}</select></label>
+            <label>NPC<select name="relationshipNpcId"><option value="">Selecione</option>${memoryActorOptions('npc')}</select></label>
+            <label>Pontuação (-100 a 100)<input name="relationshipScore" type="number" min="-100" max="100" value="0"></label>
+          </div>
+
+          <div data-memory-fields="quests" hidden>
+            <label>Título da missão<input name="questTitle" maxlength="400"></label>
+            <label>Status<select name="questStatus"><option>ACTIVE</option><option>COMPLETED</option><option>FAILED</option><option>PAUSED</option></select></label>
+            <label>Objetivo<textarea name="questObjective" maxlength="1500"></textarea></label>
+          </div>
+
+          <div data-memory-fields="items" hidden>
+            <label>Nome do item<input name="itemName" maxlength="400"></label>
+            <label>Responsável<select name="itemOwnerActorId"><option value="">Grupo</option>${memoryActorOptions('character')}</select></label>
+            <label>Quantidade<input name="itemQuantity" type="number" min="0" max="9999" value="1"></label>
+            <label>Status<select name="itemStatus"><option>CARRIED</option><option>STORED</option><option>USED</option><option>REMOVED</option></select></label>
+          </div>
+
+          <label class="mestre-orc-memory-visibility">Visibilidade
+            <select name="visibility"><option value="known">Conhecida</option><option value="secret">Segredo do mestre</option></select>
+          </label>
+          <div class="mestre-orc-memory-form-actions">
+            <button type="button" data-memory-action="refresh"><i class="fa-solid fa-rotate"></i> Atualizar</button>
+            <button type="submit"><i class="fa-solid fa-floppy-disk"></i> Salvar registro</button>
+          </div>
+        </form>
+      </section>
+    </div>`;
+}
+
+function closeCampaignMemoryPanel() {
+  document.getElementById(MEMORY_PANEL_ID)?.remove();
+}
+
+function memorySelectedName(select) {
+  const option = select?.selectedOptions?.[0];
+  return option?.dataset?.name || option?.textContent?.trim() || null;
+}
+
+function memoryRecordFromForm(form) {
+  const data = new FormData(form);
+  const collection = String(data.get('collection') ?? 'facts');
+  const visibility = String(data.get('visibility') ?? 'known');
+  if (collection === 'facts') return { collection, record: { text: data.get('factText'), category: data.get('factCategory'), visibility } };
+  if (collection === 'npcs') return { collection, record: { name: data.get('npcName'), status: data.get('npcStatus'), location: data.get('npcLocation'), visibility } };
+  if (collection === 'relationships') {
+    const actorSelect = form.elements.relationshipActorId;
+    const npcSelect = form.elements.relationshipNpcId;
+    return { collection, record: {
+      actorId: data.get('relationshipActorId'), actorName: memorySelectedName(actorSelect),
+      npcId: data.get('relationshipNpcId'), npcName: memorySelectedName(npcSelect),
+      score: Number(data.get('relationshipScore')) || 0, visibility
+    } };
+  }
+  if (collection === 'quests') return { collection, record: {
+    title: data.get('questTitle'), status: data.get('questStatus'), objective: data.get('questObjective'), visibility
+  } };
+  const ownerSelect = form.elements.itemOwnerActorId;
+  return { collection, record: {
+    name: data.get('itemName'), ownerActorId: data.get('itemOwnerActorId') || null,
+    ownerActorName: data.get('itemOwnerActorId') ? memorySelectedName(ownerSelect) : null,
+    quantity: Number(data.get('itemQuantity')) || 0, status: data.get('itemStatus'), visibility
+  } };
+}
+
+function bindCampaignMemoryPanel(panel) {
+  const form = panel.querySelector('.mestre-orc-memory-form');
+  const collectionSelect = form?.elements?.collection;
+  const updateFields = () => {
+    const selected = String(collectionSelect?.value ?? 'facts');
+    panel.querySelectorAll('[data-memory-fields]').forEach((element) => {
+      element.hidden = element.dataset.memoryFields !== selected;
+    });
+  };
+  collectionSelect?.addEventListener('change', updateFields);
+  updateFields();
+
+  panel.addEventListener('click', async (event) => {
+    const target = event.target instanceof Element ? event.target.closest('button') : null;
+    if (!target) return;
+    const action = target.dataset.memoryAction;
+    if (action === 'close') return closeCampaignMemoryPanel();
+    if (action === 'refresh') return openCampaignMemoryPanel();
+    if (target.classList.contains('mestre-orc-memory-delete')) {
+      const collection = target.dataset.collection;
+      const recordId = target.dataset.recordId;
+      if (!collection || !recordId) return;
+      target.disabled = true;
+      try {
+        await request(`/v1/campaign-memory/${encodeURIComponent(game.world?.id ?? 'default')}/${encodeURIComponent(collection)}/${encodeURIComponent(recordId)}`, { method: 'DELETE' });
+        ui.notifications?.info?.('Mestre Orc: registro removido da memória.');
+        await openCampaignMemoryPanel();
+      } catch (error) {
+        target.disabled = false;
+        ui.notifications?.warn?.(`Mestre Orc: ${error.message}`);
+      }
+    }
+  });
+
+  form?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const submit = form.querySelector('button[type="submit"]');
+    submit.disabled = true;
+    try {
+      const { collection, record } = memoryRecordFromForm(form);
+      await request(`/v1/campaign-memory/${encodeURIComponent(game.world?.id ?? 'default')}/${encodeURIComponent(collection)}`, {
+        method: 'POST',
+        body: JSON.stringify(record)
+      });
+      ui.notifications?.info?.(`Mestre Orc: ${memoryCollectionLabel(collection)} atualizado(a).`);
+      await openCampaignMemoryPanel();
+    } catch (error) {
+      submit.disabled = false;
+      ui.notifications?.warn?.(`Mestre Orc: ${error.message}`);
+    }
+  });
+}
+
+async function openCampaignMemoryPanel() {
+  if (!game.user?.isGM) return;
+  try {
+    const campaignId = encodeURIComponent(game.world?.id ?? 'default');
+    const snapshot = await request(`/v1/campaign-memory/${campaignId}`);
+    closeCampaignMemoryPanel();
+    document.body.insertAdjacentHTML('beforeend', memoryPanelHtml(snapshot));
+    const panel = document.getElementById(MEMORY_PANEL_ID);
+    if (!panel) return;
+    bindCampaignMemoryPanel(panel);
+    panel.addEventListener('click', (event) => {
+      if (event.target === panel) closeCampaignMemoryPanel();
+    });
+  } catch (error) {
+    console.error('[Mestre Orc] falha ao abrir memória persistente', error);
+    ui.notifications?.warn?.(`Mestre Orc: ${error.message}`);
+  }
+}
+
 function narrationHtml(text) {
   return String(text ?? '')
     .split(/\n{2,}/)
@@ -2082,13 +2331,39 @@ function injectResolveRoundButton(root = document) {
 }
 
 
+
+
+function injectMemoryButton(root = document) {
+  if (!game.user?.isGM || document.getElementById(MEMORY_BUTTON_ID)) return false;
+  const chat = findChatContainer(root);
+  if (!chat) return false;
+
+  const button = document.createElement('button');
+  button.id = MEMORY_BUTTON_ID;
+  button.type = 'button';
+  button.dataset.mestreOrcAction = 'open-memory';
+  button.innerHTML = '<i class="fa-solid fa-book-atlas"></i><span>Memória da campanha</span>';
+  button.onclick = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    void openCampaignMemoryPanel();
+  };
+
+  const roundButton = document.getElementById(ROUND_BUTTON_ID);
+  const audioButton = document.getElementById(AUDIO_BUTTON_ID);
+  if (roundButton?.parentElement) roundButton.insertAdjacentElement('afterend', button);
+  else if (audioButton?.parentElement) audioButton.parentElement.insertBefore(button, audioButton);
+  else chat.prepend(button);
+  return true;
+}
+
 function installDelegatedStartHandler() {
   if (document.documentElement.dataset.mestreOrcDelegated === '1') return;
   document.documentElement.dataset.mestreOrcDelegated = '1';
 
   document.addEventListener('click', (event) => {
     const target = event.target instanceof Element
-      ? event.target.closest('[data-mestre-orc-action="start-session"], [data-mestre-orc-action="resolve-round"], #mestre-orc-start, #mestre-orc-resolve-round')
+      ? event.target.closest('[data-mestre-orc-action="start-session"], [data-mestre-orc-action="resolve-round"], [data-mestre-orc-action="open-memory"], #mestre-orc-start, #mestre-orc-resolve-round, #mestre-orc-memory')
       : null;
     if (!target) return;
 
@@ -2096,6 +2371,7 @@ function installDelegatedStartHandler() {
     event.stopImmediatePropagation();
     console.log('[Mestre Orc] handler delegado acionado', { action: target.dataset.mestreOrcAction });
     if (target.dataset.mestreOrcAction === 'resolve-round' || target.id === ROUND_BUTTON_ID) void resolveRound(target);
+    else if (target.dataset.mestreOrcAction === 'open-memory' || target.id === MEMORY_BUTTON_ID) void openCampaignMemoryPanel();
     else void startSession(target);
   }, true);
 }
@@ -2104,17 +2380,20 @@ function scheduleInjection(root) {
   requestAnimationFrame(() => {
     injectStartButton(root);
     injectResolveRoundButton(root);
+    injectMemoryButton(root);
     injectAudioToggleButton(root);
     injectVoiceInputButton(root);
     setTimeout(() => {
       injectStartButton(document);
       injectResolveRoundButton(document);
+      injectMemoryButton(document);
       injectAudioToggleButton(document);
       injectVoiceInputButton(document);
     }, 250);
     setTimeout(() => {
       injectStartButton(document);
       injectResolveRoundButton(document);
+      injectMemoryButton(document);
       injectAudioToggleButton(document);
       injectVoiceInputButton(document);
     }, 1000);
@@ -2156,6 +2435,19 @@ Hooks.on('getSceneControlButtons', (controls) => {
       onChange: () => {
         console.log('[Mestre Orc] resolução de rodada acionada pelos controles da cena');
         void resolveRound(null);
+      }
+    };
+
+    tokenControls.tools.mestreOrcMemory = {
+      name: 'mestreOrcMemory',
+      title: 'Mestre Orc — Memória da campanha',
+      icon: 'fa-solid fa-book-atlas',
+      order: Object.keys(tokenControls.tools).length,
+      button: true,
+      visible: true,
+      onChange: () => {
+        console.log('[Mestre Orc] memória da campanha aberta pelos controles da cena');
+        void openCampaignMemoryPanel();
       }
     };
 

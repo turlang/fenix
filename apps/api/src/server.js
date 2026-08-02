@@ -4,6 +4,7 @@ import { createSessionRuntime } from '../../../packages/session-runtime/src/inde
 import { createNarrativeProviderFromEnv } from '../../../packages/ai-provider/src/index.js';
 import { createNarrationMemoryFromEnv } from '../../../packages/narration-memory/src/index.js';
 import { createAudioNarrationServiceFromEnv } from '../../../packages/audio-narration-service/src/index.js';
+import { createCampaignMemoryFromEnv } from '../../../packages/memory/src/index.js';
 import { createConfig, isOriginAllowed, loadEnvFile } from '../../../packages/config/src/index.js';
 
 
@@ -15,7 +16,8 @@ const app = Fastify({ logger: true, bodyLimit: config.bodyLimit, trustProxy: con
 const narrator = createNarrativeProviderFromEnv({ logger: app.log });
 const narrationMemory = createNarrationMemoryFromEnv({ logger: app.log });
 const audioNarrationService = createAudioNarrationServiceFromEnv({ logger: app.log });
-const runtime = createSessionRuntime({ narrator, narrationMemory, audioNarrationService, logger: app.log });
+const campaignMemory = createCampaignMemoryFromEnv({ logger: app.log });
+const runtime = createSessionRuntime({ narrator, narrationMemory, audioNarrationService, campaignMemory, logger: app.log });
 
 app.addHook('onRequest', async (request, reply) => {
   const origin = request.headers.origin;
@@ -24,7 +26,7 @@ app.addHook('onRequest', async (request, reply) => {
     reply.header('Vary', 'Origin');
   }
   reply.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-  reply.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  reply.header('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
   if (request.method === 'OPTIONS') return reply.code(204).send();
 });
 
@@ -34,6 +36,7 @@ app.get('/health', { logLevel: 'silent' }, async () => ({
   version: packageMetadata.version,
   ai: narrator ? 'groq' : 'not-configured',
   narrativeMemory: 'persistent-file',
+  campaignMemory: 'persistent-file',
   audio: audioNarrationService.enabled ? audioNarrationService.mode : 'disabled',
   runtime: runtime.getStatus()
 }));
@@ -165,6 +168,70 @@ app.post('/v1/session/room-entry', {
 
 app.post('/v1/session/end', async () => runtime.end());
 app.get('/v1/session/status', async () => runtime.getStatus());
+
+const memoryCollections = ['facts', 'npcs', 'relationships', 'quests', 'items'];
+
+app.get('/v1/campaign-memory/:campaignId', {
+  schema: {
+    params: {
+      type: 'object',
+      required: ['campaignId'],
+      properties: { campaignId: { type: 'string', minLength: 1, maxLength: 200 } }
+    }
+  }
+}, async (request, reply) => {
+  try { return await runtime.getCampaignMemory(request.params.campaignId); }
+  catch (error) { return reply.code(400).send({ code: 'CAMPAIGN_MEMORY_READ_FAILED', message: error.message }); }
+});
+
+app.post('/v1/campaign-memory/:campaignId/:collection', {
+  schema: {
+    params: {
+      type: 'object',
+      required: ['campaignId', 'collection'],
+      properties: {
+        campaignId: { type: 'string', minLength: 1, maxLength: 200 },
+        collection: { type: 'string', enum: memoryCollections }
+      }
+    },
+    body: { type: 'object', additionalProperties: true }
+  }
+}, async (request, reply) => {
+  try {
+    return await runtime.upsertCampaignMemory(
+      request.params.campaignId,
+      request.params.collection,
+      request.body ?? {}
+    );
+  } catch (error) {
+    return reply.code(400).send({ code: 'CAMPAIGN_MEMORY_WRITE_FAILED', message: error.message });
+  }
+});
+
+app.delete('/v1/campaign-memory/:campaignId/:collection/:recordId', {
+  schema: {
+    params: {
+      type: 'object',
+      required: ['campaignId', 'collection', 'recordId'],
+      properties: {
+        campaignId: { type: 'string', minLength: 1, maxLength: 200 },
+        collection: { type: 'string', enum: memoryCollections },
+        recordId: { type: 'string', minLength: 1, maxLength: 200 }
+      }
+    }
+  }
+}, async (request, reply) => {
+  try {
+    return await runtime.removeCampaignMemory(
+      request.params.campaignId,
+      request.params.collection,
+      request.params.recordId
+    );
+  } catch (error) {
+    return reply.code(400).send({ code: 'CAMPAIGN_MEMORY_DELETE_FAILED', message: error.message });
+  }
+});
+
 
 app.setErrorHandler((error, request, reply) => {
   const status = Number(error.statusCode) || 500;

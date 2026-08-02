@@ -1,6 +1,6 @@
 # Mestre Orc Engine
 
-Versão `0.1.0-alpha.38` — Node.js 20–24 e Foundry VTT 13.
+Versão `0.1.0-alpha.39` — Node.js 20–24 e Foundry VTT 13.
 
 O fluxo atual localiza a Scene ativa, procura o Journal correspondente no diretório do Foundry e extrai exclusivamente uma caixa read-aloud reconhecida. São aceitos os formatos antigo e atual do Plutonium/5eTools, `blockquote` HTML e citação Markdown; blocos secretos ou exclusivos do GM são ignorados. A âncora canônica é interpretada com Groq, validada e publicada no chat com áudio.
 
@@ -25,6 +25,7 @@ CORS_ALLOWED_ORIGINS=http://localhost:30000,http://127.0.0.1:30000,http://localh
 GROQ_API_KEY=sua_chave
 GROQ_MODEL=seu_modelo_disponivel
 MESTRE_ORC_NARRATION_MEMORY_FILE=./data/narration-history.json
+MESTRE_ORC_CAMPAIGN_MEMORY_FILE=./data/campaign-memory.json
 MESTRE_ORC_AUDIO_ENABLED=true
 MESTRE_ORC_AUDIO_MODE=browser-tts
 MESTRE_ORC_AUDIO_LANGUAGE=pt-BR
@@ -33,7 +34,7 @@ MESTRE_ORC_AUDIO_PITCH=0.85
 MESTRE_ORC_AUDIO_VOLUME=1.00
 ```
 
-Abra `http://localhost:3001/health`. Os campos esperados são `"ai":"groq"` e `"audio":"browser-tts"`.
+Abra `http://localhost:3001/health`. Os campos esperados são `"ai":"groq"`, `"audio":"browser-tts"` e `"campaignMemory":"persistent-file"`.
 
 ## Comandos
 
@@ -44,6 +45,21 @@ Abra `http://localhost:3001/health`. Os campos esperados são `"ai":"groq"` e `"
 - `npm run check:offline`: executa validação e testes quando o endpoint de auditoria do registro npm estiver indisponível.
 - `npm run check`: executa estrutura, auditoria de segurança e testes antes de cada entrega.
 - `npm run release:prepare`: gera em `dist/` uma cópia limpa, sem `.git`, `.env`, dependências ou histórico local.
+
+
+## Memória persistente da campanha
+
+A alpha.39 grava em `data/campaign-memory.json` os fatos observados, o estado e a localização dos NPCs, as relações entre personagens e NPCs, as missões, os itens e o último `World State`. Cada campanha é isolada pelo `worldId` do Foundry. O arquivo é ignorado pelo Git e removido automaticamente das entregas limpas.
+
+Ao reiniciar a API, a próxima sessão recupera o estado persistido e continua a numeração das rodadas. Eventos repetidos com o mesmo `eventId` não são gravados duas vezes. Registros marcados como `secret` continuam disponíveis no painel do mestre, mas não entram no contexto enviado à narração.
+
+O mestre pode abrir **Memória da campanha** no chat ou nos controles da cena para consultar, criar, atualizar e remover registros. A API também oferece:
+
+- `GET /v1/campaign-memory/:campaignId`
+- `POST /v1/campaign-memory/:campaignId/:collection`
+- `DELETE /v1/campaign-memory/:campaignId/:collection/:recordId`
+
+As coleções válidas são `facts`, `npcs`, `relationships`, `quests` e `items`.
 
 ## Segurança e operação
 

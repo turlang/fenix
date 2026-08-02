@@ -30,12 +30,16 @@
 - [x] interrupção do TTS durante a escuta;
 - [x] tratamento de permissão, microfone, idioma, rede e navegador incompatível.
 
-## Marco 3 — Memória — próximo
-- fatos persistentes;
-- estado dos NPCs;
-- relações sociais;
-- missões e itens;
-- recuperação após reinício.
+## Marco 3 — Memória ✅ — alpha.39
+- [x] fatos persistentes por campanha;
+- [x] estado e localização dos NPCs;
+- [x] relações sociais por personagem e NPC;
+- [x] missões e itens com status e responsáveis;
+- [x] recuperação do World State e da numeração após reinício;
+- [x] gravação atômica e deduplicação por evento;
+- [x] painel do mestre no Foundry;
+- [x] API de consulta, atualização e remoção;
+- [x] proteção de registros secretos contra vazamento na narração.
 
 ## Marco 4 — Combate
 - integração com Combat Tracker;

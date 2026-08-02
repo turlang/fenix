@@ -17,6 +17,7 @@ const required = [
   'packages/novelty-guard/src/index.js',
   'packages/narration-quality-guard/src/index.js',
   'packages/narration-memory/src/index.js',
+  'packages/memory/src/index.js',
   'packages/audio-narration-service/src/index.js',
   'packages/config/src/index.js',
   'packages/intent-interpreter/src/index.js',
@@ -87,7 +88,7 @@ try {
   const forbiddenTracked = tracked.filter((path) =>
     path === '.env' ||
     path.startsWith('node_modules/') ||
-    path === 'data/narration-history.json' ||
+    path.startsWith('data/') && path.endsWith('.json') ||
     path.startsWith('dist/')
   );
   if (forbiddenTracked.length) {
@@ -98,7 +99,7 @@ try {
   console.warn('Aviso: validação de arquivos rastreados pelo Git não pôde ser executada.');
 }
 
-const forbiddenLocal = ['.env', 'node_modules', 'data/narration-history.json'];
+const forbiddenLocal = ['.env', 'node_modules', 'data/narration-history.json', 'data/campaign-memory.json'];
 for (const path of forbiddenLocal) {
   try {
     await access(new URL(path, root));

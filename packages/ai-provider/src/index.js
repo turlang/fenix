@@ -291,6 +291,20 @@ export class GroqNarrativeProvider {
     const recentEvents = (worldState.recentEvents ?? []).slice(-6).map((entry) =>
       `- ${entry.actorName ?? entry.actorId ?? 'Personagem'}: ${entry.effect ?? entry.intentType ?? 'evento anterior'}`
     );
+    const memory = context?.memory ?? {};
+    const memoryFacts = (memory.recentFacts ?? []).slice(0, 6).map((entry) => `- Fato: ${entry.text}`);
+    const memoryNpcs = (memory.npcs ?? []).slice(0, 6).map((entry) =>
+      `- NPC ${entry.name}: estado ${entry.status ?? 'desconhecido'}${entry.location ? `; local ${entry.location}` : ''}.`
+    );
+    const memoryRelations = (memory.relationships ?? []).slice(0, 8).map((entry) =>
+      `- Relação ${entry.actorName ?? entry.actorId} → ${entry.npcName ?? entry.npcId}: ${entry.type ?? 'NEUTRAL'} (${Number(entry.score) || 0}).`
+    );
+    const memoryQuests = (memory.quests ?? []).slice(0, 8).map((entry) =>
+      `- Missão ativa: ${entry.title}${entry.objective ? ` — ${entry.objective}` : ''}.`
+    );
+    const memoryItems = (memory.items ?? []).slice(0, 8).map((entry) =>
+      `- Item: ${entry.name}; responsável ${entry.ownerActorName ?? entry.ownerActorId ?? 'grupo'}; quantidade ${Number(entry.quantity) || 0}.`
+    );
     const prompt = [
       `Você é o narrador de uma mesa de RPG e deve resolver narrativamente a rodada fora de combate ${roundNumber ?? ''}.`,
       'Produza UMA única narração consolidada para todas as declarações. Respeite a ordem causal, mas conecte ações simultâneas de forma natural.',
@@ -309,7 +323,13 @@ export class GroqNarrativeProvider {
       ...(npcLines.length ? npcLines : ['- Nenhuma reação específica confirmada.']),
       '',
       'ESTADO RECENTE DO MUNDO:',
-      ...(recentEvents.length ? recentEvents : ['- Nenhum evento anterior registrado.'])
+      ...(recentEvents.length ? recentEvents : ['- Nenhum evento anterior registrado.']),
+      '',
+      'MEMÓRIA PERSISTENTE CONHECIDA:',
+      ...(memoryFacts.length || memoryNpcs.length || memoryRelations.length || memoryQuests.length || memoryItems.length
+        ? [...memoryFacts, ...memoryNpcs, ...memoryRelations, ...memoryQuests, ...memoryItems]
+        : ['- Nenhum fato persistente relevante registrado.']),
+      'Use esta memória apenas para manter continuidade. Não revele fatos secretos, não trate lembranças como sucesso automático e não contradiga a cena atual.'
     ].join('\n');
     return this.#requestText(prompt, { maxTokens: 850, temperature: 0.68, topP: 0.92 });
   }

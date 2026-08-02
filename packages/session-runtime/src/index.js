@@ -9,6 +9,7 @@ import { SessionDirector } from '../../session-director/src/index.js';
 import { AudioNarrationService } from '../../audio-narration-service/src/index.js';
 import { NPCCoordinator } from '../../npc-coordinator/src/index.js';
 import { WorldStateService } from '../../world-state/src/index.js';
+import { InMemoryCampaignMemory } from '../../memory/src/index.js';
 
 function createInputApi(initial = {}) {
   let snapshot = initial;
@@ -32,10 +33,12 @@ export function createSessionRuntime({
   qualityGuard,
   audioNarrationService,
   audioOptions,
+  campaignMemory,
   logger = console
 } = {}) {
   const inputApi = foundryApi ?? createInputApi();
   const adapter = new FoundryAdapter(inputApi);
+  const persistentMemory = campaignMemory ?? new InMemoryCampaignMemory({ logger });
   const director = new SessionDirector({
     foundryAdapter: adapter,
     contextBuilder: createNarrationContextBuilder({ logger }),
@@ -44,6 +47,7 @@ export function createSessionRuntime({
     relationshipService: new RelationshipService({ logger }),
     npcCoordinator: new NPCCoordinator({ logger }),
     worldStateService: new WorldStateService({ logger }),
+    campaignMemory: persistentMemory,
     narrationService: new NarrationService({
       provider: narrator,
       narrationMemory,
@@ -66,6 +70,27 @@ export function createSessionRuntime({
     processAction: (input) => director.processAction(input),
     resolveRound: (input) => director.resolveRound(input),
     describeRoom: (roomContext) => director.describeRoom(roomContext),
-    end: () => director.end()
+    end: () => director.end(),
+    getCampaignMemory: async (campaignId) => {
+      const snapshot = await persistentMemory.load(campaignId);
+      return {
+        ...persistentMemory.summary(snapshot),
+        records: {
+          facts: Object.values(snapshot.facts ?? {}),
+          npcs: Object.values(snapshot.npcs ?? {}),
+          relationships: Object.values(snapshot.relationships ?? {}),
+          quests: Object.values(snapshot.quests ?? {}),
+          items: Object.values(snapshot.items ?? {})
+        }
+      };
+    },
+    upsertCampaignMemory: async (campaignId, collection, record) => {
+      const result = await persistentMemory.upsert(campaignId, collection, record);
+      return { record: result.record, memory: persistentMemory.summary(result.campaign) };
+    },
+    removeCampaignMemory: async (campaignId, collection, recordId) => {
+      const result = await persistentMemory.remove(campaignId, collection, recordId);
+      return { removed: result.removed, memory: persistentMemory.summary(result.campaign) };
+    }
   };
 }

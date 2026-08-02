@@ -25,15 +25,19 @@ export class WorldStateService {
     this.state = null;
   }
 
-  startSession(context = {}) {
+  startSession(context = {}, restoredState = null) {
+    const restored = restoredState && typeof restoredState === 'object' ? restoredState : {};
     this.state = {
       sessionStartedAt: new Date().toISOString(),
-      sceneId: context.scene?.id ?? null,
-      sceneName: context.scene?.name ?? null,
-      roundNumber: 0,
-      completedRounds: 0,
-      npcRelationships: {},
-      recentEvents: [],
+      campaignId: context.campaign?.worldId ?? restored.campaignId ?? null,
+      sceneId: context.scene?.id ?? restored.sceneId ?? null,
+      sceneName: context.scene?.name ?? restored.sceneName ?? null,
+      roundNumber: Math.max(0, Number(restored.roundNumber) || 0),
+      completedRounds: Math.max(0, Number(restored.completedRounds) || 0),
+      npcRelationships: clone(restored.npcRelationships ?? {}),
+      recentEvents: clone(restored.recentEvents ?? []).slice(-50),
+      lastNpcReactions: clone(restored.lastNpcReactions ?? []),
+      restoredFromMemory: Boolean(restoredState),
       updatedAt: new Date().toISOString()
     };
     return this.snapshot();
@@ -41,6 +45,7 @@ export class WorldStateService {
 
   snapshot() {
     return clone(this.state ?? {
+      campaignId: null,
       sceneId: null,
       sceneName: null,
       roundNumber: 0,

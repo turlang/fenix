@@ -17,6 +17,32 @@ Este projeto segue o formato do [Keep a Changelog](https://keepachangelog.com/pt
 - Comando `npm run release:prepare` para gerar uma pasta de distribuição higienizada em `dist/`.
 - Comando `npm run check:offline` para validar estrutura e testes quando a auditoria remota do npm estiver indisponível.
 
+## [0.1.0-alpha.39] - 2026-08-02
+
+### Adicionado
+
+- Memória persistente por campanha para fatos, NPCs, relações, missões, itens e `World State`.
+- Gravação atômica em `data/campaign-memory.json`, isolada pelo `worldId` do Foundry.
+- Recuperação do estado e continuação da numeração das rodadas após reiniciar a API.
+- Deduplicação de atualizações por `eventId`.
+- Registro automático de fatos de rodada, reações e localização de NPCs.
+- Detecção conservadora de declarações explícitas sobre início/conclusão de missões e aquisição/remoção de itens.
+- Endpoints para consultar, atualizar e remover registros da memória.
+- Painel **Memória da campanha** no chat e nos controles da cena do mestre.
+- Testes de persistência em arquivo, isolamento de segredos, recuperação após reinício e integração da API.
+
+### Alterado
+
+- A narração consolidada recebe fatos conhecidos, estados de NPCs, relações, missões ativas e itens relevantes para manter continuidade.
+- O `WorldStateService` pode ser restaurado a partir da memória persistente.
+- O processo de entrega remove qualquer arquivo JSON local da pasta `data/`.
+
+### Segurança e confiabilidade
+
+- Registros marcados como `secret` não são enviados ao contexto narrativo.
+- Arquivos de memória permanecem fora do Git e das entregas limpas.
+- Operações de escrita são serializadas para evitar corrupção por gravações concorrentes.
+
 ## [0.1.0-alpha.38] - 2026-08-02
 
 ### Adicionado
