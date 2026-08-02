@@ -59,11 +59,13 @@ app.post('/v1/session/action', {
   schema: {
     body: {
       type: 'object',
-      required: ['content'],
+      required: ['content', 'actorId'],
       additionalProperties: true,
       properties: {
         content: { type: 'string', minLength: 1, maxLength: 4000 },
-        actorId: { anyOf: [{ type: 'string', maxLength: 200 }, { type: 'null' }] },
+        actorId: { type: 'string', minLength: 1, maxLength: 200 },
+        actorName: { anyOf: [{ type: 'string', maxLength: 300 }, { type: 'null' }] },
+        tokenId: { anyOf: [{ type: 'string', maxLength: 200 }, { type: 'null' }] },
         eventId: { type: 'string', minLength: 1, maxLength: 300 }
       }
     }
@@ -71,6 +73,21 @@ app.post('/v1/session/action', {
 }, async (request, reply) => {
   try { return await runtime.processAction(request.body ?? {}); }
   catch (error) { return reply.code(400).send({ code: 'ACTION_PROCESSING_FAILED', message: error.message }); }
+});
+
+app.post('/v1/session/round/resolve', {
+  schema: {
+    body: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        eventId: { type: 'string', minLength: 1, maxLength: 300 }
+      }
+    }
+  }
+}, async (request, reply) => {
+  try { return await runtime.resolveRound(request.body ?? {}); }
+  catch (error) { return reply.code(Number(error.statusCode) || 400).send({ code: error.code || 'ROUND_RESOLUTION_FAILED', message: error.message }); }
 });
 
 app.post('/v1/session/room-entry', {

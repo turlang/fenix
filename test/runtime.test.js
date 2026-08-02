@@ -4,6 +4,7 @@ import { createSessionRuntime } from '../packages/session-runtime/src/index.js';
 
 const snapshot = {
   activeScene: { id: 'scene-1', name: 'Cragmaw Hideout', description: 'Um riacho sai da caverna.' },
+  campaign: { worldId: 'world-1', systemId: 'dnd5e' },
   visibleActors: [{ id: 'actor-1', name: 'Hurszar', type: 'character' }],
   narrationExclusions: { actorNames: ['Hurszar'] },
   sceneJournal: {
@@ -28,6 +29,9 @@ Um riacho raso sai do interior e atravessa o caminho diante da caverna. À direi
     },
     async narrateResolution() {
       return 'A observação revela detalhes na entrada, enquanto o riacho continua correndo.';
+    },
+    async narrateRound() {
+      return 'A observação revela detalhes na entrada, enquanto o riacho continua correndo.';
     }
   };
 }
@@ -41,10 +45,16 @@ test('inicia sessão após normalizar o snapshot', async () => {
   assert.match(result.opening, /O que vocês fazem\?/);
 });
 
-test('processa ação pelo pipeline modular', async () => {
+test('coleta e resolve ações pelo pipeline modular', async () => {
   const runtime = createSessionRuntime({ narrator: createNarrator() });
   await runtime.start(snapshot);
-  const result = await runtime.processAction({ actorId: 'actor-1', content: 'Examino a entrada da caverna.' });
-  assert.equal(result.intent.type, 'INVESTIGATION');
+  const queued = await runtime.processAction({ actorId: 'actor-1', actorName: 'Hurszar', content: 'Examino a entrada da caverna.', eventId: 'chat:1' });
+  assert.equal(queued.queued, true);
+  assert.equal(queued.round.actionCount, 1);
+
+  const result = await runtime.resolveRound({ eventId: 'round:1' });
+  assert.equal(result.resolutions[0].intent.type, 'INVESTIGATION');
   assert.equal(result.state, 'COLLECTING_ACTIONS');
+  assert.equal(result.resolvedRound, 1);
+  assert.equal(result.round.number, 2);
 });

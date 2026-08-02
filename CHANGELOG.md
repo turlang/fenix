@@ -17,6 +17,32 @@ Este projeto segue o formato do [Keep a Changelog](https://keepachangelog.com/pt
 - Comando `npm run release:prepare` para gerar uma pasta de distribuição higienizada em `dist/`.
 - Comando `npm run check:offline` para validar estrutura e testes quando a auditoria remota do npm estiver indisponível.
 
+## [0.1.0-alpha.37] - 2026-08-02
+
+### Adicionado
+
+- Coleta de uma declaração por personagem para rodadas fora de combate.
+- Botão **Resolver rodada** no chat e nos controles de cena, com número da rodada e contador de declarações.
+- Endpoint `POST /v1/session/round/resolve` para resolução consolidada e idempotente.
+- `NPCCoordinator` determinístico para coordenar somente NPCs comprovadamente presentes.
+- `WorldStateService` para registrar rodadas, eventos recentes e alterações de relacionamento durante a sessão.
+- Adaptador consultivo do sistema ativo, com perfil específico para D&D 5e e fallback genérico.
+- Prompt de IA específico para uma única narração consolidada da rodada.
+- Testes de substituição de declaração, resolução múltipla, falha recuperável, NPCs e estado do mundo.
+
+### Alterado
+
+- `/v1/session/action` deixa de narrar imediatamente e passa a registrar a declaração na rodada atual.
+- Uma nova declaração do mesmo personagem substitui a anterior; personagens diferentes continuam independentes.
+- Debounce e deduplicação do chat passam a ser isolados por personagem, evitando descartar ações simultâneas de jogadores diferentes.
+- A narração consolidada não inventa rolagens, dano, condições ou resultados mecânicos definitivos.
+
+### Segurança e confiabilidade
+
+- Se a IA ou a publicação falhar, as declarações permanecem disponíveis para nova tentativa.
+- Resoluções repetidas com o mesmo `eventId` não geram uma segunda narração.
+- Declarações sem personagem vinculado são rejeitadas antes de entrar na fila.
+
 ## [0.1.0-alpha.36] - 2026-07-22
 
 ### Adicionado

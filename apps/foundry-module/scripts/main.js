@@ -22,12 +22,14 @@ import {
 } from './cinematic-speech.js';
 
 const MODULE_ID = 'mestre-orc';
-const MODULE_BUILD = '0.1.0-alpha.36';
+const MODULE_BUILD = '0.1.0-alpha.37';
 const BUTTON_ID = 'mestre-orc-start';
+const ROUND_BUTTON_ID = 'mestre-orc-resolve-round';
 const AUDIO_BUTTON_ID = 'mestre-orc-audio-toggle';
 const SOCKET_CHANNEL = `module.${MODULE_ID}`;
 const API_URL = 'http://localhost:3001';
 let startInFlight = false;
+let roundResolveInFlight = false;
 let lastAudioDirectiveId = null;
 let speechVoices = [];
 let activeUtterance = null;
@@ -36,7 +38,7 @@ let activeNarrationRun = 0;
 let latestAudioDirective = null;
 let roomCheckTimer = null;
 let roomMonitorTimer = null;
-let lastPlayerActionAt = 0;
+const lastPlayerActionAtByActor = new Map();
 const processedActionMessages = new Set();
 const recentActionFingerprints = new Map();
 const publishedNarrationKeys = new Set();
@@ -56,6 +58,33 @@ function findChatContainer(root = document) {
   return root.querySelector?.('#chat') || root.querySelector?.('[data-tab="chat"]') ||
     root.querySelector?.('.chat-sidebar') || document.querySelector('#chat') ||
     document.querySelector('[data-tab="chat"]') || document.querySelector('.chat-sidebar');
+}
+
+function applyRoundButtonState(round = null, sessionActive = true) {
+  const button = document.getElementById(ROUND_BUTTON_ID);
+  if (!button) return;
+  const actionCount = Math.max(0, Number(round?.actionCount) || 0);
+  const roundNumber = Math.max(1, Number(round?.number) || 1);
+  button.dataset.actionCount = String(actionCount);
+  button.dataset.roundNumber = String(roundNumber);
+  button.disabled = roundResolveInFlight || !sessionActive || actionCount < 1;
+  button.innerHTML = roundResolveInFlight
+    ? '<i class="fa-solid fa-spinner fa-spin"></i><span>Resolvendo rodada...</span>'
+    : `<i class="fa-solid fa-dice-d20"></i><span>Resolver rodada ${roundNumber} (${actionCount})</span>`;
+  button.title = actionCount
+    ? `${actionCount} declaração(ões) pronta(s) para resolução consolidada.`
+    : 'Aguardando declarações dos personagens.';
+}
+
+async function refreshRoundButton(round = null) {
+  if (!game.user?.isGM) return;
+  if (round) {
+    applyRoundButtonState(round, Boolean(roomNarrationState.active));
+    return;
+  }
+  const status = await request('/v1/session/status').catch(() => null);
+  const active = status?.state === 'COLLECTING_ACTIONS' && Boolean(status.sessionId);
+  applyRoundButtonState(status?.round ?? null, active);
 }
 
 
@@ -1061,6 +1090,7 @@ async function synchronizeRoomSessionState() {
     });
     primeRoomOccupancy();
   }
+  applyRoundButtonState(status?.round ?? null, active);
   return active;
 }
 
@@ -1249,8 +1279,20 @@ function messageAuthorIsGm(message) {
   return Boolean(user?.isGM);
 }
 
-function claimPlayerActionContent(content) {
-  const fingerprint = stableTextFingerprint(content);
+function playerActionIdentity(message) {
+  const candidate = message?.user ?? message?.author;
+  const user = candidate && typeof candidate === 'object'
+    ? candidate
+    : game.users?.get?.(candidate ?? message?.userId ?? message?.author?.id);
+  const actorId = String(message?.speaker?.actor ?? user?.character?.id ?? '').trim();
+  const tokenId = String(message?.speaker?.token ?? '').trim() || null;
+  const actor = actorId ? game.actors?.get?.(actorId) : null;
+  const actorName = String(actor?.name ?? message?.speaker?.alias ?? user?.name ?? '').trim() || null;
+  return { actorId, actorName, tokenId };
+}
+
+function claimPlayerActionContent(content, actorId = '') {
+  const fingerprint = stableTextFingerprint(`${actorId}:${content}`);
   const now = Date.now();
   for (const [key, timestamp] of recentActionFingerprints) {
     if (now - timestamp >= ACTION_DEDUPE_WINDOW_MS) recentActionFingerprints.delete(key);
@@ -1277,27 +1319,42 @@ async function processPlayerActionMessage(message) {
     return;
   }
   if (content.length < 2 || content.startsWith('/')) return;
-  if (!claimPlayerActionContent(content)) {
-    console.debug('[Mestre Orc][Action] conteúdo repetido ignorado', { messageId: messageId || null });
+
+  const identity = playerActionIdentity(message);
+  if (!identity.actorId) {
+    console.warn('[Mestre Orc][Action] declaração ignorada por não estar vinculada a um personagem', {
+      messageId: messageId || null,
+      userId: message?.user?.id ?? message?.user ?? null
+    });
+    ui.notifications?.warn?.('Mestre Orc: selecione ou vincule um personagem antes de declarar a ação.');
     return;
   }
-
   const now = Date.now();
-  if (now - lastPlayerActionAt < 500) return;
+  const previousActorActionAt = lastPlayerActionAtByActor.get(identity.actorId) ?? 0;
+  if (now - previousActorActionAt < 500) return;
   if (!await ensureSessionActive()) return;
-  lastPlayerActionAt = Date.now();
+  if (!claimPlayerActionContent(content, identity.actorId)) {
+    console.debug('[Mestre Orc][Action] conteúdo repetido do mesmo personagem ignorado', {
+      messageId: messageId || null,
+      actorId: identity.actorId
+    });
+    return;
+  }
+  lastPlayerActionAtByActor.set(identity.actorId, Date.now());
   if (messageId) {
     processedActionMessages.add(messageId);
     if (processedActionMessages.size > 250) processedActionMessages.delete(processedActionMessages.values().next().value);
   }
 
   try {
-    const eventId = `chat:${messageId || stableTextFingerprint(content)}`;
+    const eventId = `chat:${messageId || stableTextFingerprint(`${identity.actorId}:${content}`)}`;
     const result = await request('/v1/session/action', {
       method: 'POST',
       body: JSON.stringify({
         content,
-        actorId: message.speaker?.actor ?? message.speaker?.token ?? message.speaker?.id ?? null,
+        actorId: identity.actorId,
+        actorName: identity.actorName,
+        tokenId: identity.tokenId,
         eventId
       })
     });
@@ -1305,13 +1362,12 @@ async function processPlayerActionMessage(message) {
       console.log('[Mestre Orc][Action] requisição duplicada bloqueada pelo Engine', { eventId });
       return;
     }
-    if (!result?.narration) return;
-    const actionPublicationKey = `action:${roomNarrationState.sessionId}:${eventId}`;
-    await publishNarrationChat(result.narration, actionPublicationKey);
-    publishNarrationAudio(result.audio, result.narration, game.scenes?.active?.id ?? null, actionPublicationKey);
+    await refreshRoundButton(result?.round ?? null);
+    const actionLabel = result?.replaced ? 'atualizada' : 'registrada';
+    ui.notifications?.info?.(`Mestre Orc: ação de ${identity.actorName ?? 'personagem'} ${actionLabel} para a rodada ${result?.round?.number ?? ''}.`);
   } catch (error) {
-    console.error(`${MODULE_ID} | falha ao processar ação`, error);
-    ui.notifications?.warn?.('Mestre Orc: não foi possível processar a ação do jogador.');
+    console.error(`${MODULE_ID} | falha ao registrar ação`, error);
+    ui.notifications?.warn?.(`Mestre Orc: ${error.message || 'não foi possível registrar a ação do jogador.'}`);
   }
 }
 
@@ -1533,6 +1589,49 @@ async function publishNarrationChat(text, publicationKey = '', recipientUserIds 
   }
 }
 
+async function resolveRound(button) {
+  if (roundResolveInFlight) return;
+  roundResolveInFlight = true;
+  const target = button ?? document.getElementById(ROUND_BUTTON_ID);
+  try {
+    applyRoundButtonState({
+      number: Number(target?.dataset?.roundNumber) || 1,
+      actionCount: Number(target?.dataset?.actionCount) || 0
+    }, true);
+    const status = await request('/v1/session/status');
+    if (status?.state !== 'COLLECTING_ACTIONS' || !status.sessionId) {
+      throw new Error('nenhuma sessão ativa está pronta para resolver a rodada.');
+    }
+    if (!status.round?.actionCount) {
+      throw new Error('nenhuma ação foi declarada nesta rodada.');
+    }
+
+    const eventId = `round:${status.sessionId}:${status.round.number}`;
+    const result = await request('/v1/session/round/resolve', {
+      method: 'POST',
+      body: JSON.stringify({ eventId })
+    });
+    if (!result?.duplicate && result?.narration) {
+      const publicationKey = `round:${status.sessionId}:${result.resolvedRound}`;
+      await publishNarrationChat(result.narration, publicationKey);
+      publishNarrationAudio(
+        result.audio,
+        result.narration,
+        game.scenes?.active?.id ?? null,
+        publicationKey
+      );
+    }
+    ui.notifications?.info?.(`Mestre Orc: rodada ${result?.resolvedRound ?? status.round.number} resolvida com ${result?.declarations?.length ?? status.round.actionCount} ação(ões).`);
+    await refreshRoundButton(result?.round ?? null);
+  } catch (error) {
+    console.error(`${MODULE_ID} | falha ao resolver rodada`, error);
+    ui.notifications?.warn?.(`Mestre Orc: ${error.message}`);
+  } finally {
+    roundResolveInFlight = false;
+    await refreshRoundButton();
+  }
+}
+
 async function startSession(button) {
   if (startInFlight) return;
   startInFlight = true;
@@ -1548,6 +1647,7 @@ async function startSession(button) {
     if (currentStatus?.state === 'COLLECTING_ACTIONS' && currentStatus.sessionId) {
       resetRoomNarrationState(currentStatus.sessionId);
       primeRoomOccupancy();
+      await refreshRoundButton(currentStatus.round ?? null);
       if (button) button.innerHTML = '<i class="fa-solid fa-circle-check"></i><span>Sessão reconectada</span>';
       ui.notifications.info('Mestre Orc: sessão existente reconectada.');
       setTimeout(() => {
@@ -1576,6 +1676,7 @@ async function startSession(button) {
       `opening:${result.sessionId ?? 'unknown'}`
     );
     primeRoomOccupancy();
+    await refreshRoundButton(result.round ?? null);
     if (button) button.innerHTML = '<i class="fa-solid fa-circle-check"></i><span>Sessão iniciada</span>';
     ui.notifications.info('Mestre Orc: abertura publicada no chat.');
     if (button) {
@@ -1589,6 +1690,7 @@ async function startSession(button) {
   } catch (error) {
     stopRoomMonitor();
     roomNarrationState.reset();
+    applyRoundButtonState(null, false);
     console.error(`${MODULE_ID} | falha ao iniciar`, error);
     ui.notifications.error(`Mestre Orc: ${error.message}`);
     if (button?.isConnected) {
@@ -1630,29 +1732,61 @@ function injectStartButton(root = document) {
 }
 
 
+function injectResolveRoundButton(root = document) {
+  if (!game.user?.isGM || document.getElementById(ROUND_BUTTON_ID)) return false;
+  const chat = findChatContainer(root);
+  if (!chat) return false;
+
+  const button = document.createElement('button');
+  button.id = ROUND_BUTTON_ID;
+  button.type = 'button';
+  button.dataset.mestreOrcAction = 'resolve-round';
+  button.dataset.actionCount = '0';
+  button.dataset.roundNumber = '1';
+  button.disabled = true;
+  button.innerHTML = '<i class="fa-solid fa-dice-d20"></i><span>Resolver rodada 1 (0)</span>';
+  button.onclick = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    void resolveRound(button);
+  };
+
+  const startButton = document.getElementById(BUTTON_ID);
+  const audioButton = document.getElementById(AUDIO_BUTTON_ID);
+  if (startButton?.parentElement) startButton.insertAdjacentElement('afterend', button);
+  else if (audioButton?.parentElement) audioButton.parentElement.insertBefore(button, audioButton);
+  else chat.prepend(button);
+  void refreshRoundButton();
+  console.log(`${MODULE_ID} | botão de resolver rodada inserido`);
+  return true;
+}
+
+
 function installDelegatedStartHandler() {
   if (document.documentElement.dataset.mestreOrcDelegated === '1') return;
   document.documentElement.dataset.mestreOrcDelegated = '1';
 
   document.addEventListener('click', (event) => {
     const target = event.target instanceof Element
-      ? event.target.closest('[data-mestre-orc-action="start-session"], #mestre-orc-start')
+      ? event.target.closest('[data-mestre-orc-action="start-session"], [data-mestre-orc-action="resolve-round"], #mestre-orc-start, #mestre-orc-resolve-round')
       : null;
     if (!target) return;
 
     event.preventDefault();
     event.stopImmediatePropagation();
-    console.log('[Mestre Orc] handler delegado acionado');
-    void startSession(target);
+    console.log('[Mestre Orc] handler delegado acionado', { action: target.dataset.mestreOrcAction });
+    if (target.dataset.mestreOrcAction === 'resolve-round' || target.id === ROUND_BUTTON_ID) void resolveRound(target);
+    else void startSession(target);
   }, true);
 }
 
 function scheduleInjection(root) {
   requestAnimationFrame(() => {
     injectStartButton(root);
+    injectResolveRoundButton(root);
     injectAudioToggleButton(root);
-    setTimeout(() => { injectStartButton(document); injectAudioToggleButton(document); }, 250);
-    setTimeout(() => { injectStartButton(document); injectAudioToggleButton(document); }, 1000);
+    setTimeout(() => { injectStartButton(document); injectResolveRoundButton(document); injectAudioToggleButton(document); }, 250);
+    setTimeout(() => { injectStartButton(document); injectResolveRoundButton(document); injectAudioToggleButton(document); }, 1000);
   });
 }
 
@@ -1681,7 +1815,20 @@ Hooks.on('getSceneControlButtons', (controls) => {
       }
     };
 
-    console.log('[Mestre Orc] botão adicionado aos controles da cena');
+    tokenControls.tools.mestreOrcResolveRound = {
+      name: 'mestreOrcResolveRound',
+      title: 'Mestre Orc — Resolver rodada narrativa',
+      icon: 'fa-solid fa-dice-d20',
+      order: Object.keys(tokenControls.tools).length,
+      button: true,
+      visible: true,
+      onChange: () => {
+        console.log('[Mestre Orc] resolução de rodada acionada pelos controles da cena');
+        void resolveRound(null);
+      }
+    };
+
+    console.log('[Mestre Orc] botões adicionados aos controles da cena');
   } catch (error) {
     console.error('[Mestre Orc] falha ao registrar controle da cena', error);
   }

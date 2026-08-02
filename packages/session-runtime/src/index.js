@@ -7,6 +7,8 @@ import { NarrationService } from '../../narration-service/src/index.js';
 import { FoundryPublisher } from '../../foundry-publisher/src/index.js';
 import { SessionDirector } from '../../session-director/src/index.js';
 import { AudioNarrationService } from '../../audio-narration-service/src/index.js';
+import { NPCCoordinator } from '../../npc-coordinator/src/index.js';
+import { WorldStateService } from '../../world-state/src/index.js';
 
 function createInputApi(initial = {}) {
   let snapshot = initial;
@@ -40,6 +42,8 @@ export function createSessionRuntime({
     intentInterpreter: new IntentInterpreter({ logger }),
     rulesService: new RulesService({ logger }),
     relationshipService: new RelationshipService({ logger }),
+    npcCoordinator: new NPCCoordinator({ logger }),
+    worldStateService: new WorldStateService({ logger }),
     narrationService: new NarrationService({
       provider: narrator,
       narrationMemory,
@@ -60,6 +64,7 @@ export function createSessionRuntime({
       return director.start();
     },
     processAction: (input) => director.processAction(input),
+    resolveRound: (input) => director.resolveRound(input),
     describeRoom: (roomContext) => director.describeRoom(roomContext),
     end: () => director.end()
   };

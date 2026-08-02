@@ -36,6 +36,11 @@ function createDirector() {
         counters.action += 1;
         await Promise.resolve();
         return 'A ação produz uma consequência visível.';
+      },
+      async narrateRound() {
+        counters.action += 1;
+        await Promise.resolve();
+        return 'As ações da rodada produzem uma consequência visível.';
       }
     },
     audioNarrationService: { createDirective(text) { return { mode: 'browser-tts', text }; } },
@@ -79,17 +84,23 @@ test('Engine narra a mesma sala separadamente para tokens diferentes', async () 
   assert.equal(counters.published, 3); // abertura + uma narração por token
 });
 
-test('Engine processa uma mensagem apenas uma vez por eventId', async () => {
+test('Engine registra uma mensagem apenas uma vez por eventId', async () => {
   const { director, counters } = createDirector();
   await director.start();
   const action = { eventId: 'chat:message-42', content: 'Examino a porta.', actorId: 'actor-1' };
 
   const [first, second] = await Promise.all([director.processAction(action), director.processAction(action)]);
 
-  assert.equal(counters.action, 1);
-  assert.equal(counters.published, 2); // abertura + uma consequência
+  assert.equal(counters.action, 0);
+  assert.equal(counters.published, 1); // somente a abertura; a rodada ainda não foi resolvida
   assert.deepEqual([first.duplicate, second.duplicate].sort(), [false, true]);
-  assert.equal(first.narration, second.narration);
+  assert.equal(first.declaration.id, second.declaration.id);
+  assert.equal(first.round.actionCount, 1);
+
+  const result = await director.resolveRound({ eventId: 'round:1' });
+  assert.equal(result.resolvedRound, 1);
+  assert.equal(counters.action, 1);
+  assert.equal(counters.published, 2);
 });
 
 test('Engine normaliza a percepção individual antes de narrar a sala', async () => {
@@ -152,12 +163,22 @@ test('Engine preserva a lista de personagens proibidos na entrada de sala', asyn
   assert.deepEqual(captured.roomContext.narrationExclusions.actorNames, ['Hursar', 'mistra']);
 });
 
-test('eventIds diferentes continuam produzindo ações independentes', async () => {
+test('eventIds de personagens diferentes compõem a mesma rodada', async () => {
   const { director, counters } = createDirector();
   await director.start();
-  await director.processAction({ eventId: 'chat:1', content: 'Examino a porta.' });
-  await director.processAction({ eventId: 'chat:2', content: 'Observo o corredor.' });
+  await director.processAction({ eventId: 'chat:1', actorId: 'actor-1', content: 'Examino a porta.' });
+  await director.processAction({ eventId: 'chat:2', actorId: 'actor-2', content: 'Observo o corredor.' });
 
-  assert.equal(counters.action, 2);
-  assert.equal(counters.published, 3);
+  assert.equal(director.getStatus().round.actionCount, 2);
+  assert.equal(counters.action, 0);
+  assert.equal(counters.published, 1);
+
+  const [first, second] = await Promise.all([
+    director.resolveRound({ eventId: 'round:shared' }),
+    director.resolveRound({ eventId: 'round:shared' })
+  ]);
+  assert.deepEqual([first.duplicate, second.duplicate].sort(), [false, true]);
+  assert.equal(first.declarations.length, 2);
+  assert.equal(counters.action, 1);
+  assert.equal(counters.published, 2);
 });

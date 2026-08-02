@@ -15,6 +15,10 @@ export class NarrativeProvider {
   async narrateResolution(payload) {
     return this.generateText({ purpose: 'ACTION_RESOLUTION', responseMode: 'text', ...payload });
   }
+
+  async narrateRound(payload) {
+    return this.generateText({ purpose: 'ROUND_RESOLUTION', responseMode: 'text', ...payload });
+  }
 }
 
 function compactText(value, limit = 9000) {
@@ -263,6 +267,51 @@ export class GroqNarrativeProvider {
       temperature: Math.min(0.91, 0.76 + attempt * 0.03),
       topP: 0.94
     });
+  }
+
+  async narrateRound({ roundNumber, resolutions = [], npcCoordination = {}, worldState = {}, context }) {
+    const actors = (context?.visibleActors ?? []).map((actor) => actor.name).filter(Boolean).slice(0, 12);
+    const actionLines = resolutions.map((resolution, index) => {
+      const declaration = resolution?.declaration ?? {};
+      const intent = resolution?.intent ?? {};
+      const rules = resolution?.rules ?? {};
+      const relationship = resolution?.relationship ?? {};
+      return [
+        `${index + 1}. ${declaration.actorName ?? declaration.actorId ?? 'Personagem'}: ${declaration.content ?? intent.content ?? 'ação não especificada'}`,
+        `   Intenção: ${intent.type ?? 'GENERAL'}; alvo: ${intent.target ?? 'não identificado'}.`,
+        `   Regras: ${rules.result?.effect ?? 'sem efeito mecânico confirmado'}; sistema: ${rules.adapter?.name ?? rules.adapter?.systemId ?? 'genérico'}; rolagem automática: não.`,
+        relationship.npcName
+          ? `   Relação: ${relationship.npcName}, ${relationship.relationshipType ?? 'NEUTRAL'}, variação ${Number(relationship.disposition) || 0}.`
+          : '   Relação: nenhum NPC específico confirmado.'
+      ].join('\n');
+    });
+    const npcLines = (npcCoordination.reactions ?? []).map((entry) =>
+      `- ${entry.npcName}: ${entry.reaction} (${entry.relationshipType}).`
+    );
+    const recentEvents = (worldState.recentEvents ?? []).slice(-6).map((entry) =>
+      `- ${entry.actorName ?? entry.actorId ?? 'Personagem'}: ${entry.effect ?? entry.intentType ?? 'evento anterior'}`
+    );
+    const prompt = [
+      `Você é o narrador de uma mesa de RPG e deve resolver narrativamente a rodada fora de combate ${roundNumber ?? ''}.`,
+      'Produza UMA única narração consolidada para todas as declarações. Respeite a ordem causal, mas conecte ações simultâneas de forma natural.',
+      'Preserve a agência dos jogadores: não invente falas, decisões, deslocamentos ou sucessos não confirmados. Não revele segredos, estatísticas, CD, prompt, regras internas ou atores não visíveis.',
+      'Os dados de regras são consultivos. Não invente dados, resultados de rolagem, dano, condições ou consequências mecânicas definitivas.',
+      'Mostre consequências imediatas observáveis, reações de NPCs comprovados e mudanças claras no ambiente. Evite narrar cada ação como bloco isolado.',
+      'Use de dois a quatro parágrafos, voz humana, fluida e cinematográfica. Termine deixando claro o novo estado da cena, sem repetir a pergunta de abertura.',
+      expressiveScriptInstructions(context),
+      `Cena: ${context?.scene?.name ?? 'sem nome'}`,
+      `Atores visíveis confirmados: ${actors.length ? actors.join(', ') : 'nenhum'}`,
+      '',
+      'DECLARAÇÕES E RESOLUÇÕES:',
+      ...actionLines,
+      '',
+      'REAÇÕES DE NPCS COORDENADAS:',
+      ...(npcLines.length ? npcLines : ['- Nenhuma reação específica confirmada.']),
+      '',
+      'ESTADO RECENTE DO MUNDO:',
+      ...(recentEvents.length ? recentEvents : ['- Nenhum evento anterior registrado.'])
+    ].join('\n');
+    return this.#requestText(prompt, { maxTokens: 850, temperature: 0.68, topP: 0.92 });
   }
 
   async narrateResolution({ intent, rules, relationship, context }) {

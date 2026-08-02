@@ -1,6 +1,6 @@
 # Mestre Orc Engine
 
-Versão `0.1.0-alpha.36` — Node.js 20–24 e Foundry VTT 13.
+Versão `0.1.0-alpha.37` — Node.js 20–24 e Foundry VTT 13.
 
 O fluxo atual localiza a Scene ativa, procura o Journal correspondente no diretório do Foundry e extrai exclusivamente uma caixa read-aloud reconhecida. São aceitos os formatos antigo e atual do Plutonium/5eTools, `blockquote` HTML e citação Markdown; blocos secretos ou exclusivos do GM são ignorados. A âncora canônica é interpretada com Groq, validada e publicada no chat com áudio.
 
@@ -81,7 +81,9 @@ O chat e o áudio da sala são direcionados exclusivamente aos jogadores ativos 
 
 As publicações de áudio usam uma chave estável por sessão e uma impressão digital do texto compartilhada entre as abas do mesmo navegador. O Engine também mantém idempotência por sala e ação, impedindo duas chamadas concorrentes de gerar respostas diferentes para o mesmo evento.
 
-Durante uma sessão ativa, mensagens públicas e textuais de jogadores no chat são classificadas como ações sociais, combate, investigação, movimento ou ação geral. O Engine identifica o alvo, produz o resultado básico de regras e relacionamento e devolve a consequência narrada em texto e áudio. Whispers, avisos de módulos, cards automatizados, rolagens, comandos iniciados por `/`, mensagens do GM e mensagens do próprio Mestre Orc são ignorados.
+Durante uma sessão ativa, mensagens públicas e textuais de jogadores no chat são registradas como declarações da rodada fora de combate. Cada personagem mantém somente sua declaração mais recente; uma nova mensagem do mesmo personagem substitui a anterior sem apagar as ações dos demais. Whispers, avisos de módulos, cards automatizados, rolagens, comandos iniciados por `/`, mensagens do GM e mensagens do próprio Mestre Orc são ignorados.
+
+O botão **Resolver rodada** mostra o número da rodada e a quantidade de personagens que já declararam ações. Ao acioná-lo, o Engine executa uma única vez o pipeline `Action Interpreter → Rules Adapter → Relationship Service → NPC Coordinator → World State → narração consolidada`. O adaptador do sistema ativo opera em modo consultivo e não inventa rolagens, dano ou resultados mecânicos. A narração e o áudio são publicados uma única vez para a rodada inteira; se a IA falhar, as declarações permanecem na fila para nova tentativa.
 
 ### Talking Actors e vozes neurais
 
@@ -92,18 +94,23 @@ O arquivo `scripts/cinematic-speech.js` já inclui conversão das marcações em
 ## Pipeline validado
 
 ```text
-Scene ativa
+Início de sessão
+→ Scene ativa
 → Journal de mesmo nome ou pasta da cena
 → área inicial
 → caixa read-aloud
-→ visão individual do token
-→ Groq
-→ SafetyGuard
-→ NarrationQualityGuard
-→ NoveltyGuard
-→ chat
-→ AudioNarrationService
-→ TTS local e transmissão pelo socket do Foundry
+→ Groq + SafetyGuard + QualityGuard + NoveltyGuard
+→ abertura no chat e áudio
+
+Rodada fora de combate
+→ uma declaração por personagem
+→ Action Interpreter
+→ Rules Adapter do sistema ativo
+→ Relationship Service
+→ NPC Coordinator
+→ World State
+→ uma narração consolidada
+→ chat + AudioNarrationService
 ```
 
 Os arquivos `README-ALPHA*.md` preservam o histórico de evolução das versões anteriores.
@@ -116,7 +123,7 @@ Crie um repositório vazio no GitHub e execute na raiz do projeto:
 git init
 git branch -M main
 git add .
-git commit -m "chore: prepare Mestre Orc Engine alpha.36"
+git commit -m "feat: complete non-combat round alpha.37"
 git remote add origin https://github.com/SEU-USUARIO/SEU-REPOSITORIO.git
 git push -u origin main
 ```

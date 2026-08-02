@@ -38,19 +38,20 @@ test('RelationshipService ajusta disposição em combate', async () => {
   assert.equal(result.relationshipType, 'HOSTILE');
 });
 
-test('SessionDirector.processAction retorna narração', async () => {
+test('SessionDirector coleta a ação e resolve a rodada consolidada', async () => {
   const opening = [
     'A entrada de pedra se estende diante do grupo, delimitada por paredes regulares e uma passagem central. A iluminação alcança o piso e revela os contornos do acesso sem ocultar seus limites.',
     'O espaço permanece aberto à observação, com a rota adiante claramente definida e os elementos visíveis organizados ao redor da passagem principal. O que vocês fazem?'
   ].join('\n\n');
   const narrator = {
     async createOpening() { return opening; },
-    async narrateResolution({ intent }) { return `A ação declarada produz um resultado claro sobre ${intent.target ?? 'o ambiente'}.`; }
+    async narrateResolution({ intent }) { return `A ação declarada produz um resultado claro sobre ${intent.target ?? 'o ambiente'}.`; },
+    async narrateRound({ resolutions }) { return `A rodada produz um resultado claro sobre ${resolutions[0].intent.target ?? 'o ambiente'}.`; }
   };
   const runtime = createSessionRuntime({ narrator });
   await runtime.start({
     activeScene: { id: 'scene-1', name: 'Entrada', description: 'Uma passagem central atravessa o recinto.' },
-    campaign: { worldId: 'world-1' },
+    campaign: { worldId: 'world-1', systemId: 'dnd5e' },
     visibleActors: [{ id: 'actor-1', name: 'Aventureiro', type: 'character' }],
     sceneJournal: {
       id: 'journal-1', name: 'Entrada', explicitLink: true,
@@ -61,8 +62,16 @@ test('SessionDirector.processAction retorna narração', async () => {
       }
     }
   });
-  const result = await runtime.processAction({ content: 'Examino o baú', actorId: 'actor-1' });
+  const queued = await runtime.processAction({ content: 'Examino o baú', actorId: 'actor-1', actorName: 'Aventureiro', eventId: 'chat:1' });
+  assert.equal(queued.queued, true);
+  assert.equal(queued.round.actionCount, 1);
+  assert.equal(queued.state, 'COLLECTING_ACTIONS');
+
+  const result = await runtime.resolveRound({ eventId: 'round:1' });
   assert.ok(result.narration);
-  assert.equal(result.intent.type, 'INVESTIGATION');
+  assert.equal(result.resolutions[0].intent.type, 'INVESTIGATION');
+  assert.equal(result.resolutions[0].rules.adapter.systemId, 'dnd5e');
   assert.equal(result.state, 'COLLECTING_ACTIONS');
+  assert.equal(result.round.number, 2);
+  assert.equal(result.round.actionCount, 0);
 });

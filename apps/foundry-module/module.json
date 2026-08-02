@@ -1,8 +1,8 @@
 {
   "id": "mestre-orc",
   "title": "Mestre Orc",
-  "description": "Narrações cinematográficas expressivas com Groq, visão individual do token, chat privado e áudio TTS contextual.",
-  "version": "0.1.0-alpha.36",
+  "description": "Narrações cinematográficas expressivas, rodadas fora de combate consolidadas, visão individual do token, chat privado e áudio TTS contextual.",
+  "version": "0.1.0-alpha.37",
   "compatibility": {
     "minimum": "13",
     "verified": "13"

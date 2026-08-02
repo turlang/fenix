@@ -624,6 +624,33 @@ export class NarrationService {
     }
   }
 
+  async narrateRound({ roundNumber, resolutions = [], npcCoordination = {}, worldState = {}, context }) {
+    try {
+      if (!resolutions.length) {
+        throw createServiceError('A rodada não possui ações para narrar.', { statusCode: 400, code: 'EMPTY_ROUND' });
+      }
+      if (this.provider?.narrateRound) {
+        return await this.provider.narrateRound({ roundNumber, resolutions, npcCoordination, worldState, context });
+      }
+      if (resolutions.length === 1 && this.provider?.narrateResolution) {
+        const [resolution] = resolutions;
+        return await this.provider.narrateResolution({
+          intent: resolution.intent,
+          rules: resolution.rules,
+          relationship: resolution.relationship,
+          context
+        });
+      }
+      throw createServiceError(
+        'A Groq não está configurada para narrar a resolução consolidada da rodada.',
+        { statusCode: 503, code: 'AI_NOT_CONFIGURED' }
+      );
+    } catch (error) {
+      this.logger.error?.('[Mestre Orc][Narration] falha na rodada consolidada', { message: error.message });
+      throw error;
+    }
+  }
+
   async narrateResolution({ intent, rules, relationship, context }) {
     try {
       if (this.provider?.narrateResolution) {

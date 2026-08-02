@@ -21,6 +21,8 @@ const required = [
   'packages/intent-interpreter/src/index.js',
   'packages/rules-service/src/index.js',
   'packages/relationship-service/src/index.js',
+  'packages/npc-coordinator/src/index.js',
+  'packages/world-state/src/index.js',
   'packages/narration-service/src/index.js',
   'packages/foundry-publisher/src/index.js',
   'scripts/prepare-release.mjs',

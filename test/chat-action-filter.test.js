@@ -38,7 +38,7 @@ test('rejeita estilos de chat não textuais', () => {
   assert.equal(isSupportedPlayerChatStyle({ style: 5 }, { OOC: 1, IC: 2, EMOTE: 3 }), false);
 });
 
-test('hook processa apenas mensagens criadas e deduplica a publicação', async () => {
+test('hook coleta declarações e deixa a publicação para a resolução da rodada', async () => {
   const source = await readFile(new URL('../apps/foundry-module/scripts/main.js', import.meta.url), 'utf8');
   const block = source.slice(source.indexOf('async function processPlayerActionMessage'), source.indexOf('function installPlayerActionHook'));
   const installBlock = source.slice(source.indexOf('function installPlayerActionHook'), source.indexOf('function extractSceneSectionFromPage'));
@@ -46,7 +46,12 @@ test('hook processa apenas mensagens criadas e deduplica a publicação', async 
   assert.match(block, /claimPlayerActionContent/);
   assert.match(block, /eventId/);
   assert.match(block, /result\?\.duplicate/);
-  assert.match(block, /publishNarrationChat\(result\.narration, actionPublicationKey\)/);
+  assert.match(block, /refreshRoundButton\(result\?\.round/);
+  assert.doesNotMatch(block, /publishNarrationChat\(result\.narration/);
   assert.match(installBlock, /Hooks\.on\('createChatMessage'/);
   assert.doesNotMatch(installBlock, /Hooks\.on\('chatMessage'/);
+
+  const roundBlock = source.slice(source.indexOf('async function resolveRound'), source.indexOf('async function startSession'));
+  assert.match(roundBlock, /\/v1\/session\/round\/resolve/);
+  assert.match(roundBlock, /publishNarrationChat\(result\.narration, publicationKey\)/);
 });

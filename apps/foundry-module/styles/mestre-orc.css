@@ -48,3 +48,34 @@
   border-color: #d6a84f;
   color: #fff3d4;
 }
+
+#mestre-orc-resolve-round {
+  width: calc(100% - 12px);
+  min-height: 36px;
+  margin: 0 6px 6px;
+  padding: 7px 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid rgba(81, 151, 174, 0.82);
+  border-radius: 6px;
+  background: linear-gradient(180deg, rgba(31, 61, 72, 0.98), rgba(20, 39, 47, 0.98));
+  color: #d9f4fb;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+#mestre-orc-resolve-round:not(:disabled):hover,
+#mestre-orc-resolve-round:not(:disabled):focus-visible {
+  border-color: #78d4ee;
+  color: #ffffff;
+  box-shadow: 0 0 0 1px rgba(120, 212, 238, 0.3), 0 2px 7px rgba(0, 0, 0, 0.5);
+}
+
+#mestre-orc-resolve-round i { color: #78d4ee; }
+#mestre-orc-resolve-round:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  filter: saturate(0.55);
+}
