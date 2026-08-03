@@ -1,8 +1,8 @@
 {
   "id": "mestre-orc",
   "title": "Mestre Orc",
-  "description": "Narrações cinematográficas, voz, memória persistente, biblioteca de aventuras e resolução integrada ao Combat Tracker.",
-  "version": "0.1.0-alpha.41",
+  "description": "Narrações cinematográficas, voz, memória, aventuras, combate e múltiplos provedores de IA com fallback automático.",
+  "version": "0.1.0-alpha.42",
   "compatibility": {
     "minimum": "13",
     "verified": "13"

@@ -35,9 +35,14 @@ import {
   injectAdventureLibraryButton,
   openAdventureLibraryPanel
 } from './adventure-library-panel.js';
+import {
+  AI_PROVIDER_BUTTON_ID,
+  injectAiProviderButton,
+  openAiProviderPanel
+} from './ai-provider-panel.js';
 
 const MODULE_ID = 'mestre-orc';
-const MODULE_BUILD = '0.1.0-alpha.41';
+const MODULE_BUILD = '0.1.0-alpha.42';
 const BUTTON_ID = 'mestre-orc-start';
 const ROUND_BUTTON_ID = 'mestre-orc-resolve-round';
 const AUDIO_BUTTON_ID = 'mestre-orc-audio-toggle';
@@ -2716,7 +2721,7 @@ function installDelegatedStartHandler() {
 
   document.addEventListener('click', (event) => {
     const target = event.target instanceof Element
-      ? event.target.closest('[data-mestre-orc-action="start-session"], [data-mestre-orc-action="resolve-round"], [data-mestre-orc-action="resolve-combat-turn"], [data-mestre-orc-action="summarize-combat-round"], [data-mestre-orc-action="open-memory"], [data-mestre-orc-action="open-adventure-library"], #mestre-orc-start, #mestre-orc-resolve-round, #mestre-orc-combat-turn, #mestre-orc-combat-round, #mestre-orc-memory, #mestre-orc-adventure-library')
+      ? event.target.closest('[data-mestre-orc-action="start-session"], [data-mestre-orc-action="resolve-round"], [data-mestre-orc-action="resolve-combat-turn"], [data-mestre-orc-action="summarize-combat-round"], [data-mestre-orc-action="open-memory"], [data-mestre-orc-action="open-adventure-library"], [data-mestre-orc-action="open-ai-providers"], #mestre-orc-start, #mestre-orc-resolve-round, #mestre-orc-combat-turn, #mestre-orc-combat-round, #mestre-orc-memory, #mestre-orc-adventure-library, #mestre-orc-ai-providers')
       : null;
     if (!target) return;
 
@@ -2728,6 +2733,7 @@ function installDelegatedStartHandler() {
     else if (target.dataset.mestreOrcAction === 'summarize-combat-round' || target.id === COMBAT_ROUND_BUTTON_ID) void summarizeCombatRound(null, null, { automatic: false });
     else if (target.dataset.mestreOrcAction === 'open-memory' || target.id === MEMORY_BUTTON_ID) void openCampaignMemoryPanel();
     else if (target.dataset.mestreOrcAction === 'open-adventure-library' || target.id === ADVENTURE_BUTTON_ID) void openAdventureLibraryPanel({ request });
+    else if (target.dataset.mestreOrcAction === 'open-ai-providers' || target.id === AI_PROVIDER_BUTTON_ID) void openAiProviderPanel({ request });
     else void startSession(target);
   }, true);
 }
@@ -2739,6 +2745,7 @@ function scheduleInjection(root) {
     injectCombatButtons(root);
     injectMemoryButton(root);
     injectAdventureLibraryButton({ root, request, findChatContainer });
+    injectAiProviderButton({ root, request, findChatContainer });
     injectAudioToggleButton(root);
     injectVoiceInputButton(root);
     setTimeout(() => {
@@ -2747,6 +2754,7 @@ function scheduleInjection(root) {
       injectCombatButtons(document);
       injectMemoryButton(document);
       injectAdventureLibraryButton({ root: document, request, findChatContainer });
+      injectAiProviderButton({ root: document, request, findChatContainer });
       injectAudioToggleButton(document);
       injectVoiceInputButton(document);
     }, 250);
@@ -2756,6 +2764,7 @@ function scheduleInjection(root) {
       injectCombatButtons(document);
       injectMemoryButton(document);
       injectAdventureLibraryButton({ root: document, request, findChatContainer });
+      injectAiProviderButton({ root: document, request, findChatContainer });
       injectAudioToggleButton(document);
       injectVoiceInputButton(document);
     }, 1000);
@@ -2843,6 +2852,19 @@ Hooks.on('getSceneControlButtons', (controls) => {
       onChange: () => {
         console.log('[Mestre Orc] biblioteca da aventura aberta pelos controles da cena');
         void openAdventureLibraryPanel({ request });
+      }
+    };
+
+    tokenControls.tools.mestreOrcAiProviders = {
+      name: 'mestreOrcAiProviders',
+      title: 'Mestre Orc — Saúde dos provedores de IA',
+      icon: 'fa-solid fa-tower-broadcast',
+      order: Object.keys(tokenControls.tools).length,
+      button: true,
+      visible: true,
+      onChange: () => {
+        console.log('[Mestre Orc] painel de provedores aberto pelos controles da cena');
+        void openAiProviderPanel({ request });
       }
     };
 

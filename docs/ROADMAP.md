@@ -65,8 +65,18 @@
 - [x] painel de importação e consulta no Foundry;
 - [x] recuperação segura em rodadas, salas e combate.
 
+## Marco 6 — Provedores resilientes ✅ — alpha.42
+- [x] Groq, OpenAI, Anthropic e endpoint OpenAI-compatible;
+- [x] ordem configurável de prioridade;
+- [x] fallback automático por operação narrativa;
+- [x] circuit breaker `CLOSED`, `OPEN` e `HALF_OPEN`;
+- [x] cooldown e limite de falhas configuráveis;
+- [x] métricas sanitizadas de saúde e latência;
+- [x] painel do mestre no Foundry;
+- [x] endpoints de consulta e rearme manual;
+- [x] preservação dos eventos quando todos os provedores falham.
+
 ## Próximos marcos liberados
-- Marco 6 — múltiplos provedores de IA com fallback e circuit breaker;
 - Marco 7 — voz neural externa e perfis avançados de NPC;
 - Marco 8 — geradores persistentes de aventuras, NPCs e dungeons;
 - Marco 9 — mapas automáticos e integração com cenas do Foundry.

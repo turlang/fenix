@@ -11,5 +11,6 @@ test('Engine carrega automaticamente o arquivo .env antes de criar o provider', 
   const providerCallIndex = source.indexOf('createNarrativeProviderFromEnv({ logger: app.log })');
   assert.ok(loadIndex > providerIndex);
   assert.ok(loadIndex < providerCallIndex);
-  assert.match(source, /ai: narrator \? 'groq' : 'not-configured'/);
+  assert.match(source, /ai: narrator \? 'configured' : 'not-configured'/);
+  assert.match(source, /aiProviders: narrator\?\.getStatus/);
 });

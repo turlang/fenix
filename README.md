@@ -1,8 +1,8 @@
 # Mestre Orc Engine
 
-Versão `0.1.0-alpha.41` — Node.js 20–24 e Foundry VTT 13.
+Versão `0.1.0-alpha.42` — Node.js 20–24 e Foundry VTT 13.
 
-O fluxo atual localiza a Scene ativa, procura o Journal correspondente no diretório do Foundry e extrai exclusivamente uma caixa read-aloud reconhecida. São aceitos os formatos antigo e atual do Plutonium/5eTools, `blockquote` HTML e citação Markdown; blocos secretos ou exclusivos do GM são ignorados. A âncora canônica é interpretada com Groq, validada e publicada no chat com áudio.
+O fluxo atual localiza a Scene ativa, procura o Journal correspondente no diretório do Foundry e extrai exclusivamente uma caixa read-aloud reconhecida. São aceitos os formatos antigo e atual do Plutonium/5eTools, `blockquote` HTML e citação Markdown; blocos secretos ou exclusivos do GM são ignorados. A âncora canônica é interpretada pelo primeiro provedor de IA saudável da ordem configurada, validada e publicada no chat com áudio. Groq, OpenAI, Anthropic e endpoints OpenAI-compatible podem operar com fallback automático.
 
 ## Engine
 
@@ -24,6 +24,16 @@ NODE_ENV=development
 CORS_ALLOWED_ORIGINS=http://localhost:30000,http://127.0.0.1:30000,http://localhost:3000,http://localhost:3001
 GROQ_API_KEY=sua_chave
 GROQ_MODEL=seu_modelo_disponivel
+AI_PROVIDER_ORDER=groq,openai,anthropic,compatible
+AI_PROVIDER_TIMEOUT_MS=45000
+AI_PROVIDER_FAILURE_THRESHOLD=3
+AI_PROVIDER_COOLDOWN_MS=60000
+OPENAI_API_KEY=
+OPENAI_MODEL=
+ANTHROPIC_API_KEY=
+ANTHROPIC_MODEL=
+AI_COMPATIBLE_MODEL=
+AI_COMPATIBLE_BASE_URL=
 MESTRE_ORC_NARRATION_MEMORY_FILE=./data/narration-history.json
 MESTRE_ORC_CAMPAIGN_MEMORY_FILE=./data/campaign-memory.json
 ADVENTURE_LIBRARY_FILE=./data/adventure-library.json
@@ -36,7 +46,7 @@ MESTRE_ORC_AUDIO_PITCH=0.85
 MESTRE_ORC_AUDIO_VOLUME=1.00
 ```
 
-Abra `http://localhost:3001/health`. Os campos esperados são `"ai":"groq"`, `"audio":"browser-tts"`, `"campaignMemory":"persistent-file"` e `"adventureLibrary":"persistent-file"`.
+Abra `http://localhost:3001/health`. Os campos esperados incluem `"ai":"configured"`, `"aiProviders"`, `"audio":"browser-tts"`, `"campaignMemory":"persistent-file"` e `"adventureLibrary":"persistent-file"`.
 
 ## Comandos
 
@@ -47,6 +57,25 @@ Abra `http://localhost:3001/health`. Os campos esperados são `"ai":"groq"`, `"a
 - `npm run check:offline`: executa validação e testes quando o endpoint de auditoria do registro npm estiver indisponível.
 - `npm run check`: executa estrutura, auditoria de segurança e testes antes de cada entrega.
 - `npm run release:prepare`: gera em `dist/` uma cópia limpa, sem `.git`, `.env`, dependências ou histórico local.
+
+
+## Múltiplos provedores de IA e fallback
+
+A alpha.42 substitui o acoplamento exclusivo à Groq por um orquestrador resiliente. Os provedores configurados são tentados na ordem de `AI_PROVIDER_ORDER`; o primeiro é o primário e os demais atuam como fallback. São suportados:
+
+- `groq`: Chat Completions em `https://api.groq.com/openai/v1`;
+- `openai`: Responses API;
+- `anthropic`: Messages API;
+- `compatible`: qualquer endpoint compatível com Chat Completions da OpenAI, inclusive servidores locais sem chave.
+
+O circuit breaker acompanha falhas consecutivas por provedor. Ao atingir `AI_PROVIDER_FAILURE_THRESHOLD`, ou diante de erro permanente de configuração/autenticação, o circuito é aberto e o provedor é ignorado até `AI_PROVIDER_COOLDOWN_MS`. Depois do intervalo, uma chamada de teste entra em estado `HALF_OPEN`; se funcionar, o provedor volta a `CLOSED`. Declarações, turnos e rodadas continuam preservados quando todos os provedores falham.
+
+A telemetria não expõe chaves nem a resposta bruta de erro. O mestre consulta **Saúde da IA** no chat ou nos controles da cena, podendo atualizar métricas e rearmar manualmente um circuito. Endpoints:
+
+- `GET /v1/ai/providers`
+- `POST /v1/ai/providers/:providerId/reset`
+
+Configuração completa disponível em `.env.example`. Para desativar um provedor, deixe sua chave/modelo ausentes. Provedores configurados que não aparecem explicitamente em `AI_PROVIDER_ORDER` são adicionados ao final da cadeia.
 
 
 ## Memória persistente da campanha
@@ -126,7 +155,7 @@ Copie o conteúdo de `apps/foundry-module` para:
 FoundryVTT/Data/modules/mestre-orc/
 ```
 
-A pasta precisa conter diretamente `module.json`, `scripts/main.js`, `scripts/read-aloud.js`, `scripts/room-transition-state.js`, `scripts/chat-action-filter.js`, `scripts/audio-routing.js`, `scripts/token-vision.js`, `scripts/cinematic-speech.js`, `scripts/voice-input.js`, `scripts/combat-tracker.js`, `scripts/adventure-library-panel.js` e `styles/mestre-orc.css`.
+A pasta precisa conter diretamente `module.json`, `scripts/main.js`, `scripts/read-aloud.js`, `scripts/room-transition-state.js`, `scripts/chat-action-filter.js`, `scripts/audio-routing.js`, `scripts/token-vision.js`, `scripts/cinematic-speech.js`, `scripts/voice-input.js`, `scripts/combat-tracker.js`, `scripts/adventure-library-panel.js`, `scripts/ai-provider-panel.js` e `styles/mestre-orc.css`.
 
 O botão **Áudio ligado/desligado** aparece junto ao chat para cada usuário. Nas configurações do módulo é possível ajustar voz, velocidade, tom e volume. O mestre pode desativar a transmissão para os demais clientes.
 

@@ -9,6 +9,7 @@ const required = [
   'apps/foundry-module/scripts/cinematic-speech.js',
   'apps/foundry-module/scripts/combat-tracker.js',
   'apps/foundry-module/scripts/adventure-library-panel.js',
+  'apps/foundry-module/scripts/ai-provider-panel.js',
   'apps/foundry-module/scripts/voice-input.js',
   'apps/foundry-module/scripts/room-transition-state.js',
   'apps/foundry-module/scripts/token-vision.js',

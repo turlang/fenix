@@ -261,20 +261,18 @@ function roomEntryPrompt(context) {
   ].join('\n');
 }
 
-export class GroqNarrativeProvider {
-  constructor({ apiKey, model, baseUrl = 'https://api.groq.com/openai/v1', logger = console, timeoutMs = 45000 } = {}) {
-    if (!apiKey) throw new TypeError('GROQ_API_KEY não configurada.');
-    if (!model) throw new TypeError('GROQ_MODEL não configurado.');
-    this.apiKey = apiKey;
+export class PromptNarrativeProvider {
+  constructor({ requestText, providerId = 'unknown', model = null, logger = console } = {}) {
+    if (typeof requestText !== 'function') throw new TypeError('requestText é obrigatório.');
+    this._requestText = requestText;
+    this.providerId = providerId;
     this.model = model;
-    this.baseUrl = baseUrl.replace(/\/$/, '');
     this.logger = logger;
-    this.timeoutMs = timeoutMs;
   }
 
   async createOpening(context) {
     const attempt = Math.max(1, Number(context.novelty?.attempt) || 1);
-    return this.#requestText(openingPrompt(context), {
+    return this.requestText(openingPrompt(context), {
       maxTokens: 750,
       temperature: Math.min(1, 0.78 + attempt * 0.055),
       topP: 0.95
@@ -283,7 +281,7 @@ export class GroqNarrativeProvider {
 
   async createRoomEntry(context) {
     const attempt = Math.max(1, Number(context.novelty?.attempt) || 1);
-    return this.#requestText(roomEntryPrompt(context), {
+    return this.requestText(roomEntryPrompt(context), {
       maxTokens: 400,
       temperature: Math.min(0.91, 0.76 + attempt * 0.03),
       topP: 0.94
@@ -356,7 +354,7 @@ export class GroqNarrativeProvider {
       ...adventureReferenceLines(context, 4),
       'Esses trechos já passaram pelo filtro PLAYER_SAFE. Use apenas detalhes coerentes com a cena e nunca mencione a origem documental.'
     ].join('\n');
-    return this.#requestText(prompt, { maxTokens: 850, temperature: 0.68, topP: 0.92 });
+    return this.requestText(prompt, { maxTokens: 850, temperature: 0.68, topP: 0.92 });
   }
 
 
@@ -393,7 +391,7 @@ export class GroqNarrativeProvider {
       ...adventureReferenceLines(context, 3),
       'Não use referência importada para inventar um resultado mecânico ou revelar informação fora do campo de batalha.'
     ].join('\n');
-    return this.#requestText(prompt, { maxTokens: 480, temperature: 0.58, topP: 0.9 });
+    return this.requestText(prompt, { maxTokens: 480, temperature: 0.58, topP: 0.9 });
   }
 
   async narrateCombatRound({ combat = {}, roundNumber, turns = [], context }) {
@@ -416,7 +414,7 @@ export class GroqNarrativeProvider {
       ...adventureReferenceLines(context, 3),
       'Use somente para continuidade ambiental; os turnos confirmados continuam sendo a fonte de verdade.'
     ].join('\n');
-    return this.#requestText(prompt, { maxTokens: 650, temperature: 0.62, topP: 0.91 });
+    return this.requestText(prompt, { maxTokens: 650, temperature: 0.62, topP: 0.91 });
   }
 
   async narrateResolution({ intent, rules, relationship, context }) {
@@ -441,63 +439,517 @@ export class GroqNarrativeProvider {
       'REFERÊNCIAS IMPORTADAS LIBERADAS PARA NARRAÇÃO:',
       ...adventureReferenceLines(context, 3)
     ].join('\n');
-    return this.#requestText(prompt, { maxTokens: 500, temperature: 0.65, topP: 0.9 });
+    return this.requestText(prompt, { maxTokens: 500, temperature: 0.65, topP: 0.9 });
   }
 
-  async #requestText(prompt, { maxTokens, temperature, topP = 0.95 }) {
+  async requestText(prompt, options) {
+    return this._requestText({ prompt, ...options });
+  }
+}
+
+const SYSTEM_INSTRUCTION = 'Você produz narração oral de RPG com voz humana, fluida, evocativa e cinematográfica. Use marcações expressivas entre colchetes quando solicitado, crie emoção pela cadência sem inventar fatos e nunca responda em JSON.';
+
+function cleanBaseUrl(value, fallback = '') {
+  return String(value || fallback).trim().replace(/\/$/, '');
+}
+
+function parsePositiveInteger(value, fallback, { min = 1, max = 600000 } = {}) {
+  const parsed = value == null || value === '' ? fallback : Number(value);
+  if (!Number.isInteger(parsed) || parsed < min || parsed > max) return fallback;
+  return parsed;
+}
+
+function createProviderError(message, { providerId, statusCode, retryAfter, code, cause } = {}) {
+  const error = new Error(message, cause ? { cause } : undefined);
+  error.providerId = providerId ?? null;
+  error.statusCode = Number(statusCode) || 503;
+  error.retryAfter = retryAfter ?? null;
+  error.code = code || 'AI_PROVIDER_REQUEST_FAILED';
+  return error;
+}
+
+function safeProviderFailureMessage(error) {
+  const status = Number(error?.statusCode) || 0;
+  if (error?.code === 'AI_RATE_LIMIT' || status === 429) return 'Limite de requisições atingido pelo provedor.';
+  if (error?.code === 'AI_PROVIDER_TIMEOUT' || status === 504) return 'O provedor excedeu o tempo limite.';
+  if (status === 401 || status === 403) return 'A credencial foi recusada pelo provedor.';
+  if (status >= 400 && status < 500) return 'A requisição foi recusada pelo provedor.';
+  if (error?.code === 'AI_EMPTY_RESPONSE') return 'O provedor retornou uma resposta vazia.';
+  if (error?.code === 'AI_PROVIDER_NETWORK_ERROR') return 'Falha de conexão com o provedor.';
+  return 'Falha ao gerar a narração com este provedor.';
+}
+
+function extractOpenAIResponseText(payload) {
+  if (typeof payload?.output_text === 'string' && payload.output_text.trim()) return payload.output_text.trim();
+  const parts = [];
+  for (const item of payload?.output ?? []) {
+    for (const content of item?.content ?? []) {
+      if (content?.type === 'output_text' && typeof content.text === 'string') parts.push(content.text);
+    }
+  }
+  return parts.join('\n').trim();
+}
+
+class HttpTextTransport {
+  constructor({ id, model, baseUrl, apiKey = '', timeoutMs = 45000, logger = console, fetchImpl = globalThis.fetch } = {}) {
+    if (!id) throw new TypeError('id do provedor é obrigatório.');
+    if (!model) throw new TypeError(`Modelo não configurado para ${id}.`);
+    if (typeof fetchImpl !== 'function') throw new TypeError('fetch não está disponível neste ambiente.');
+    this.id = id;
+    this.model = model;
+    this.baseUrl = cleanBaseUrl(baseUrl);
+    this.apiKey = apiKey;
+    this.timeoutMs = timeoutMs;
+    this.logger = logger;
+    this.fetchImpl = fetchImpl;
+  }
+
+  async request(url, options, parsePayload) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    const startedAt = Date.now();
     try {
-      this.logger.info?.('[Mestre Orc][AI] enviando requisição narrativa', {
-        provider: 'groq', model: this.model, promptCharacters: prompt.length, temperature
-      });
-      const response = await fetch(`${this.baseUrl}/chat/completions`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${this.apiKey}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          model: this.model,
-          messages: [
-            { role: 'system', content: 'Você produz narração oral de RPG com voz humana, fluida, evocativa e cinematográfica. Use marcações expressivas entre colchetes quando solicitado, crie emoção pela cadência sem inventar fatos e nunca responda em JSON.' },
-            { role: 'user', content: prompt }
-          ],
-          temperature,
-          top_p: topP,
-          max_completion_tokens: maxTokens
-        }),
-        signal: controller.signal
-      });
-
+      const response = await this.fetchImpl(url, { ...options, signal: controller.signal });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
-        const error = new Error(payload?.error?.message || `Groq respondeu HTTP ${response.status}.`);
-        error.statusCode = response.status;
-        error.retryAfter = response.headers.get('retry-after');
-        throw error;
+        throw createProviderError(
+          payload?.error?.message || payload?.message || `${this.id} respondeu HTTP ${response.status}.`,
+          {
+            providerId: this.id,
+            statusCode: response.status,
+            retryAfter: response.headers?.get?.('retry-after') ?? null,
+            code: response.status === 429 ? 'AI_RATE_LIMIT' : 'AI_PROVIDER_HTTP_ERROR'
+          }
+        );
       }
-      const content = payload?.choices?.[0]?.message?.content?.trim();
-      if (!content) throw new Error('A Groq retornou uma narração vazia.');
-      return content;
+      const text = parsePayload(payload);
+      if (!text) throw createProviderError(`${this.id} retornou uma narração vazia.`, { providerId: this.id, code: 'AI_EMPTY_RESPONSE' });
+      this.logger.info?.('[Mestre Orc][AI] resposta recebida', {
+        provider: this.id,
+        model: this.model,
+        latencyMs: Date.now() - startedAt
+      });
+      return text;
     } catch (error) {
-      if (error.name === 'AbortError') throw new Error('A chamada de IA excedeu o tempo limite.');
-      throw error;
+      if (error?.name === 'AbortError') {
+        throw createProviderError(`A chamada de IA para ${this.id} excedeu o tempo limite.`, {
+          providerId: this.id,
+          code: 'AI_PROVIDER_TIMEOUT',
+          statusCode: 504,
+          cause: error
+        });
+      }
+      if (error?.providerId) throw error;
+      throw createProviderError(error?.message || `Falha de rede ao acessar ${this.id}.`, {
+        providerId: this.id,
+        code: 'AI_PROVIDER_NETWORK_ERROR',
+        statusCode: 503,
+        cause: error
+      });
     } finally {
       clearTimeout(timer);
     }
   }
 }
 
-export function createNarrativeProviderFromEnv({ logger = console } = {}) {
-  const apiKey = process.env.GROQ_API_KEY?.trim();
-  const model = process.env.GROQ_MODEL?.trim();
-  if (!apiKey || !model) {
-    logger.warn?.('[Mestre Orc][AI] GROQ_API_KEY/GROQ_MODEL ausentes; a narração será recusada até a configuração do .env.');
+export class OpenAICompatibleChatTransport extends HttpTextTransport {
+  constructor({ maxTokensField = 'max_completion_tokens', extraHeaders = {}, ...options } = {}) {
+    super(options);
+    this.maxTokensField = maxTokensField;
+    this.extraHeaders = extraHeaders;
+  }
+
+  async generateText({ prompt, maxTokens, temperature, topP = 0.95 }) {
+    this.logger.info?.('[Mestre Orc][AI] enviando requisição narrativa', {
+      provider: this.id,
+      model: this.model,
+      promptCharacters: prompt.length,
+      temperature
+    });
+    const headers = { 'Content-Type': 'application/json', ...this.extraHeaders };
+    if (this.apiKey) headers.Authorization = `Bearer ${this.apiKey}`;
+    const body = {
+      model: this.model,
+      messages: [
+        { role: 'system', content: SYSTEM_INSTRUCTION },
+        { role: 'user', content: prompt }
+      ],
+      temperature,
+      top_p: topP
+    };
+    body[this.maxTokensField] = maxTokens;
+    return this.request(`${this.baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body)
+    }, (payload) => payload?.choices?.[0]?.message?.content?.trim());
+  }
+}
+
+export class OpenAIResponsesTransport extends HttpTextTransport {
+  async generateText({ prompt, maxTokens, temperature, topP = 0.95 }) {
+    this.logger.info?.('[Mestre Orc][AI] enviando requisição narrativa', {
+      provider: this.id,
+      model: this.model,
+      promptCharacters: prompt.length,
+      temperature
+    });
+    return this.request(`${this.baseUrl}/responses`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${this.apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: this.model,
+        instructions: SYSTEM_INSTRUCTION,
+        input: prompt,
+        temperature,
+        top_p: topP,
+        max_output_tokens: maxTokens
+      })
+    }, extractOpenAIResponseText);
+  }
+}
+
+export class AnthropicMessagesTransport extends HttpTextTransport {
+  constructor({ apiVersion = '2023-06-01', ...options } = {}) {
+    super(options);
+    this.apiVersion = apiVersion;
+  }
+
+  async generateText({ prompt, maxTokens, temperature, topP = 0.95 }) {
+    this.logger.info?.('[Mestre Orc][AI] enviando requisição narrativa', {
+      provider: this.id,
+      model: this.model,
+      promptCharacters: prompt.length,
+      temperature
+    });
+    return this.request(`${this.baseUrl}/messages`, {
+      method: 'POST',
+      headers: {
+        'x-api-key': this.apiKey,
+        'anthropic-version': this.apiVersion,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: this.model,
+        max_tokens: maxTokens,
+        system: SYSTEM_INSTRUCTION,
+        messages: [{ role: 'user', content: prompt }],
+        temperature,
+        top_p: topP
+      })
+    }, (payload) => (payload?.content ?? [])
+      .filter((part) => part?.type === 'text' && typeof part.text === 'string')
+      .map((part) => part.text)
+      .join('\n')
+      .trim());
+  }
+}
+
+export class GroqNarrativeProvider extends PromptNarrativeProvider {
+  constructor({ apiKey, model, baseUrl = 'https://api.groq.com/openai/v1', logger = console, timeoutMs = 45000, fetchImpl } = {}) {
+    if (!apiKey) throw new TypeError('GROQ_API_KEY não configurada.');
+    if (!model) throw new TypeError('GROQ_MODEL não configurado.');
+    const transport = new OpenAICompatibleChatTransport({
+      id: 'groq', apiKey, model, baseUrl, logger, timeoutMs, fetchImpl,
+      maxTokensField: 'max_completion_tokens'
+    });
+    super({ providerId: 'groq', model, logger, requestText: (payload) => transport.generateText(payload) });
+    this.transport = transport;
+  }
+}
+
+export class OpenAINarrativeProvider extends PromptNarrativeProvider {
+  constructor({ apiKey, model, baseUrl = 'https://api.openai.com/v1', logger = console, timeoutMs = 45000, fetchImpl } = {}) {
+    if (!apiKey) throw new TypeError('OPENAI_API_KEY não configurada.');
+    if (!model) throw new TypeError('OPENAI_MODEL não configurado.');
+    const transport = new OpenAIResponsesTransport({ id: 'openai', apiKey, model, baseUrl, logger, timeoutMs, fetchImpl });
+    super({ providerId: 'openai', model, logger, requestText: (payload) => transport.generateText(payload) });
+    this.transport = transport;
+  }
+}
+
+export class AnthropicNarrativeProvider extends PromptNarrativeProvider {
+  constructor({ apiKey, model, baseUrl = 'https://api.anthropic.com/v1', apiVersion = '2023-06-01', logger = console, timeoutMs = 45000, fetchImpl } = {}) {
+    if (!apiKey) throw new TypeError('ANTHROPIC_API_KEY não configurada.');
+    if (!model) throw new TypeError('ANTHROPIC_MODEL não configurado.');
+    const transport = new AnthropicMessagesTransport({ id: 'anthropic', apiKey, model, baseUrl, apiVersion, logger, timeoutMs, fetchImpl });
+    super({ providerId: 'anthropic', model, logger, requestText: (payload) => transport.generateText(payload) });
+    this.transport = transport;
+  }
+}
+
+export class OpenAICompatibleNarrativeProvider extends PromptNarrativeProvider {
+  constructor({ id = 'compatible', apiKey = '', model, baseUrl, maxTokensField = 'max_tokens', logger = console, timeoutMs = 45000, fetchImpl } = {}) {
+    if (!baseUrl) throw new TypeError('AI_COMPATIBLE_BASE_URL não configurada.');
+    if (!model) throw new TypeError('AI_COMPATIBLE_MODEL não configurado.');
+    const transport = new OpenAICompatibleChatTransport({ id, apiKey, model, baseUrl, maxTokensField, logger, timeoutMs, fetchImpl });
+    super({ providerId: id, model, logger, requestText: (payload) => transport.generateText(payload) });
+    this.transport = transport;
+  }
+}
+
+class ProviderCircuit {
+  constructor({ id, provider, failureThreshold, cooldownMs, logger, clock }) {
+    this.id = id;
+    this.provider = provider;
+    this.failureThreshold = failureThreshold;
+    this.cooldownMs = cooldownMs;
+    this.logger = logger;
+    this.clock = clock;
+    this.state = 'CLOSED';
+    this.consecutiveFailures = 0;
+    this.openedAt = null;
+    this.nextRetryAt = null;
+    this.halfOpenInFlight = false;
+    this.metrics = {
+      requests: 0,
+      successes: 0,
+      failures: 0,
+      lastLatencyMs: null,
+      lastSuccessAt: null,
+      lastFailureAt: null,
+      lastErrorCode: null,
+      lastErrorMessage: null
+    };
+  }
+
+  canAttempt() {
+    const now = this.clock();
+    if (this.state === 'OPEN' && this.nextRetryAt !== null && now >= this.nextRetryAt) {
+      this.state = 'HALF_OPEN';
+      this.halfOpenInFlight = false;
+    }
+    if (this.state === 'OPEN') return false;
+    if (this.state === 'HALF_OPEN' && this.halfOpenInFlight) return false;
+    return true;
+  }
+
+  async execute(operation, args) {
+    if (!this.canAttempt()) return { skipped: true, reason: 'CIRCUIT_OPEN' };
+    if (this.state === 'HALF_OPEN') this.halfOpenInFlight = true;
+    const startedAt = this.clock();
+    this.metrics.requests += 1;
+    try {
+      const value = await this.provider[operation](...args);
+      const completedAt = this.clock();
+      this.metrics.successes += 1;
+      this.metrics.lastLatencyMs = Math.max(0, completedAt - startedAt);
+      this.metrics.lastSuccessAt = new Date(completedAt).toISOString();
+      this.metrics.lastErrorCode = null;
+      this.metrics.lastErrorMessage = null;
+      this.state = 'CLOSED';
+      this.consecutiveFailures = 0;
+      this.openedAt = null;
+      this.nextRetryAt = null;
+      this.halfOpenInFlight = false;
+      return { value };
+    } catch (error) {
+      const failedAt = this.clock();
+      this.metrics.failures += 1;
+      this.metrics.lastLatencyMs = Math.max(0, failedAt - startedAt);
+      this.metrics.lastFailureAt = new Date(failedAt).toISOString();
+      this.metrics.lastErrorCode = error?.code ?? 'AI_PROVIDER_REQUEST_FAILED';
+      this.metrics.lastErrorMessage = safeProviderFailureMessage(error);
+      this.consecutiveFailures += 1;
+      const statusCode = Number(error?.statusCode) || 0;
+      const permanentFailure = [400, 401, 403, 404].includes(statusCode);
+      const shouldOpen = this.state === 'HALF_OPEN' || permanentFailure || this.consecutiveFailures >= this.failureThreshold;
+      if (shouldOpen) {
+        this.state = 'OPEN';
+        this.openedAt = failedAt;
+        this.nextRetryAt = failedAt + this.cooldownMs;
+        this.logger.warn?.('[Mestre Orc][AI] circuit breaker aberto', {
+          provider: this.id,
+          consecutiveFailures: this.consecutiveFailures,
+          nextRetryAt: new Date(this.nextRetryAt).toISOString()
+        });
+      }
+      this.halfOpenInFlight = false;
+      return { error };
+    }
+  }
+
+  reset() {
+    this.state = 'CLOSED';
+    this.consecutiveFailures = 0;
+    this.openedAt = null;
+    this.nextRetryAt = null;
+    this.halfOpenInFlight = false;
+    this.metrics.lastErrorCode = null;
+    this.metrics.lastErrorMessage = null;
+  }
+
+  snapshot() {
+    return {
+      id: this.id,
+      model: this.provider?.model ?? null,
+      state: this.state,
+      consecutiveFailures: this.consecutiveFailures,
+      failureThreshold: this.failureThreshold,
+      nextRetryAt: this.nextRetryAt === null ? null : new Date(this.nextRetryAt).toISOString(),
+      ...this.metrics
+    };
+  }
+}
+
+export class ResilientNarrativeProvider {
+  constructor({ providers = [], failureThreshold = 3, cooldownMs = 60000, logger = console, clock = Date.now } = {}) {
+    if (!Array.isArray(providers) || !providers.length) throw new TypeError('Ao menos um provedor de IA é obrigatório.');
+    this.logger = logger;
+    this.clock = clock;
+    this.circuits = providers.map(({ id, provider }) => new ProviderCircuit({
+      id,
+      provider,
+      failureThreshold,
+      cooldownMs,
+      logger,
+      clock
+    }));
+    this.activeProviderId = null;
+    this.metrics = { requests: 0, successes: 0, failures: 0, fallbackSuccesses: 0 };
+  }
+
+  async invoke(operation, ...args) {
+    this.metrics.requests += 1;
+    const failures = [];
+    for (let index = 0; index < this.circuits.length; index += 1) {
+      const circuit = this.circuits[index];
+      if (typeof circuit.provider?.[operation] !== 'function') continue;
+      const result = await circuit.execute(operation, args);
+      if (result.skipped) continue;
+      if ('value' in result) {
+        this.metrics.successes += 1;
+        if (index > 0) this.metrics.fallbackSuccesses += 1;
+        this.activeProviderId = circuit.id;
+        if (index > 0) this.logger.warn?.('[Mestre Orc][AI] fallback concluído', { provider: circuit.id, operation });
+        return result.value;
+      }
+      failures.push({ providerId: circuit.id, error: result.error });
+    }
+
+    this.metrics.failures += 1;
+    const retryCandidates = this.circuits.map((entry) => entry.nextRetryAt).filter((value) => Number.isFinite(value));
+    const retryAt = retryCandidates.length ? Math.min(...retryCandidates) : null;
+    const error = createProviderError('Nenhum provedor de IA está disponível para concluir a narração.', {
+      code: 'AI_PROVIDERS_UNAVAILABLE',
+      statusCode: 503,
+      retryAfter: retryAt === null ? null : Math.max(1, Math.ceil((retryAt - this.clock()) / 1000))
+    });
+    error.failures = failures.map(({ providerId, error: providerFailure }) => ({
+      providerId,
+      code: providerFailure?.code ?? 'AI_PROVIDER_REQUEST_FAILED',
+      statusCode: providerFailure?.statusCode ?? 503,
+      message: safeProviderFailureMessage(providerFailure)
+    }));
+    throw error;
+  }
+
+  createOpening(context) { return this.invoke('createOpening', context); }
+  createRoomEntry(context) { return this.invoke('createRoomEntry', context); }
+  narrateResolution(payload) { return this.invoke('narrateResolution', payload); }
+  narrateRound(payload) { return this.invoke('narrateRound', payload); }
+  narrateCombatTurn(payload) { return this.invoke('narrateCombatTurn', payload); }
+  narrateCombatRound(payload) { return this.invoke('narrateCombatRound', payload); }
+
+  getStatus() {
+    return {
+      configured: true,
+      primaryProvider: this.circuits[0]?.id ?? null,
+      activeProvider: this.activeProviderId,
+      order: this.circuits.map((entry) => entry.id),
+      metrics: { ...this.metrics },
+      providers: this.circuits.map((entry) => entry.snapshot())
+    };
+  }
+
+  resetProvider(providerId) {
+    const circuit = this.circuits.find((entry) => entry.id === providerId);
+    if (!circuit) return false;
+    circuit.reset();
+    return true;
+  }
+}
+
+function providerOrderFromEnv(env, available) {
+  const aliases = { custom: 'compatible', 'openai-compatible': 'compatible' };
+  const compatibleAlias = env.AI_COMPATIBLE_ID?.trim().toLowerCase();
+  if (compatibleAlias) aliases[compatibleAlias] = 'compatible';
+  const requested = String(env.AI_PROVIDER_ORDER || 'groq,openai,anthropic,compatible')
+    .split(',')
+    .map((entry) => aliases[entry.trim().toLowerCase()] || entry.trim().toLowerCase())
+    .filter(Boolean);
+  const ordered = [...new Set(requested)].filter((id) => available.has(id));
+  for (const id of available.keys()) if (!ordered.includes(id)) ordered.push(id);
+  return ordered;
+}
+
+export function createNarrativeProviderFromEnv({ logger = console, env = process.env, fetchImpl = globalThis.fetch, clock = Date.now } = {}) {
+  const timeoutMs = parsePositiveInteger(env.AI_PROVIDER_TIMEOUT_MS, 45000, { min: 1000, max: 300000 });
+  const failureThreshold = parsePositiveInteger(env.AI_PROVIDER_FAILURE_THRESHOLD, 3, { min: 1, max: 20 });
+  const cooldownMs = parsePositiveInteger(env.AI_PROVIDER_COOLDOWN_MS, 60000, { min: 1000, max: 600000 });
+  const available = new Map();
+
+  if (env.GROQ_API_KEY?.trim() && env.GROQ_MODEL?.trim()) {
+    available.set('groq', new GroqNarrativeProvider({
+      apiKey: env.GROQ_API_KEY.trim(),
+      model: env.GROQ_MODEL.trim(),
+      baseUrl: env.GROQ_BASE_URL?.trim() || undefined,
+      timeoutMs,
+      logger,
+      fetchImpl
+    }));
+  }
+  if (env.OPENAI_API_KEY?.trim() && env.OPENAI_MODEL?.trim()) {
+    available.set('openai', new OpenAINarrativeProvider({
+      apiKey: env.OPENAI_API_KEY.trim(),
+      model: env.OPENAI_MODEL.trim(),
+      baseUrl: env.OPENAI_BASE_URL?.trim() || undefined,
+      timeoutMs,
+      logger,
+      fetchImpl
+    }));
+  }
+  if (env.ANTHROPIC_API_KEY?.trim() && env.ANTHROPIC_MODEL?.trim()) {
+    available.set('anthropic', new AnthropicNarrativeProvider({
+      apiKey: env.ANTHROPIC_API_KEY.trim(),
+      model: env.ANTHROPIC_MODEL.trim(),
+      baseUrl: env.ANTHROPIC_BASE_URL?.trim() || undefined,
+      apiVersion: env.ANTHROPIC_VERSION?.trim() || '2023-06-01',
+      timeoutMs,
+      logger,
+      fetchImpl
+    }));
+  }
+  if (env.AI_COMPATIBLE_BASE_URL?.trim() && env.AI_COMPATIBLE_MODEL?.trim()) {
+    const compatibleId = env.AI_COMPATIBLE_ID?.trim() || 'compatible';
+    available.set('compatible', new OpenAICompatibleNarrativeProvider({
+      id: compatibleId,
+      apiKey: env.AI_COMPATIBLE_API_KEY?.trim() || '',
+      model: env.AI_COMPATIBLE_MODEL.trim(),
+      baseUrl: env.AI_COMPATIBLE_BASE_URL.trim(),
+      maxTokensField: env.AI_COMPATIBLE_MAX_TOKENS_FIELD?.trim() || 'max_tokens',
+      timeoutMs,
+      logger,
+      fetchImpl
+    }));
+  }
+
+  const order = providerOrderFromEnv(env, available);
+  if (!order.length) {
+    logger.warn?.('[Mestre Orc][AI] nenhum provedor configurado; informe credenciais e modelo no .env.');
     return null;
   }
-  return new GroqNarrativeProvider({ apiKey, model, logger });
+  const providers = order.map((id) => ({
+    id: id === 'compatible' ? (available.get(id)?.providerId || 'compatible') : id,
+    provider: available.get(id)
+  }));
+  logger.info?.('[Mestre Orc][AI] provedores configurados', { order, failureThreshold, cooldownMs, timeoutMs });
+  return new ResilientNarrativeProvider({ providers, failureThreshold, cooldownMs, logger, clock });
 }
+
 
 export const aiProviderInternals = {
   compactText,

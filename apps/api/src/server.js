@@ -36,7 +36,8 @@ app.get('/health', { logLevel: 'silent' }, async () => ({
   status: 'ok',
   service: 'mestre-orc-engine',
   version: packageMetadata.version,
-  ai: narrator ? 'groq' : 'not-configured',
+  ai: narrator ? 'configured' : 'not-configured',
+  aiProviders: narrator?.getStatus?.() ?? { configured: false, providers: [] },
   narrativeMemory: 'persistent-file',
   campaignMemory: 'persistent-file',
   adventureLibrary: 'persistent-file',
@@ -44,6 +45,31 @@ app.get('/health', { logLevel: 'silent' }, async () => ({
   audio: audioNarrationService.enabled ? audioNarrationService.mode : 'disabled',
   runtime: runtime.getStatus()
 }));
+
+
+app.get('/v1/ai/providers', async () => (
+  narrator?.getStatus?.() ?? { configured: false, primaryProvider: null, activeProvider: null, order: [], metrics: {}, providers: [] }
+));
+
+app.post('/v1/ai/providers/:providerId/reset', {
+  schema: {
+    params: {
+      type: 'object',
+      required: ['providerId'],
+      additionalProperties: false,
+      properties: { providerId: { type: 'string', minLength: 1, maxLength: 100 } }
+    }
+  }
+}, async (request, reply) => {
+  if (!narrator?.resetProvider) {
+    return reply.code(503).send({ code: 'AI_NOT_CONFIGURED', message: 'Nenhum provedor de IA está configurado.' });
+  }
+  const reset = narrator.resetProvider(request.params.providerId);
+  if (!reset) {
+    return reply.code(404).send({ code: 'AI_PROVIDER_NOT_FOUND', message: 'Provedor de IA não encontrado.' });
+  }
+  return { reset: true, providerId: request.params.providerId, status: narrator.getStatus() };
+});
 
 const objectBodySchema = {
   body: { type: 'object', additionalProperties: true }

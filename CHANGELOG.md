@@ -17,6 +17,31 @@ Este projeto segue o formato do [Keep a Changelog](https://keepachangelog.com/pt
 - Comando `npm run release:prepare` para gerar uma pasta de distribuição higienizada em `dist/`.
 - Comando `npm run check:offline` para validar estrutura e testes quando a auditoria remota do npm estiver indisponível.
 
+## [0.1.0-alpha.42] - 2026-08-02
+
+### Adicionado
+
+- Orquestrador de múltiplos provedores com ordem configurável e fallback automático.
+- Suporte nativo a Groq, OpenAI Responses API, Anthropic Messages API e endpoints OpenAI-compatible.
+- Circuit breaker independente por provedor com estados `CLOSED`, `OPEN` e `HALF_OPEN`.
+- Métricas de requisições, sucessos, falhas, fallbacks, latência e horários de recuperação.
+- Endpoints `GET /v1/ai/providers` e `POST /v1/ai/providers/:providerId/reset`.
+- Painel **Saúde da IA** no chat e nos controles da cena do Foundry.
+- Configurações de timeout, limite de falhas, cooldown e prioridade no `.env.example`.
+
+### Alterado
+
+- O `/health` passa a informar o estado sanitizado de todos os provedores configurados.
+- A Groq passa a usar o mesmo contrato de transporte resiliente aplicado aos demais provedores.
+- Provedores configurados e omitidos da ordem explícita são anexados ao final como fallback.
+
+### Segurança e confiabilidade
+
+- Erros públicos e métricas nunca incluem chaves ou mensagens brutas potencialmente sensíveis.
+- Falhas permanentes de autenticação ou configuração abrem o circuito imediatamente.
+- Falhas temporárias preservam a operação por meio dos provedores seguintes.
+- Quando todos os provedores falham, a API retorna `AI_PROVIDERS_UNAVAILABLE` e mantém os eventos pendentes para nova tentativa.
+
 ## [0.1.0-alpha.41] - 2026-08-02
 
 ### Adicionado

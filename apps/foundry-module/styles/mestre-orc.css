@@ -585,3 +585,78 @@
   .mestre-orc-adventure-document label { grid-column: 1 / -1; grid-row: 2; }
   .mestre-orc-adventure-search { grid-template-columns: 1fr; }
 }
+
+#mestre-orc-ai-providers {
+  width: calc(100% - 12px);
+  min-height: 34px;
+  margin: 0 6px 6px;
+  padding: 6px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid rgba(84, 151, 177, 0.82);
+  border-radius: 6px;
+  background: linear-gradient(180deg, rgba(31, 59, 72, 0.98), rgba(20, 37, 46, 0.98));
+  color: #def5ff;
+  font-weight: 700;
+  cursor: pointer;
+}
+#mestre-orc-ai-providers:hover,
+#mestre-orc-ai-providers:focus-visible { border-color: #7ed9f4; color: #fff; }
+#mestre-orc-ai-providers i { color: #7ed9f4; }
+
+.mestre-orc-ai-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100000;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(5, 10, 14, 0.82);
+  backdrop-filter: blur(5px);
+}
+.mestre-orc-ai-panel {
+  width: min(980px, 96vw);
+  max-height: 90vh;
+  overflow: auto;
+  padding: 20px;
+  border: 1px solid rgba(103, 188, 216, 0.55);
+  border-radius: 12px;
+  background: linear-gradient(155deg, rgba(20, 34, 43, 0.99), rgba(13, 23, 30, 0.99));
+  color: #e7f5fa;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.65);
+}
+.mestre-orc-ai-header { display: flex; justify-content: space-between; gap: 20px; align-items: flex-start; }
+.mestre-orc-ai-header h2 { margin: 2px 0 4px; color: #fff; }
+.mestre-orc-ai-header p, .mestre-orc-ai-header span { margin: 0; color: #a9c7d2; }
+.mestre-orc-ai-header > button { min-width: 34px; min-height: 34px; }
+.mestre-orc-ai-summary { display: grid; grid-template-columns: repeat(5, minmax(110px, 1fr)); gap: 10px; margin: 18px 0 12px; }
+.mestre-orc-ai-summary article { padding: 12px; border: 1px solid rgba(103, 188, 216, 0.25); border-radius: 8px; background: rgba(7, 19, 26, 0.6); }
+.mestre-orc-ai-summary strong, .mestre-orc-ai-summary span { display: block; }
+.mestre-orc-ai-summary strong { font-size: 1.18rem; color: #8de3fb; overflow-wrap: anywhere; }
+.mestre-orc-ai-summary span { margin-top: 3px; color: #9db6c0; font-size: .78rem; }
+.mestre-orc-ai-order { padding: 9px 11px; border-left: 3px solid #72cce7; background: rgba(10, 25, 33, .72); overflow-wrap: anywhere; }
+.mestre-orc-ai-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; }
+.mestre-orc-ai-provider { padding: 14px; border: 1px solid rgba(116, 196, 220, .28); border-radius: 9px; background: rgba(8, 19, 25, .72); }
+.mestre-orc-ai-provider[data-provider-state="OPEN"] { border-color: rgba(229, 106, 92, .7); }
+.mestre-orc-ai-provider[data-provider-state="HALF_OPEN"] { border-color: rgba(224, 174, 74, .72); }
+.mestre-orc-ai-provider > header { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
+.mestre-orc-ai-provider > header strong, .mestre-orc-ai-provider > header span { display: block; }
+.mestre-orc-ai-provider > header strong { color: #fff; font-size: 1.05rem; }
+.mestre-orc-ai-provider > header div span { color: #93b4c0; font-size: .76rem; }
+.mestre-orc-ai-state { padding: 4px 7px; border-radius: 999px; background: rgba(79, 183, 115, .18); color: #9ce9b5; font-size: .72rem; white-space: nowrap; }
+[data-provider-state="OPEN"] .mestre-orc-ai-state { background: rgba(222, 83, 72, .18); color: #ffaaa1; }
+[data-provider-state="HALF_OPEN"] .mestre-orc-ai-state { background: rgba(215, 160, 57, .18); color: #f3cf86; }
+.mestre-orc-ai-provider dl { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 12px 0; }
+.mestre-orc-ai-provider dl div { min-width: 0; }
+.mestre-orc-ai-provider dt { color: #829faa; font-size: .7rem; }
+.mestre-orc-ai-provider dd { margin: 2px 0 0; color: #e8f5f9; overflow-wrap: anywhere; }
+.mestre-orc-ai-error { padding: 8px; border-left: 3px solid #df6c60; background: rgba(90, 28, 24, .35); color: #ffd0cb; font-size: .78rem; overflow-wrap: anywhere; }
+.mestre-orc-ai-provider > button, .mestre-orc-ai-panel > footer button { min-height: 32px; }
+.mestre-orc-ai-panel > footer { display: flex; justify-content: flex-end; margin-top: 14px; }
+.mestre-orc-ai-empty { color: #9fb8c2; }
+@media (max-width: 720px) {
+  .mestre-orc-ai-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .mestre-orc-ai-provider dl { grid-template-columns: 1fr; }
+}
