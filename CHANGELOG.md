@@ -18,6 +18,31 @@ Este projeto segue o formato do [Keep a Changelog](https://keepachangelog.com/pt
 - Comando `npm run check:offline` para validar estrutura e testes quando a auditoria remota do npm estiver indisponível.
 
 
+## [0.1.0-alpha.46] - 2026-08-02
+
+### Adicionado
+
+- `TutorService` persistente e isolado por `worldId`, com histórico privado em `data/tutor-history.json`.
+- Tutor de Ficha com snapshot curado de atributos, perícias, recursos, classes, magias, itens e efeitos.
+- Tutor de Mestre com contexto da cena, Combat Tracker, grupo, memória persistente e Biblioteca da aventura.
+- Painel **Tutores** no chat para jogadores e mestres, além de controle da cena exclusivo para o GM.
+- Respostas estruturadas com nível de confiança, fatos ou referências usados, alertas e próximos passos.
+- Endpoints separados para Tutor de Ficha, Tutor de Mestre e histórico privado.
+- Fallback determinístico quando nenhum provedor de IA está configurado.
+- Operações específicas dos tutores no orquestrador resiliente de IA.
+
+### Segurança e confiabilidade
+
+- Jogadores só podem consultar fichas que possuem; o mestre pode consultar fichas visíveis.
+- O snapshot remove campos com aparência de credencial e limita profundidade, quantidade e tamanho dos dados.
+- O Tutor de Ficha não recebe memória secreta, Biblioteca ou dados de outros personagens.
+- O Tutor de Mestre é exclusivo para GM e pode consultar referências `GM_ONLY` sem publicá-las automaticamente.
+- Nenhum tutor altera fichas, Scenes, Journals, combate, memória ou outros documentos.
+- Fontes citadas pela IA são filtradas contra IDs realmente fornecidos no contexto.
+- Histórico de jogador é visível somente ao próprio usuário e ao mestre.
+- `data/tutor-history.json` permanece fora do Git e das entregas limpas.
+
+
 ## [0.1.0-alpha.45] - 2026-08-02
 
 ### Adicionado

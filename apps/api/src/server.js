@@ -10,6 +10,7 @@ import { createCampaignMemoryFromEnv } from '../../../packages/memory/src/index.
 import { createAdventureLibraryFromEnv, AdventureImportModes } from '../../../packages/adventure-library/src/index.js';
 import { createGeneratorServiceFromEnv, GeneratorArtifactTypes, GeneratorArtifactStatuses } from '../../../packages/generator-service/src/index.js';
 import { createMapServiceFromEnv, MapStatuses, MapStyles } from '../../../packages/map-service/src/index.js';
+import { createTutorServiceFromEnv, TutorModes } from '../../../packages/tutor-service/src/index.js';
 import { createConfig, isOriginAllowed, loadEnvFile } from '../../../packages/config/src/index.js';
 
 
@@ -27,7 +28,8 @@ const campaignMemory = createCampaignMemoryFromEnv({ logger: app.log });
 const adventureLibrary = createAdventureLibraryFromEnv({ logger: app.log });
 const generatorService = createGeneratorServiceFromEnv({ narrator, campaignMemory, adventureLibrary, logger: app.log });
 const mapService = createMapServiceFromEnv({ narrator, generatorService, logger: app.log });
-const runtime = createSessionRuntime({ narrator, narrationMemory, audioNarrationService, campaignMemory, adventureLibrary, generatorService, mapService, logger: app.log });
+const tutorService = createTutorServiceFromEnv({ narrator, campaignMemory, adventureLibrary, logger: app.log });
+const runtime = createSessionRuntime({ narrator, narrationMemory, audioNarrationService, campaignMemory, adventureLibrary, generatorService, mapService, tutorService, logger: app.log });
 
 app.addHook('onRequest', async (request, reply) => {
   const origin = request.headers.origin;
@@ -53,6 +55,7 @@ app.get('/health', { logLevel: 'silent' }, async () => ({
   generatorTypes: GeneratorArtifactTypes,
   mapBlueprints: 'persistent-file',
   mapStyles: MapStyles,
+  tutors: { modes: TutorModes, history: 'persistent-file', automaticChanges: false },
   documentFormats: ['txt', 'md', 'html', 'docx', 'pdf'],
   audio: audioNarrationService.enabled ? audioNarrationService.mode : 'disabled',
   neuralVoice: neuralVoiceService.getStatus(),
@@ -671,6 +674,82 @@ app.delete('/v1/maps/:campaignId/:mapId', {
   catch (error) { return reply.code(Number(error.statusCode) || 400).send({ code: error.code || 'MAP_DELETE_FAILED', message: error.message }); }
 });
 
+
+
+const tutorRequesterSchema = {
+  type: 'object', required: ['id', 'isGM'], additionalProperties: false,
+  properties: {
+    id: { type: 'string', minLength: 1, maxLength: 200 },
+    name: { type: 'string', maxLength: 300 },
+    isGM: { type: 'boolean' }
+  }
+};
+
+app.post('/v1/tutors/:campaignId/sheet', {
+  schema: {
+    params: {
+      type: 'object', required: ['campaignId'], additionalProperties: false,
+      properties: { campaignId: { type: 'string', minLength: 1, maxLength: 200 } }
+    },
+    body: {
+      type: 'object', required: ['question', 'requester', 'access', 'actor'], additionalProperties: false,
+      properties: {
+        question: { type: 'string', minLength: 3, maxLength: 2000 },
+        requester: tutorRequesterSchema,
+        access: {
+          type: 'object', required: ['canView', 'isOwner'], additionalProperties: false,
+          properties: { canView: { type: 'boolean' }, isOwner: { type: 'boolean' }, canEdit: { type: 'boolean' } }
+        },
+        actor: { type: 'object', additionalProperties: true },
+        campaign: { type: 'object', additionalProperties: true }
+      }
+    }
+  }
+}, async (request, reply) => {
+  try { return await runtime.askSheetTutor(request.params.campaignId, request.body ?? {}); }
+  catch (error) { return reply.code(Number(error.statusCode) || 400).send({ code: error.code || 'SHEET_TUTOR_FAILED', message: error.message }); }
+});
+
+app.post('/v1/tutors/:campaignId/gm', {
+  schema: {
+    params: {
+      type: 'object', required: ['campaignId'], additionalProperties: false,
+      properties: { campaignId: { type: 'string', minLength: 1, maxLength: 200 } }
+    },
+    body: {
+      type: 'object', required: ['question', 'requester'], additionalProperties: false,
+      properties: {
+        question: { type: 'string', minLength: 3, maxLength: 3000 },
+        requester: tutorRequesterSchema,
+        campaign: { type: 'object', additionalProperties: true },
+        scene: { type: 'object', additionalProperties: true },
+        combat: { type: 'object', additionalProperties: true },
+        party: { type: 'array', maxItems: 100, items: { type: 'object', additionalProperties: true } }
+      }
+    }
+  }
+}, async (request, reply) => {
+  try { return await runtime.askGmTutor(request.params.campaignId, request.body ?? {}); }
+  catch (error) { return reply.code(Number(error.statusCode) || 400).send({ code: error.code || 'GM_TUTOR_FAILED', message: error.message }); }
+});
+
+app.get('/v1/tutors/:campaignId/history', {
+  schema: {
+    params: {
+      type: 'object', required: ['campaignId'], additionalProperties: false,
+      properties: { campaignId: { type: 'string', minLength: 1, maxLength: 200 } }
+    },
+    querystring: {
+      type: 'object', required: ['requesterId'], additionalProperties: false,
+      properties: { requesterId: { type: 'string', minLength: 1, maxLength: 200 }, isGM: { type: 'boolean' } }
+    }
+  }
+}, async (request, reply) => {
+  try {
+    const entries = await runtime.getTutorHistory(request.params.campaignId, { id: request.query.requesterId, isGM: Boolean(request.query.isGM) });
+    return { entries, count: entries.length };
+  } catch (error) { return reply.code(400).send({ code: 'TUTOR_HISTORY_FAILED', message: error.message }); }
+});
 
 app.get('/v1/voice/providers', async () => neuralVoiceService.getStatus());
 

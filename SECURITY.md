@@ -47,3 +47,14 @@ Enquanto o projeto estiver em fase alfa, somente a versão mais recente recebe c
 - SVGs são gerados pelo Engine a partir de dados normalizados; texto é escapado antes de entrar no XML.
 - A exclusão do registro da planta não apaga arquivos ou documentos do mundo automaticamente.
 - O módulo não cria tokens, inimigos, armadilhas ativas ou resultados mecânicos sem ação explícita do mestre.
+
+
+## Tutores contextuais
+
+- O Tutor de Ficha recebe somente um snapshot curado e limitado da ficha; nunca envie o documento bruto, chaves, cookies ou credenciais.
+- Jogadores devem consultar apenas fichas próprias. A interface verifica ownership e a API exige os campos de acesso correspondentes.
+- O Tutor de Mestre pode acessar segredos e trechos `GM_ONLY`; suas respostas não devem ser publicadas aos jogadores sem revisão.
+- Os tutores são consultivos e não possuem endpoints para alterar fichas, Scenes, Journals, memória ou combate.
+- IDs de fontes retornados pela IA são aceitos somente quando existem no conjunto de fatos ou referências fornecido.
+- `data/tutor-history.json` pode conter perguntas, respostas e nomes de personagens. Mantenha-o fora do Git, logs públicos e backups compartilhados.
+- A API local atual não substitui autenticação de rede. Em exposição remota, use proxy autenticado, TLS e controle de origem.

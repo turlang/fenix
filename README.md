@@ -1,8 +1,8 @@
 # Mestre Orc Engine
 
-Versão `0.1.0-alpha.45` — Node.js 20–24 e Foundry VTT 13.
+Versão `0.1.0-alpha.46` — Node.js 20–24 e Foundry VTT 13.
 
-O fluxo atual localiza a Scene ativa, procura o Journal correspondente no diretório do Foundry e extrai exclusivamente uma caixa read-aloud reconhecida. São aceitos os formatos antigo e atual do Plutonium/5eTools, `blockquote` HTML e citação Markdown; blocos secretos ou exclusivos do GM são ignorados. A âncora canônica é interpretada pelo primeiro provedor de IA saudável da ordem configurada, validada e publicada no chat com áudio. Groq, OpenAI, Anthropic e endpoints OpenAI-compatible podem operar com fallback automático. A saída pode usar o TTS do navegador ou voz neural externa com perfis persistentes para narrador e NPCs. O mestre também pode gerar e arquivar aventuras, NPCs e dungeons originais com bloqueio de repetição, planejar mapas vetoriais e convertê-los em Scenes editáveis do Foundry.
+O fluxo atual localiza a Scene ativa, procura o Journal correspondente no diretório do Foundry e extrai exclusivamente uma caixa read-aloud reconhecida. São aceitos os formatos antigo e atual do Plutonium/5eTools, `blockquote` HTML e citação Markdown; blocos secretos ou exclusivos do GM são ignorados. A âncora canônica é interpretada pelo primeiro provedor de IA saudável da ordem configurada, validada e publicada no chat com áudio. Groq, OpenAI, Anthropic e endpoints OpenAI-compatible podem operar com fallback automático. A saída pode usar o TTS do navegador ou voz neural externa com perfis persistentes para narrador e NPCs. O mestre também pode gerar e arquivar aventuras, NPCs e dungeons originais com bloqueio de repetição, planejar mapas vetoriais e convertê-los em Scenes editáveis do Foundry. A alpha.46 acrescenta Tutor de Ficha e Tutor de Mestre com respostas contextuais, fontes verificáveis e histórico privado.
 
 ## Engine
 
@@ -42,6 +42,7 @@ GENERATOR_SIMILARITY_THRESHOLD=0.62
 GENERATOR_MAX_ATTEMPTS=3
 MAP_BLUEPRINT_FILE=./data/map-blueprints.json
 MAP_GENERATION_MAX_ATTEMPTS=2
+TUTOR_HISTORY_FILE=./data/tutor-history.json
 PDFTOTEXT_COMMAND=pdftotext
 MESTRE_ORC_AUDIO_ENABLED=true
 MESTRE_ORC_AUDIO_MODE=browser-tts
@@ -59,7 +60,7 @@ ELEVENLABS_TTS_VOICE_ID=
 COMPATIBLE_TTS_BASE_URL=
 ```
 
-Abra `http://localhost:3001/health`. Os campos esperados incluem `"ai":"configured"`, `"aiProviders"`, `"audio"`, `"neuralVoice"`, `"voiceProfiles":"persistent-file"`, `"campaignMemory":"persistent-file"`, `"adventureLibrary":"persistent-file"`, `"generatedContent":"persistent-file"` e `"mapBlueprints":"persistent-file"`.
+Abra `http://localhost:3001/health`. Os campos esperados incluem `"ai":"configured"`, `"aiProviders"`, `"audio"`, `"neuralVoice"`, `"voiceProfiles":"persistent-file"`, `"campaignMemory":"persistent-file"`, `"adventureLibrary":"persistent-file"`, `"generatedContent":"persistent-file"` , `"mapBlueprints":"persistent-file"` e `"tutors"` com modos `SHEET` e `GM`.
 
 ## Comandos
 
@@ -70,6 +71,37 @@ Abra `http://localhost:3001/health`. Os campos esperados incluem `"ai":"configur
 - `npm run check:offline`: executa validação e testes quando o endpoint de auditoria do registro npm estiver indisponível.
 - `npm run check`: executa estrutura, auditoria de segurança e testes antes de cada entrega.
 - `npm run release:prepare`: gera em `dist/` uma cópia limpa, sem `.git`, `.env`, dependências ou histórico local.
+
+
+## Tutor de Ficha e Tutor de Mestre
+
+A alpha.46 adiciona o painel **Tutores**, disponível no chat para jogadores e mestres. O mestre também pode abri-lo pelos controles da cena.
+
+O **Tutor de Ficha** trabalha somente com um snapshot curado da ficha selecionada ou do personagem vinculado ao usuário. São enviados atributos, perícias, recursos, classes, magias, itens e efeitos relevantes, com limites de tamanho e remoção de campos com aparência de credencial. Jogadores só podem consultar fichas que possuem; o mestre pode consultar fichas visíveis no mundo. A resposta informa confiança, fatos usados, alertas e próximos passos. Nenhuma alteração é aplicada à ficha.
+
+O **Tutor de Mestre** é exclusivo para usuários GM e pode considerar:
+
+- cena ativa e seus contadores básicos;
+- estado do Combat Tracker;
+- resumo do grupo;
+- fatos, NPCs, relações, missões, itens e eventos da memória persistente;
+- trechos relevantes da Biblioteca, inclusive material `GM_ONLY`.
+
+As orientações separam fatos, inferências e sugestões. Quando uma regra não está presente no contexto, o tutor recomenda uma decisão provisória e reversível e orienta a consulta ao material oficial, sem reproduzir textos extensos. O tutor não altera Scene, Journal, ficha, combate, memória ou qualquer documento.
+
+O histórico fica em `data/tutor-history.json`, isolado por `worldId`. Jogadores veem somente as próprias consultas; o mestre pode revisar o histórico completo da campanha.
+
+Endpoints:
+
+- `POST /v1/tutors/:campaignId/sheet`
+- `POST /v1/tutors/:campaignId/gm`
+- `GET /v1/tutors/:campaignId/history`
+
+Configuração:
+
+```env
+TUTOR_HISTORY_FILE=./data/tutor-history.json
+```
 
 
 ## Mapas automáticos e Scenes editáveis

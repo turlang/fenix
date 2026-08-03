@@ -114,5 +114,19 @@
 - [x] persistência, deduplicação e vínculo com a Scene criada;
 - [x] isolamento de read-aloud e segredos do mestre.
 
+## Marco 10 — Tutor de Ficha e Tutor de Mestre ✅ — alpha.46
+- [x] Tutor de Ficha disponível para jogadores e mestres;
+- [x] snapshot curado de atributos, perícias, recursos, classes, magias, itens e efeitos;
+- [x] bloqueio de consulta a ficha não pertencente ao jogador;
+- [x] respostas com confiança, fatos usados, alertas e próximos passos;
+- [x] Tutor de Mestre exclusivo para GM;
+- [x] contexto de cena, combate, grupo, memória e Biblioteca;
+- [x] acesso controlado do mestre a referências `GM_ONLY`;
+- [x] orientação consultiva sem alterações automáticas;
+- [x] fallback determinístico quando não há provedor de IA;
+- [x] fallback e circuit breaker aplicados às consultas;
+- [x] histórico persistente, privado por usuário e isolado por campanha;
+- [x] painel no chat e controle de cena para o mestre.
+
 ## Próximo marco liberado
-- Marco 10 — tutor de ficha e tutor de mestre.
+- Marco 11 — automações assistidas e ações aprovadas pelo mestre.

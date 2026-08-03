@@ -14,6 +14,7 @@ import { CombatService } from '../../combat-service/src/index.js';
 import { InMemoryAdventureLibrary } from '../../adventure-library/src/index.js';
 import { InMemoryGeneratorService } from '../../generator-service/src/index.js';
 import { InMemoryMapService } from '../../map-service/src/index.js';
+import { InMemoryTutorService } from '../../tutor-service/src/index.js';
 
 function createInputApi(initial = {}) {
   let snapshot = initial;
@@ -41,6 +42,7 @@ export function createSessionRuntime({
   adventureLibrary,
   generatorService,
   mapService,
+  tutorService,
   logger = console
 } = {}) {
   const inputApi = foundryApi ?? createInputApi();
@@ -56,6 +58,12 @@ export function createSessionRuntime({
   const persistentMapService = mapService ?? new InMemoryMapService({
     narrator,
     generatorService: persistentGeneratorService,
+    logger
+  });
+  const persistentTutorService = tutorService ?? new InMemoryTutorService({
+    narrator,
+    campaignMemory: persistentMemory,
+    adventureLibrary: persistentAdventureLibrary,
     logger
   });
   const director = new SessionDirector({
@@ -133,6 +141,9 @@ export function createSessionRuntime({
     getMapBlueprint: (campaignId, mapId, options) => persistentMapService.get(campaignId, mapId, options),
     generateMapBlueprint: (campaignId, input) => persistentMapService.generate(campaignId, input),
     markMapSceneCreated: (campaignId, mapId, scene) => persistentMapService.markSceneCreated(campaignId, mapId, scene),
-    removeMapBlueprint: (campaignId, mapId) => persistentMapService.remove(campaignId, mapId)
+    removeMapBlueprint: (campaignId, mapId) => persistentMapService.remove(campaignId, mapId),
+    askSheetTutor: (campaignId, input) => persistentTutorService.askSheet(campaignId, input),
+    askGmTutor: (campaignId, input) => persistentTutorService.askGm(campaignId, input),
+    getTutorHistory: (campaignId, requester) => persistentTutorService.history(campaignId, requester)
   };
 }

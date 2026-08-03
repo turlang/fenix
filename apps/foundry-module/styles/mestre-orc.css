@@ -1203,3 +1203,121 @@
   .mestre-orc-map-form-grid { grid-template-columns: 1fr; }
   .mestre-orc-map-card dl { grid-template-columns: repeat(2, 1fr); }
 }
+
+/* Alpha.46 — Tutor de Ficha e Tutor de Mestre */
+#mestre-orc-tutors {
+  width: calc(100% - 12px);
+  min-height: 34px;
+  margin: 0 6px 6px;
+  padding: 6px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid rgba(77, 171, 176, 0.82);
+  border-radius: 6px;
+  background: linear-gradient(180deg, rgba(25, 64, 67, 0.98), rgba(17, 39, 42, 0.98));
+  color: #ddfbfb;
+  font-weight: 700;
+  cursor: pointer;
+}
+#mestre-orc-tutors:hover, #mestre-orc-tutors:focus-visible {
+  border-color: #75dce1;
+  color: #fff;
+  box-shadow: 0 0 0 1px rgba(117, 220, 225, 0.28), 0 2px 7px rgba(0, 0, 0, 0.5);
+}
+#mestre-orc-tutors i { color: #75dce1; }
+
+.mestre-orc-tutor-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100000;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(5, 11, 13, 0.8);
+  backdrop-filter: blur(6px);
+}
+.mestre-orc-tutor-panel {
+  width: min(1120px, 97vw);
+  max-height: 93vh;
+  overflow: auto;
+  border: 1px solid rgba(117, 220, 225, 0.58);
+  border-radius: 14px;
+  background: linear-gradient(145deg, rgba(25, 37, 41, 0.99), rgba(12, 20, 23, 0.99));
+  color: #e8f4f4;
+  box-shadow: 0 26px 90px rgba(0, 0, 0, 0.72);
+}
+.mestre-orc-tutor-panel > header {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 18px 20px 14px;
+  border-bottom: 1px solid rgba(117, 220, 225, 0.24);
+  background: rgba(14, 25, 28, 0.98);
+}
+.mestre-orc-tutor-panel > header span { color: #75dce1; font-size: .76rem; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; }
+.mestre-orc-tutor-panel > header h2 { margin: 3px 0; font-size: 1.45rem; }
+.mestre-orc-tutor-panel > header p { margin: 0; color: #a9c2c5; }
+.mestre-orc-tutor-panel > header button {
+  width: 34px; height: 34px; border-radius: 50%; border: 1px solid rgba(117,220,225,.35);
+  background: rgba(255,255,255,.04); color: #dff; cursor: pointer;
+}
+.mestre-orc-tutor-tabs { display: flex; gap: 8px; padding: 12px 20px 0; }
+.mestre-orc-tutor-tabs button {
+  flex: 1; min-height: 38px; border: 1px solid rgba(117,220,225,.24); border-radius: 8px 8px 0 0;
+  background: rgba(9,20,23,.72); color: #a9c2c5; font-weight: 700; cursor: pointer;
+}
+.mestre-orc-tutor-tabs button.active { border-color: rgba(117,220,225,.68); background: rgba(28,65,69,.7); color: #efffff; }
+.mestre-orc-tutor-panel > main {
+  display: grid;
+  grid-template-columns: minmax(300px, .9fr) minmax(360px, 1.25fr);
+  gap: 16px;
+  padding: 16px 20px 20px;
+}
+.mestre-orc-tutor-form, .mestre-orc-tutor-result, .mestre-orc-tutor-history {
+  border: 1px solid rgba(117,220,225,.18); border-radius: 10px; background: rgba(7,16,19,.56); padding: 14px;
+}
+.mestre-orc-tutor-form { display: grid; gap: 12px; align-content: start; }
+.mestre-orc-tutor-form label { display: grid; gap: 6px; color: #cbe1e2; font-weight: 700; }
+.mestre-orc-tutor-form select, .mestre-orc-tutor-form textarea {
+  width: 100%; border: 1px solid rgba(117,220,225,.32); border-radius: 7px; background: rgba(3,10,12,.78); color: #efffff; padding: 9px 10px;
+}
+.mestre-orc-tutor-form textarea { min-height: 120px; resize: vertical; line-height: 1.45; }
+.mestre-orc-tutor-prompts { display: flex; flex-wrap: wrap; gap: 6px; }
+.mestre-orc-tutor-prompts button {
+  border: 1px solid rgba(117,220,225,.25); border-radius: 999px; background: rgba(31,68,72,.5); color: #d8f5f5; padding: 5px 9px; cursor: pointer;
+}
+.mestre-orc-tutor-submit {
+  min-height: 40px; border: 1px solid rgba(117,220,225,.72); border-radius: 8px;
+  background: linear-gradient(180deg, rgba(36,91,96,.96), rgba(21,57,61,.96)); color: #fff; font-weight: 800; cursor: pointer;
+}
+.mestre-orc-tutor-submit:disabled { opacity: .55; cursor: not-allowed; }
+.mestre-orc-tutor-result { min-height: 360px; overflow-wrap: anywhere; }
+.mestre-orc-tutor-empty, .mestre-orc-tutor-loading, .mestre-orc-tutor-error {
+  min-height: 320px; display: grid; place-items: center; align-content: center; gap: 12px; text-align: center; color: #9cb8ba;
+}
+.mestre-orc-tutor-empty i, .mestre-orc-tutor-loading i { font-size: 2rem; color: #75dce1; }
+.mestre-orc-tutor-error i { font-size: 2rem; color: #e4957f; }
+.mestre-orc-tutor-result article > header { display: flex; justify-content: space-between; gap: 12px; color: #75dce1; }
+.mestre-orc-tutor-answer { margin: 14px 0; font-size: .96rem; line-height: 1.6; color: #eff7f7; white-space: normal; }
+.mestre-orc-tutor-result details, .mestre-orc-tutor-result section { margin-top: 12px; padding: 10px; border-radius: 7px; background: rgba(255,255,255,.035); }
+.mestre-orc-tutor-result .warnings { border-left: 3px solid #d6a84f; }
+.mestre-orc-tutor-result h4 { margin: 0 0 7px; color: #d9eeee; }
+.mestre-orc-tutor-result ul, .mestre-orc-tutor-result ol { margin: 6px 0 0 18px; padding: 0; }
+.mestre-orc-tutor-result footer { margin-top: 16px; padding-top: 10px; border-top: 1px solid rgba(117,220,225,.16); color: #92abad; font-size: .82rem; }
+.mestre-orc-tutor-history { grid-column: 1 / -1; }
+.mestre-orc-tutor-history h3 { margin: 0 0 10px; }
+.mestre-orc-tutor-history > div { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 8px; }
+.mestre-orc-tutor-history button { text-align: left; border: 1px solid rgba(117,220,225,.18); border-radius: 7px; background: rgba(9,20,23,.72); color: #dbecec; padding: 9px; cursor: pointer; }
+.mestre-orc-tutor-history button span { display: block; color: #75dce1; font-size: .74rem; }
+.mestre-orc-tutor-history button strong { display: block; margin-top: 3px; font-size: .82rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 760px) {
+  .mestre-orc-tutor-overlay { padding: 8px; }
+  .mestre-orc-tutor-panel > main { grid-template-columns: 1fr; padding: 12px; }
+  .mestre-orc-tutor-history { grid-column: auto; }
+  .mestre-orc-tutor-tabs { padding-inline: 12px; }
+}

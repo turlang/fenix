@@ -35,6 +35,14 @@ export class NarrativeProvider {
   async generateMapBlueprint(payload) {
     return this.generateText({ purpose: 'MAP_BLUEPRINT_GENERATOR', responseMode: 'json', ...payload });
   }
+
+  async answerSheetTutor(payload) {
+    return this.generateText({ purpose: 'SHEET_TUTOR', responseMode: 'json', ...payload });
+  }
+
+  async answerGmTutor(payload) {
+    return this.generateText({ purpose: 'GM_TUTOR', responseMode: 'json', ...payload });
+  }
 }
 
 function compactText(value, limit = 9000) {
@@ -357,6 +365,63 @@ function mapBlueprintPrompt({ title, prompt, style = 'DUNGEON', roomCount = 8, s
   ].join('\n');
 }
 
+
+function tutorJsonContract() {
+  return [
+    'Responda SOMENTE com JSON válido, sem bloco de código e sem texto antes ou depois.',
+    'Formato obrigatório: {"answer":"...","confidence":"HIGH|MEDIUM|LOW","sources":["id-de-fato"],"warnings":["..."],"suggestedActions":["..."]}.',
+    'sources deve conter somente IDs de fatos ou referências fornecidos no prompt. Não invente IDs.',
+    'Não reproduza textos longos de livros ou documentos. Explique com suas próprias palavras.'
+  ];
+}
+
+function sheetTutorPrompt({ question, actor = {}, facts = [], campaign = {} } = {}) {
+  const factLines = facts.slice(0, 180).map((entry) => `- [${entry.id}] ${entry.label} (${entry.path}): ${compactText(entry.value, 500)}`);
+  return [
+    'Você é o Tutor de Ficha do Mestre Orc.',
+    'Ajude o jogador a entender exclusivamente os dados explícitos da ficha enviada pelo Foundry.',
+    'A resposta é consultiva: nunca altere a ficha, nunca afirme que executou uma ação e nunca invente atributos, recursos, magias, itens, bônus, proficiências ou resultados.',
+    'Quando a pergunta depender da redação completa de uma habilidade ou de uma regra não enviada, diga exatamente o que falta e peça que o usuário abra o item na ficha ou confirme com o mestre.',
+    'Não revele segredos de campanha, notas do mestre ou informações de outros personagens.',
+    'Para opções de turno, diferencie ação, ação bônus, movimento, reação e ação livre somente quando esses dados estiverem presentes ou quando estiver falando de forma geral.',
+    'Escreva em português do Brasil, de forma didática e objetiva.',
+    ...tutorJsonContract(),
+    '',
+    `Pergunta: ${compactText(question, 2000)}`,
+    `Campanha/sistema: ${compactText(JSON.stringify(campaign || {}), 1200)}`,
+    `Personagem: ${actor.name || 'sem nome'}; tipo ${actor.type || 'desconhecido'}; sistema ${actor.systemId || 'genérico'}; nível ${actor.level ?? 'não informado'}.`,
+    '',
+    'FATOS AUTORIZADOS DA FICHA:',
+    ...(factLines.length ? factLines : ['- Nenhum fato estruturado foi recebido.'])
+  ].join('\n');
+}
+
+function gmTutorPrompt({ question, context = {}, facts = [] } = {}) {
+  const referenceLines = facts.slice(0, 30).map((entry) => `- [${entry.id}] ${entry.label}: ${compactText(entry.value, 1200)}`);
+  const memory = context.memory || {};
+  return [
+    'Você é o Tutor de Mestre do Mestre Orc.',
+    'Ajude o mestre a preparar, conduzir e arbitrar uma mesa de RPG usando o contexto fornecido.',
+    'A resposta é consultiva: não altere Scene, ficha, combate, Journal, memória ou qualquer documento. Não diga que aplicou mudanças.',
+    'Separe fatos confirmados, inferências e sugestões. Não invente regra oficial, CD, estatística, resultado de rolagem ou conteúdo que não esteja no contexto.',
+    'Quando houver dúvida de regra, ofereça uma decisão provisória reversível e recomende conferir o material oficial do sistema, sem copiar trechos longos.',
+    'Pode usar referências GM_ONLY porque o solicitante é o mestre, mas não sugira publicá-las aos jogadores sem revisão.',
+    'Considere agência dos jogadores, ritmo, segurança narrativa, consequências claras e alternativas quando uma cena travar.',
+    'Escreva em português do Brasil, com resposta prática e organizada.',
+    ...tutorJsonContract(),
+    '',
+    `Pergunta do mestre: ${compactText(question, 3000)}`,
+    `Campanha: ${compactText(JSON.stringify(context.campaign || {}), 1600)}`,
+    `Cena: ${compactText(JSON.stringify(context.scene || {}), 2600)}`,
+    `Combate: ${compactText(JSON.stringify(context.combat || {}), 2600)}`,
+    `Grupo: ${compactText(JSON.stringify(context.party || []), 3500)}`,
+    `Memória: ${compactText(JSON.stringify(memory), 8000)}`,
+    '',
+    'REFERÊNCIAS DA BIBLIOTECA DISPONÍVEIS AO MESTRE:',
+    ...(referenceLines.length ? referenceLines : ['- Nenhuma referência encontrada para esta pergunta.'])
+  ].join('\n');
+}
+
 export class PromptNarrativeProvider {
   constructor({ requestText, providerId = 'unknown', model = null, logger = console } = {}) {
     if (typeof requestText !== 'function') throw new TypeError('requestText é obrigatório.');
@@ -554,12 +619,20 @@ export class PromptNarrativeProvider {
     });
   }
 
+  async answerSheetTutor(payload = {}) {
+    return this.requestText(sheetTutorPrompt(payload), { maxTokens: 1100, temperature: 0.25, topP: 0.85 });
+  }
+
+  async answerGmTutor(payload = {}) {
+    return this.requestText(gmTutorPrompt(payload), { maxTokens: 1500, temperature: 0.38, topP: 0.9 });
+  }
+
   async requestText(prompt, options) {
     return this._requestText({ prompt, ...options });
   }
 }
 
-const SYSTEM_INSTRUCTION = 'Você produz conteúdo original para RPG sem copiar obras publicadas. Para narração, use voz humana, fluida, evocativa e cinematográfica, com marcações expressivas quando solicitado. Para o gerador de conteúdo, siga rigorosamente o JSON solicitado pelo prompt. Nunca invente resultados mecânicos confirmados.';
+const SYSTEM_INSTRUCTION = 'Você produz conteúdo original para RPG sem copiar obras publicadas. Para narração, use voz humana, fluida, evocativa e cinematográfica, com marcações expressivas quando solicitado. Para geradores e tutores, siga rigorosamente o JSON solicitado pelo prompt. Nunca invente resultados mecânicos confirmados, nunca afirme que alterou dados e mantenha orientações de tutor como consultivas.';
 
 function cleanBaseUrl(value, fallback = '') {
   return String(value || fallback).trim().replace(/\/$/, '');
@@ -967,6 +1040,8 @@ export class ResilientNarrativeProvider {
   narrateCombatRound(payload) { return this.invoke('narrateCombatRound', payload); }
   generateArtifact(payload) { return this.invoke('generateArtifact', payload); }
   generateMapBlueprint(payload) { return this.invoke('generateMapBlueprint', payload); }
+  answerSheetTutor(payload) { return this.invoke('answerSheetTutor', payload); }
+  answerGmTutor(payload) { return this.invoke('answerGmTutor', payload); }
 
   getStatus() {
     return {
@@ -1074,5 +1149,8 @@ export const aiProviderInternals = {
   roomEntryPrompt,
   generatorPrompt,
   generatorSchemaInstructions,
-  mapBlueprintPrompt
+  mapBlueprintPrompt,
+  sheetTutorPrompt,
+  gmTutorPrompt,
+  tutorJsonContract
 };
