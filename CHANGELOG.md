@@ -1,25 +1,38 @@
 # Changelog
 
-Este projeto segue o formato do [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e usa versionamento semântico durante a fase alfa.
+Este projeto segue o formato do [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e usa versionamento semântico.
 
 ## [Não publicado]
 
-### Corrigido
+Nenhuma alteração registrada após o Release Candidate.
 
-- A entrega da alpha.36 agora pode ser preparada automaticamente sem `.git`, `.env`, `node_modules`, histórico de narração ou arquivos de log.
-- A validação confere a versão do Engine, do módulo Foundry e do `package-lock.json`, além da existência dos scripts e estilos declarados no `module.json`.
-- O validador impede que dados locais proibidos sejam rastreados pelo Git e verifica se o `.env.example` não contém chaves com aparência real.
-- O `package-lock.json` deixa de depender de URLs internas de registro npm, evitando contaminar instalações em outros computadores.
-- A execução de testes fica restrita à pasta `test/`, impedindo duplicação quando uma entrega já existe em `dist/`.
+## [1.0.0-rc.1] - 2026-08-03
 
 ### Adicionado
 
-- Comando `npm run release:prepare` para gerar uma pasta de distribuição higienizada em `dist/`.
-- Comando `npm run check:offline` para validar estrutura e testes quando a auditoria remota do npm estiver indisponível.
+- Gate de Release Candidate com relatório JSON assinado e verificações de versão, segredos, documentação, dependências e entrega.
+- SBOM CycloneDX gerado a partir do `package-lock.json` e incluído na distribuição.
+- Endpoint público `/v1/release/readiness` com estado do RC sem dados sensíveis.
+- Documentação consolidada de arquitetura, privacidade, troubleshooting, limitações e checklist de release.
+- Configurações do módulo para endereço da API, token local do navegador e logs de depuração.
 
+### Segurança
 
+- Engine passa a escutar somente em `127.0.0.1` por padrão.
+- Binding de rede exige token com pelo menos 24 caracteres, salvo desativação explícita e consciente.
+- Autenticação por Bearer ou `X-Mestre-Orc-Token`, CORS por allowlist, rate limit e cabeçalhos defensivos.
+- Logs do Fastify redigem autorização, token, chaves e passphrases.
+- `fastify` fica bloqueado em `5.10.0` e `fast-uri` em `3.1.4`.
 
+### Alterado
 
+- Logs detalhados do módulo ficam desativados por padrão e dependem da opção de diagnóstico.
+- READMEs históricos das alphas 10–16 foram consolidados em `docs/archive/ALPHA-HISTORY.md`.
+- A versão foi promovida de `0.1.0-alpha.52` para `1.0.0-rc.1`.
+
+### Limitações
+
+- A validação física no Foundry VTT 13 e no Windows permanece pendente no Marco 13 e bloqueia a versão estável.
 
 ## [0.1.0-alpha.52] - 2026-08-03
 

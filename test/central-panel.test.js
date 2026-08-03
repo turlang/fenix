@@ -48,7 +48,7 @@ test('main injeta apenas a barra compacta e um controle unificado da Scene', () 
   assert.match(main, /injectCentralButton/);
   assert.match(main, /mestreOrcCentral/);
   assert.match(main, /Central unificada adicionada aos controles da Scene/);
-  const schedule = main.slice(main.indexOf('function scheduleInjection'), main.indexOf("console.log('[Mestre Orc] main.js carregado"));
+  const schedule = main.slice(main.indexOf('function scheduleInjection'), main.indexOf("debugLog('[Mestre Orc] main.js carregado"));
   assert.match(schedule, /injectCentralButton/);
   assert.match(schedule, /injectAudioToggleButton/);
   assert.match(schedule, /injectVoiceInputButton/);

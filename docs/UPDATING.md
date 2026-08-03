@@ -1,23 +1,20 @@
 # Atualização e rollback
 
-## Atualização pelo bundle Windows
-
-Feche o Foundry e interrompa a API antes de atualizar. Extraia o novo bundle e execute:
+Feche o Foundry e interrompa o Engine antes de atualizar.
 
 ```powershell
 Set-ExecutionPolicy -Scope Process Bypass
 .\update-mestre-orc.ps1
 ```
 
-O atualizador:
+O atualizador prepara a versão fora da instalação ativa, preserva `.env` e `data/`, migra uma cópia, valida os artefatos e cria rollback antes da troca.
 
-1. prepara a nova versão fora da instalação ativa;
-2. preserva `.env` e a pasta `data`;
-3. instala as dependências;
-4. inspeciona e migra uma cópia dos dados;
-5. valida Engine e módulo;
-6. cria um ponto de rollback;
-7. troca os arquivos somente depois de todas as validações.
+## Migração para o RC
+
+- Revise `HOST`; o novo padrão é `127.0.0.1`.
+- Em binding de rede, adicione `MESTRE_ORC_API_TOKEN` com 24+ caracteres.
+- Configure URL e token nas opções do módulo Foundry.
+- Execute `npm run rc:audit` após atualização manual.
 
 ## Rollback
 
@@ -25,16 +22,4 @@ O atualizador:
 .\rollback-mestre-orc.ps1
 ```
 
-O rollback restaura o último Engine e módulo preservados. A versão que falhou é movida para uma pasta `failed-<data>` para análise.
-
-## Atualização manual
-
-Antes de substituir arquivos:
-
-```powershell
-npm run migrate:inspect
-npm run migrate:apply
-npm run install:verify
-```
-
-Nunca apague `.env`, `data/` ou `data/backups/` durante uma atualização.
+Nunca apague `.env`, `data/`, `data/backups/` ou `data/migrations/` durante uma atualização.

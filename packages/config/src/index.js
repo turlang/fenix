@@ -35,8 +35,19 @@ export function loadEnvFile(filePath = resolve(process.cwd(), process.env.MESTRE
   return true;
 }
 
+export function isLoopbackHost(host) {
+  const normalized = String(host ?? '').trim().toLowerCase();
+  return normalized === '127.0.0.1' || normalized === 'localhost' || normalized === '::1';
+}
+
 export function createConfig(env = process.env) {
   const nodeEnv = env.NODE_ENV?.trim() || 'development';
+  const host = env.HOST?.trim() || '127.0.0.1';
+  const apiToken = env.MESTRE_ORC_API_TOKEN?.trim() || '';
+  const requireApiToken = parseBoolean(env.MESTRE_ORC_REQUIRE_API_TOKEN, !isLoopbackHost(host));
+  if (requireApiToken && apiToken.length < 24) {
+    throw new RangeError('MESTRE_ORC_API_TOKEN deve possuir ao menos 24 caracteres quando a autenticação é obrigatória.');
+  }
   const configuredOrigins = (env.CORS_ALLOWED_ORIGINS || 'http://localhost:3000,http://localhost:3001')
     .split(',').map((origin) => origin.trim()).filter(Boolean);
   // Foundry local usa 30000 por padrão. Mantenha essas origens mesmo quando um .env antigo
@@ -49,7 +60,7 @@ export function createConfig(env = process.env) {
   return Object.freeze({
     nodeEnv,
     isProduction: nodeEnv === 'production',
-    host: env.HOST?.trim() || '0.0.0.0',
+    host,
     port: parseInteger(env.PORT, 3001, { min: 1, max: 65535, name: 'PORT' }),
     bodyLimit: parseInteger(env.BODY_LIMIT_BYTES, 2 * 1024 * 1024, {
       min: 1024,
@@ -57,7 +68,12 @@ export function createConfig(env = process.env) {
       name: 'BODY_LIMIT_BYTES'
     }),
     trustProxy: parseBoolean(env.TRUST_PROXY, false),
-    allowedOrigins
+    allowedOrigins,
+    apiToken,
+    requireApiToken,
+    rateLimitMax: parseInteger(env.MESTRE_ORC_RATE_LIMIT_MAX, 180, { min: 10, max: 10000, name: 'MESTRE_ORC_RATE_LIMIT_MAX' }),
+    rateLimitWindowMs: parseInteger(env.MESTRE_ORC_RATE_LIMIT_WINDOW_MS, 60000, { min: 1000, max: 3600000, name: 'MESTRE_ORC_RATE_LIMIT_WINDOW_MS' }),
+    logLevel: env.MESTRE_ORC_LOG_LEVEL?.trim() || (nodeEnv === 'production' ? 'info' : 'debug')
   });
 }
 

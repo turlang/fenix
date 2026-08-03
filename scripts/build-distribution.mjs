@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import { cp, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -56,6 +57,19 @@ async function prepareModule() {
 await rm(staging, { recursive: true, force: true });
 await rm(output, { recursive: true, force: true });
 await mkdir(output, { recursive: true });
+
+const auditReport = join(output, 'release-candidate-audit.json');
+const sbomFile = join(output, 'mestre-orc-sbom.cdx.json');
+execFileSync(process.execPath, [join(root, 'scripts', 'release-candidate-audit.mjs')], {
+  cwd: root,
+  stdio: 'inherit',
+  env: { ...process.env, RC_AUDIT_REPORT_FILE: auditReport }
+});
+execFileSync(process.execPath, [join(root, 'scripts', 'generate-sbom.mjs')], {
+  cwd: root,
+  stdio: 'inherit',
+  env: { ...process.env, SBOM_OUTPUT: sbomFile }
+});
 await copyEngine();
 const moduleManifest = await prepareModule();
 
@@ -68,7 +82,7 @@ await mkdir(bundleStage, { recursive: true });
 await cp(engineStage, join(bundleStage, 'engine'), { recursive: true, force: true });
 await cp(moduleStage, join(bundleStage, 'foundry-module'), { recursive: true, force: true });
 await cp(join(root, 'distribution', 'windows'), join(bundleStage, 'windows'), { recursive: true, force: true });
-for (const document of ['INSTALLATION.md', 'UPDATING.md', 'MIGRATIONS.md']) {
+for (const document of ['INSTALLATION.md', 'UPDATING.md', 'MIGRATIONS.md', 'TROUBLESHOOTING.md', 'RELEASE-CHECKLIST.md']) {
   await cp(join(root, 'docs', document), join(bundleStage, document), { force: true });
 }
 const bundleZip = join(output, `mestre-orc-windows-bundle-${version}.zip`);
@@ -76,7 +90,7 @@ await createZipFromDirectory(bundleStage, bundleZip, { prefix: `mestre-orc-${ver
 
 await cp(join(moduleStage, 'module.json'), join(output, 'module.json'), { force: true });
 const artifacts = [];
-for (const path of [engineZip, moduleZip, bundleZip, join(output, 'module.json')]) {
+for (const path of [engineZip, moduleZip, bundleZip, join(output, 'module.json'), auditReport, sbomFile]) {
   const metadata = await stat(path);
   artifacts.push({ fileName: basename(path), bytes: metadata.size, sha256: await sha256(path) });
 }

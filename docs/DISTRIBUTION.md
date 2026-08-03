@@ -1,24 +1,32 @@
 # Distribuição e releases
 
-Execute:
+## Gate do Release Candidate
 
 ```bash
+npm run check
 npm run release:build
+npm run install:verify
 ```
 
-Os artefatos são gerados em `dist/distribution/`:
-
-- ZIP limpo do Engine;
-- ZIP instalável do módulo Foundry;
-- bundle Windows com instalador, atualizador e rollback;
-- `module.json` para instalação por manifesto;
-- `release-manifest.json`;
-- `checksums.sha256`.
-
-Para preencher os campos `manifest` e `download` do módulo:
+Em ambiente sem acesso ao registro npm:
 
 ```bash
-MESTRE_ORC_RELEASE_BASE_URL="https://host/releases/download/vX" npm run release:build
+npm run check:offline
 ```
 
-A workflow `release.yml` executa validações, gera os artefatos e publica uma GitHub Release quando uma tag `v*` é enviada.
+## Artefatos
+
+`npm run release:build` gera em `dist/distribution/`:
+
+- ZIP do Engine;
+- ZIP do módulo Foundry;
+- bundle Windows;
+- `module.json`;
+- `release-manifest.json`;
+- `checksums.sha256`;
+- `release-candidate-audit.json`;
+- `mestre-orc-sbom.cdx.json`.
+
+Use `MESTRE_ORC_RELEASE_BASE_URL` para preencher `manifest` e `download`. Tags `v*` acionam a workflow de GitHub Release.
+
+A versão estável não deve ser publicada enquanto os itens físicos pendentes em `docs/RELEASE-CHECKLIST.md` não estiverem concluídos.

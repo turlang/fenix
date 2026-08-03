@@ -16,6 +16,7 @@ import { createBackupServiceFromEnv, BackupModes } from '../../../packages/backu
 import { createDiagnosticService } from '../../../packages/diagnostic-service/src/index.js';
 import { createMigrationServiceFromEnv } from '../../../packages/migration-service/src/index.js';
 import { createConfig, isOriginAllowed, loadEnvFile } from '../../../packages/config/src/index.js';
+import { apiTokenMatches, buildSecurityHeaders, createFixedWindowRateLimiter, isPublicApiPath } from '../../../packages/api-security/src/index.js';
 
 
 loadEnvFile();
@@ -28,7 +29,31 @@ const migrationStartup = automaticMigrationsEnabled
   ? await migrationService.migrate({ createSnapshot: true, reason: 'startup' })
   : { changed: false, skipped: true, inspection: await migrationService.inspect() };
 
-const app = Fastify({ logger: true, bodyLimit: config.bodyLimit, trustProxy: config.trustProxy });
+const app = Fastify({
+  logger: {
+    level: config.logLevel,
+    redact: {
+      paths: [
+        'req.headers.authorization',
+        'req.headers.x-mestre-orc-token',
+        'request.headers.authorization',
+        'request.headers.x-mestre-orc-token',
+        'body.passphrase',
+        'body.apiKey',
+        '*.apiKey',
+        '*.token',
+        '*.passphrase'
+      ],
+      censor: '[REDACTED]'
+    }
+  },
+  bodyLimit: config.bodyLimit,
+  trustProxy: config.trustProxy
+});
+const apiRateLimiter = createFixedWindowRateLimiter({
+  limit: config.rateLimitMax,
+  windowMs: config.rateLimitWindowMs
+});
 const narrator = createNarrativeProviderFromEnv({ logger: app.log });
 const narrationMemory = createNarrationMemoryFromEnv({ logger: app.log });
 const audioNarrationService = createAudioNarrationServiceFromEnv({ logger: app.log });
@@ -62,14 +87,40 @@ const diagnosticService = createDiagnosticService({
 
 app.addHook('onRequest', async (request, reply) => {
   request.mestreOrcStartedAt = process.hrtime.bigint();
+  for (const [name, value] of Object.entries(buildSecurityHeaders({ requestId: request.id }))) {
+    reply.header(name, value);
+  }
+
   const origin = request.headers.origin;
-  if (origin && isOriginAllowed(origin, config.allowedOrigins)) {
+  if (origin && !isOriginAllowed(origin, config.allowedOrigins)) {
+    return reply.code(403).send({ code: 'ORIGIN_NOT_ALLOWED', message: 'Origem não autorizada para acessar o Engine.' });
+  }
+  if (origin) {
     reply.header('Access-Control-Allow-Origin', origin);
     reply.header('Vary', 'Origin');
   }
-  reply.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  reply.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Mestre-Orc-Token');
   reply.header('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
+  reply.header('Access-Control-Expose-Headers', 'X-Request-Id, X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset');
   if (request.method === 'OPTIONS') return reply.code(204).send();
+
+  const pathname = String(request.raw.url || request.url || '').split('?')[0];
+  const tokenProtected = config.requireApiToken || Boolean(config.apiToken);
+  if (!isPublicApiPath(pathname) && tokenProtected && !apiTokenMatches(request.headers, config.apiToken)) {
+    return reply.code(401).send({ code: 'API_AUTH_REQUIRED', message: 'Token de acesso do Mestre Orc ausente ou inválido.' });
+  }
+
+  if (pathname.startsWith('/v1/')) {
+    const rateRoute = request.routeOptions?.url || pathname;
+    const rate = apiRateLimiter.consume(`${request.ip}:${rateRoute}`);
+    reply.header('X-RateLimit-Limit', rate.limit);
+    reply.header('X-RateLimit-Remaining', rate.remaining);
+    reply.header('X-RateLimit-Reset', Math.ceil(rate.resetAt / 1000));
+    if (!rate.allowed) {
+      reply.header('Retry-After', rate.retryAfterSeconds);
+      return reply.code(429).send({ code: 'RATE_LIMIT_EXCEEDED', message: 'Muitas requisições. Tente novamente em instantes.' });
+    }
+  }
 });
 
 app.addHook('onResponse', async (request, reply) => {
@@ -112,7 +163,30 @@ app.get('/health', { logLevel: 'silent' }, async () => ({
   audio: audioNarrationService.enabled ? audioNarrationService.mode : 'disabled',
   neuralVoice: neuralVoiceService.getStatus(),
   voiceProfiles: 'persistent-file',
-  runtime: runtime.getStatus()
+  runtime: runtime.getStatus(),
+  security: {
+    localOnly: ['127.0.0.1', 'localhost', '::1'].includes(config.host),
+    apiTokenRequired: config.requireApiToken || Boolean(config.apiToken),
+    corsOrigins: config.allowedOrigins.length,
+    rateLimit: { max: config.rateLimitMax, windowMs: config.rateLimitWindowMs },
+    sensitiveLoggingRedacted: true
+  }
+}));
+
+app.get('/v1/release/readiness', { logLevel: 'silent' }, async () => ({
+  status: 'release-candidate',
+  version: packageMetadata.version,
+  channel: 'rc',
+  engineValidated: true,
+  automatedFoundrySimulation: true,
+  realFoundryValidationRequired: true,
+  dataSchemaVersion: migrationStartup.inspection?.targetSchemaVersion ?? migrationStartup.inspection?.schemaVersion ?? null,
+  security: {
+    localOnly: ['127.0.0.1', 'localhost', '::1'].includes(config.host),
+    apiTokenRequired: config.requireApiToken || Boolean(config.apiToken),
+    rateLimitEnabled: true,
+    sensitiveLoggingRedacted: true
+  }
 }));
 
 

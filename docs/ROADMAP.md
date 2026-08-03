@@ -203,5 +203,16 @@
 - [x] SHA-256 e manifesto de release;
 - [x] workflow de publicação por tags no GitHub.
 
-## Próximo marco liberado
-- Marco 18 — Release Candidate, auditoria final e consolidação documental.
+## Marco 18 — Release Candidate, auditoria final e consolidação documental ✅ — 1.0.0-rc.1
+- [x] promoção sincronizada de Engine, módulo e lockfile;
+- [x] autenticação por token e binding local por padrão;
+- [x] rate limit, cabeçalhos defensivos e logs redigidos;
+- [x] auditoria offline do RC e relatório assinado;
+- [x] SBOM CycloneDX e artefatos de proveniência;
+- [x] consolidação dos READMEs históricos;
+- [x] documentação de arquitetura, privacidade, troubleshooting e limitações;
+- [x] checklist explícito do que bloqueia a versão estável.
+
+## Próximo marco obrigatório antes da versão estável
+- Marco 13 — estabilização e validação real no Foundry VTT 13 e Windows.
+- Após o Marco 13: correções encontradas, `1.0.0-rc.2` se necessário e então `1.0.0` estável.

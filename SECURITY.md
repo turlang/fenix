@@ -1,107 +1,72 @@
 # Segurança
 
-## Dados sensíveis
+## Versões suportadas
 
-Nunca registre ou envie chaves de API, conteúdo do arquivo `.env` ou dados privados de campanhas. Use `.env.example` apenas como modelo e mantenha segredos no ambiente da plataforma de hospedagem.
+Durante o Release Candidate, somente `1.0.0-rc.x` mais recente recebe correções. A versão estável só será publicada depois do Marco 13.
+
+## Perímetro da API
+
+- O Engine escuta em `127.0.0.1` por padrão.
+- Binding de rede exige `MESTRE_ORC_API_TOKEN` com pelo menos 24 caracteres, salvo desativação explícita de `MESTRE_ORC_REQUIRE_API_TOKEN`.
+- O módulo envia o token por `X-Mestre-Orc-Token`; Bearer também é aceito.
+- CORS usa allowlist, não curinga.
+- Endpoints `/v1` possuem rate limit por IP e rota.
+- Respostas JSON recebem `no-store`, CSP restritiva, `nosniff`, `DENY` para frames e `no-referrer`.
+- Logs redigem autorização, token, chaves, senhas e passphrases.
+
+A autenticação por token protege o serviço, mas não substitui identidade individual por jogador. Não exponha o Engine diretamente à internet sem TLS, firewall e proxy apropriado.
+
+## Segredos e arquivos locais
+
+Nunca publique:
+
+- `.env`;
+- `data/`;
+- arquivos `.mobackup`;
+- relatórios reais de diagnóstico;
+- chaves de provedores;
+- tokens da API;
+- snapshots de migração.
+
+O gate `npm run rc:audit` procura padrões conhecidos de segredo e arquivos proibidos. O SBOM não contém credenciais.
+
+## Provedores de IA e voz
+
+- Chaves ficam somente no Engine.
+- Envie apenas o contexto necessário.
+- Erros externos são sanitizados.
+- O projeto não cria ou clona vozes biométricas.
+- Use somente vozes e serviços para os quais exista autorização.
+- A saída neural é identificada como voz gerada por IA.
+
+## Documentos e spoilers
+
+- Importe somente arquivos confiáveis.
+- O Engine não executa macros ou scripts incorporados.
+- O padrão é `REFERENCE_ONLY`.
+- Conteúdo `GM_ONLY`, segredos, armadilhas e soluções não entram em saídas para jogadores.
+- PDFs digitalizados exigem OCR externo.
+
+## Tutores e automações
+
+- Tutores são consultivos e não alteram fichas ou mundo.
+- A IA cria propostas, nunca executa automações diretamente.
+- Execução exige GM, aprovação e confirmação separadas.
+- A allowlist bloqueia código, macros, ownership, exclusões arbitrárias e caminhos não autorizados.
+- Rollback verifica conflitos antes de desfazer.
+
+## Backups e migrações
+
+- Backups usam SHA-256 e podem usar AES-256-GCM com `scrypt`.
+- A senha não é armazenada.
+- Restauração exige inspeção, token temporário e snapshot prévio.
+- Migrações interrompem diante de JSON inválido.
+- Verifique `checksums.sha256` antes de instalar uma release.
+
+## Dependências
+
+O lockfile do RC usa o registro público do npm. `fastify` está bloqueado em `5.10.0` e `fast-uri` em `3.1.4`. O gate offline exige `fast-uri >= 3.1.2`. Execute `npm run check` quando o registro npm estiver acessível para incluir `npm audit`.
 
 ## Relato responsável
 
-Relate vulnerabilidades de forma privada ao mantenedor, incluindo versão afetada, impacto e passos mínimos de reprodução. Não publique chaves, dados de jogadores ou conteúdo reservado do mestre.
-
-## Versões suportadas
-
-Enquanto o projeto estiver em fase alfa, somente a versão mais recente recebe correções de segurança.
-
-## Importação de documentos
-
-- Importe somente arquivos de origem confiável. O Engine não executa macros, scripts ou conteúdo incorporado.
-- Os arquivos originais não são preservados; o Engine guarda apenas texto extraído e metadados.
-- O limite é 12 MB por arquivo e formatos não reconhecidos são rejeitados.
-- O modo padrão é `REFERENCE_ONLY`; revise um documento antes de permitir uso narrativo.
-- PDFs digitalizados devem passar por OCR fora do Engine.
-
-## Voz neural
-
-- Chaves de ElevenLabs, OpenAI e endpoints compatíveis devem existir somente no ambiente da API. O módulo Foundry nunca precisa receber essas credenciais.
-- O endpoint de síntese retorna áudio e metadados sanitizados; mensagens brutas dos provedores e cabeçalhos de autenticação não são repassados aos clientes.
-- O cache é temporário, limitado e indexado pelo texto e pelo perfil. Arquivos de áudio não são gravados na biblioteca da campanha.
-- O projeto não cria, treina nem clona vozes e não aceita upload de amostras biométricas de voz.
-- Use somente voice IDs e serviços para os quais você tenha autorização. A interface identifica a saída neural como voz gerada por inteligência artificial.
-- `data/voice-profiles.json` pode conter nomes e instruções narrativas da campanha; mantenha esse arquivo fora do Git e das entregas públicas.
-
-## Conteúdo gerado
-
-- Resultados da Forja são arquivados antes de qualquer integração com a campanha.
-- Revise aventuras, NPCs e dungeons antes de ativá-los; a IA pode produzir inconsistências mesmo quando o formato é válido.
-- Aventuras e dungeons são ativadas como `REFERENCE_ONLY`, e NPCs como memória `secret`, reduzindo risco de spoilers.
-- O bloqueio de repetição combina histórico enviado ao provedor, assinatura SHA-256 e similaridade lexical local.
-- Não use a Forja para copiar aventuras comerciais, personagens protegidos ou material sem autorização.
-- `data/generated-content.json` pode conter segredos completos da campanha e deve permanecer fora do Git, backups públicos e logs.
-
-
-## Mapas gerados e Scenes
-
-- Plantas persistentes ficam em `data/map-blueprints.json`, fora do Git e das entregas.
-- A API não expõe campos `secret` na listagem resumida; detalhes completos são destinados ao painel do mestre.
-- A criação da Scene é iniciada somente por usuário GM dentro do Foundry.
-- SVGs são gerados pelo Engine a partir de dados normalizados; texto é escapado antes de entrar no XML.
-- A exclusão do registro da planta não apaga arquivos ou documentos do mundo automaticamente.
-- O módulo não cria tokens, inimigos, armadilhas ativas ou resultados mecânicos sem ação explícita do mestre.
-
-
-## Tutores contextuais
-
-- O Tutor de Ficha recebe somente um snapshot curado e limitado da ficha; nunca envie o documento bruto, chaves, cookies ou credenciais.
-- Jogadores devem consultar apenas fichas próprias. A interface verifica ownership e a API exige os campos de acesso correspondentes.
-- O Tutor de Mestre pode acessar segredos e trechos `GM_ONLY`; suas respostas não devem ser publicadas aos jogadores sem revisão.
-- Os tutores são consultivos e não possuem endpoints para alterar fichas, Scenes, Journals, memória ou combate.
-- IDs de fontes retornados pela IA são aceitos somente quando existem no conjunto de fatos ou referências fornecido.
-- `data/tutor-history.json` pode conter perguntas, respostas e nomes de personagens. Mantenha-o fora do Git, logs públicos e backups compartilhados.
-- A API local atual não substitui autenticação de rede. Em exposição remota, use proxy autenticado, TLS e controle de origem.
-
-
-## Automações aprovadas
-
-- A IA e a API apenas criam propostas. A execução ocorre exclusivamente no Foundry de um usuário GM após aprovação e confirmação separadas.
-- A allowlist não aceita código, macros, comandos de console, exclusão de mundo, alteração de ownership ou caminhos arbitrários.
-- Mudanças numéricas de ficha são limitadas a PV, exaustão, recursos e moeda, com Actor, caminho e valor explícitos.
-- Cada execução produz um recibo mínimo para reversão. O recibo não deve conter credenciais, cookies ou dados desnecessários.
-- Antes de remover um documento, a reversão confirma que ele ainda possui a marca da proposta original. Recursos numéricos só voltam ao valor anterior quando o valor atual ainda coincide com o aplicado pela automação.
-- Revisões e tokens temporários reduzem risco de duplo clique, concorrência e resultado atribuído à proposta errada.
-- Mensagens públicas propostas pela IA devem ser revisadas para impedir spoilers; segredos devem permanecer em Journals privados.
-- `data/automation-proposals.json` pode conter decisões, mensagens, IDs e valores anteriores da campanha. Mantenha-o fora do Git, logs e backups públicos.
-- A API local não autentica usuários de rede por conta própria. Não a exponha diretamente à internet; use TLS, proxy autenticado e controle de origem.
-
-## Backups e restauração
-
-- Backups são isolados por `worldId` e somente usuários GM podem criar, exportar, inspecionar, restaurar ou excluir arquivos.
-- Chaves de API, tokens, senhas, cabeçalhos de autorização e campos equivalentes são removidos antes da exportação.
-- A integridade do conteúdo compactado é validada por SHA-256 antes da descompressão.
-- Backups protegidos usam AES-256-GCM com `scrypt`; a senha não é armazenada pelo Engine.
-- A inspeção não grava dados. A restauração exige um token temporário, vinculado ao GM e à campanha, e de uso único.
-- Restaurações criam snapshot automático e usam rollback transacional quando uma fonte falha.
-- `data/backups/` deve permanecer fora do Git, de imagens públicas e de entregas compartilhadas.
-
-
-## Central de Diagnóstico
-
-- A Central é exclusiva para GM e não substitui autenticação de rede. Não exponha a API diretamente à internet.
-- Relatórios removem campos com aparência de chave, token, cookie, senha, passphrase, autorização ou credencial.
-- O hostname do servidor é representado apenas por um hash curto; caminhos completos de arquivos e conteúdo de campanha não são exportados.
-- Eventos do cliente enviam somente categoria, mensagem limitada e contexto mínimo. Stacks completas não são coletadas.
-- A telemetria fica em memória, possui retenção limitada e desaparece ao reiniciar o Engine.
-- Revise o JSON antes de compartilhá-lo, pois nomes de campanha, Scene, sistema e usuário GM podem aparecer no relatório.
-
-## Relatórios de simulação
-
-O simulador do Marco 16 usa campanhas, atores, mensagens e rolagens sintéticas. Relatórios de sessão e carga não devem receber snapshots reais do Foundry, credenciais ou conteúdo importado da campanha. A pasta `reports/` é excluída do Git e da preparação de releases.
-
-## Instalação, atualização e migrações
-
-- Interrompa o Engine e feche o Foundry antes de atualizar arquivos.
-- O atualizador prepara a nova versão em pasta temporária e somente troca a instalação depois de validar dependências, schema e módulo.
-- `.env` e `data/` são preservados. Não copie esses arquivos para repositórios, relatórios públicos ou bundles de distribuição.
-- Migrações criam snapshots em `data/migrations/`; esses snapshots podem conter todo o conteúdo privado da campanha.
-- JSON inválido bloqueia a migração. Não force a atualização nem apague o arquivo sem criar uma cópia para análise.
-- Verifique `checksums.sha256` antes de instalar uma release baixada.
-- O rollback restaura a versão anterior, mas não substitui uma política externa de backups periódicos.
+Relate vulnerabilidades de forma privada ao mantenedor, informando versão, impacto e passos mínimos. Não inclua chaves, conteúdo privado da campanha ou dados pessoais desnecessários.

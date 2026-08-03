@@ -5,6 +5,9 @@ import { createConfig, isOriginAllowed } from '../packages/config/src/index.js';
 test('configuração aplica padrões seguros de desenvolvimento', () => {
   const config = createConfig({});
   assert.equal(config.port, 3001);
+  assert.equal(config.host, '127.0.0.1');
+  assert.equal(config.requireApiToken, false);
+  assert.equal(config.rateLimitMax, 180);
   assert.equal(config.trustProxy, false);
   assert.deepEqual(config.allowedOrigins, [
     'http://localhost:30000',
@@ -42,4 +45,17 @@ test('configuração interpreta origens e proxy explicitamente', () => {
     'https://app.example',
     'https://foundry.example'
   ]);
+});
+
+
+test('binding de rede exige token forte por padrão', () => {
+  assert.throws(() => createConfig({ HOST: '0.0.0.0' }), /MESTRE_ORC_API_TOKEN/);
+  const config = createConfig({ HOST: '0.0.0.0', MESTRE_ORC_API_TOKEN: 'token-seguro-com-mais-de-24-caracteres' });
+  assert.equal(config.requireApiToken, true);
+  assert.equal(config.apiToken.length >= 24, true);
+});
+
+test('autenticação pode ser desativada explicitamente apenas por configuração consciente', () => {
+  const config = createConfig({ HOST: '0.0.0.0', MESTRE_ORC_REQUIRE_API_TOKEN: 'false' });
+  assert.equal(config.requireApiToken, false);
 });

@@ -1,4 +1,4 @@
-import { access, readFile } from 'node:fs/promises';
+import { access, readFile, readdir } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 
 const root = new URL('../', import.meta.url);
@@ -21,6 +21,7 @@ const required = [
   'apps/foundry-module/scripts/voice-input.js',
   'apps/foundry-module/scripts/room-transition-state.js',
   'apps/foundry-module/scripts/token-vision.js',
+  'packages/api-security/src/index.js',
   'packages/session-director/src/index.js',
   'packages/narration-context-builder/src/index.js',
   'packages/scene-opening-context/src/index.js',
@@ -51,6 +52,8 @@ const required = [
   'packages/narration-service/src/index.js',
   'packages/foundry-publisher/src/index.js',
   'scripts/prepare-release.mjs',
+  'scripts/release-candidate-audit.mjs',
+  'scripts/generate-sbom.mjs',
   'scripts/run-tests.mjs',
   'scripts/run-integration-tests.mjs',
   'scripts/run-session-simulation.mjs',
@@ -62,10 +65,16 @@ const required = [
   'distribution/windows/install-mestre-orc.ps1',
   'distribution/windows/update-mestre-orc.ps1',
   'distribution/windows/rollback-mestre-orc.ps1',
+  'docs/ARCHITECTURE.md',
   'docs/INSTALLATION.md',
   'docs/UPDATING.md',
   'docs/MIGRATIONS.md',
   'docs/DISTRIBUTION.md',
+  'docs/TROUBLESHOOTING.md',
+  'docs/PRIVACY.md',
+  'docs/KNOWN-LIMITATIONS.md',
+  'docs/RELEASE-CHECKLIST.md',
+  'docs/archive/ALPHA-HISTORY.md',
   '.github/workflows/release.yml',
   '.env.example',
   'data/.gitkeep',
@@ -76,6 +85,7 @@ const required = [
   'CHANGELOG.md',
   'CONTRIBUTING.md',
   'SECURITY.md',
+  'NOTICE.md',
   'README.md'
 ];
 
@@ -85,6 +95,15 @@ const packageJson = JSON.parse(await readFile(new URL('package.json', root), 'ut
 const packageLock = JSON.parse(await readFile(new URL('package-lock.json', root), 'utf8'));
 const moduleJson = JSON.parse(await readFile(new URL('apps/foundry-module/module.json', root), 'utf8'));
 
+
+if (!/^1\.0\.0-rc\.\d+$/.test(packageJson.version)) {
+  throw new Error(`Versão do Release Candidate inválida: ${packageJson.version}`);
+}
+const legacyReadmes = await readdir(root);
+if (legacyReadmes.some((name) => /^README-ALPHA\d+\.md$/i.test(name))) {
+  throw new Error('READMEs históricos devem permanecer consolidados em docs/archive/.');
+}
+
 if (packageJson.version !== moduleJson.version) {
   throw new Error(`Versões divergentes: engine=${packageJson.version}, foundry=${moduleJson.version}`);
 }
@@ -92,7 +111,7 @@ if (packageJson.version !== packageLock.version || packageJson.version !== packa
   throw new Error('package.json e package-lock.json possuem versões divergentes.');
 }
 
-for (const scriptName of ['test', 'test:integration', 'test:session', 'test:load', 'test:all', 'validate', 'check', 'check:offline', 'release:prepare', 'release:build', 'migrate:inspect', 'migrate:apply', 'install:verify']) {
+for (const scriptName of ['test', 'test:integration', 'test:session', 'test:load', 'test:all', 'validate', 'check', 'check:offline', 'rc:audit', 'sbom:generate', 'release:prepare', 'release:build', 'release:rc', 'migrate:inspect', 'migrate:apply', 'install:verify']) {
   if (!packageJson.scripts?.[scriptName]) throw new Error(`Script obrigatório ausente: ${scriptName}`);
 }
 
@@ -108,6 +127,13 @@ for (const expectedRule of ['node_modules/', '.env', 'data/*.json', 'data/backup
 }
 
 const envExample = await readFile(new URL('.env.example', root), 'utf8');
+if (!/HOST=127\.0\.0\.1/.test(envExample) || !/MESTRE_ORC_API_TOKEN=/.test(envExample)) {
+  throw new Error('.env.example não possui os padrões de segurança do RC.');
+}
+const moduleSource = await readFile(new URL('apps/foundry-module/scripts/main.js', root), 'utf8');
+if (/const\s+API_URL\s*=/.test(moduleSource) || /console\.log\s*\(/.test(moduleSource)) {
+  throw new Error('O módulo contém URL fixa ou logs detalhados não condicionais.');
+}
 const secretPatterns = [
   /\bgsk_[A-Za-z0-9]{20,}\b/,
   /\bsk-[A-Za-z0-9_-]{20,}\b/,

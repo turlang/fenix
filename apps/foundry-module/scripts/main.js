@@ -84,7 +84,7 @@ import {
 } from './central-panel.js';
 
 const MODULE_ID = 'mestre-orc';
-const MODULE_BUILD = '0.1.0-alpha.50';
+const MODULE_BUILD = '1.0.0-rc.1';
 const BUTTON_ID = 'mestre-orc-start';
 const ROUND_BUTTON_ID = 'mestre-orc-resolve-round';
 const AUDIO_BUTTON_ID = 'mestre-orc-audio-toggle';
@@ -95,7 +95,6 @@ const MEMORY_PANEL_ID = 'mestre-orc-memory-panel';
 const COMBAT_TURN_BUTTON_ID = 'mestre-orc-combat-turn';
 const COMBAT_ROUND_BUTTON_ID = 'mestre-orc-combat-round';
 const SOCKET_CHANNEL = `module.${MODULE_ID}`;
-const API_URL = 'http://localhost:3001';
 let startInFlight = false;
 let roundResolveInFlight = false;
 let combatTurnResolveInFlight = false;
@@ -131,6 +130,31 @@ function asElement(html) {
   if (html?.[0] instanceof HTMLElement) return html[0];
   return null;
 }
+
+function engineApiUrl() {
+  try {
+    return String(game.settings.get(MODULE_ID, 'engineApiUrl') || 'http://localhost:3001').replace(/\/$/, '');
+  } catch {
+    return 'http://localhost:3001';
+  }
+}
+
+function engineApiToken() {
+  try {
+    return String(game.settings.get(MODULE_ID, 'engineApiToken') || '').trim();
+  } catch {
+    return '';
+  }
+}
+
+function debugLog(...args) {
+  try {
+    if (game.settings.get(MODULE_ID, 'debugLogging')) console.debug(...args);
+  } catch {
+    // Configuração ainda não registrada durante a carga inicial.
+  }
+}
+
 
 function findChatContainer(root = document) {
   return root.querySelector?.('#chat') || root.querySelector?.('[data-tab="chat"]') ||
@@ -213,6 +237,31 @@ async function refreshCombatButtons(combat = null) {
 
 
 function registerAudioSettings() {
+  game.settings.register(MODULE_ID, 'engineApiUrl', {
+    name: 'Endereço da API Mestre Orc',
+    hint: 'URL do Engine. Use HTTPS quando o Foundry também estiver em HTTPS.',
+    scope: 'world',
+    config: true,
+    type: String,
+    default: 'http://localhost:3001',
+    restricted: true
+  });
+  game.settings.register(MODULE_ID, 'engineApiToken', {
+    name: 'Token de acesso da API',
+    hint: 'Token configurado no Engine. É armazenado somente neste navegador.',
+    scope: 'client',
+    config: true,
+    type: String,
+    default: ''
+  });
+  game.settings.register(MODULE_ID, 'debugLogging', {
+    name: 'Ativar logs de diagnóstico no navegador',
+    hint: 'Registra detalhes técnicos no console. Mantenha desativado durante sessões normais.',
+    scope: 'client',
+    config: true,
+    type: Boolean,
+    default: false
+  });
   game.settings.register(MODULE_ID, 'audioEnabled', {
     name: 'Ativar narração em áudio',
     hint: 'Reproduz localmente as narrações do Mestre Orc usando a voz disponível no navegador.',
@@ -466,7 +515,7 @@ function speakCinematicSegments(segments, directive, { source = 'unknown' } = {}
     utterance.volume = segment.volume;
     if (voice) utterance.voice = voice;
 
-    utterance.onstart = () => console.log('[Mestre Orc][Audio] trecho expressivo iniciado', {
+    utterance.onstart = () => debugLog('[Mestre Orc][Audio] trecho expressivo iniciado', {
       id: directive.id ?? null,
       source,
       marker: segment.marker,
@@ -506,7 +555,7 @@ function speakBrowserDirectivePrepared(directive, { source = 'unknown' } = {}) {
     volume: Number(audioSetting('audioVolume', directive.volume ?? 1))
   });
   if (!segments.some((segment) => segment.type === 'speech')) return false;
-  console.log('[Mestre Orc][Audio] roteiro expressivo preparado', {
+  debugLog('[Mestre Orc][Audio] roteiro expressivo preparado', {
     id: lastAudioDirectiveId,
     source,
     mode: 'browser-tts',
@@ -556,7 +605,7 @@ async function speakNeuralDirectivePrepared(directive, { source = 'unknown' } = 
       if (activeNeuralObjectUrl) URL.revokeObjectURL(activeNeuralObjectUrl);
       activeNeuralObjectUrl = null;
     };
-    console.log('[Mestre Orc][Audio] voz neural preparada', {
+    debugLog('[Mestre Orc][Audio] voz neural preparada', {
       id: directive.id ?? null,
       source,
       provider: result.provider,
@@ -589,7 +638,7 @@ function speakAudioDirective(directive, { force = false, source = 'unknown' } = 
   const fingerprintText = normalizeSpeechText(directive.text);
   if (!fingerprintText) return false;
   if (!force && audioWasRecentlySpoken(fingerprintText)) {
-    console.log('[Mestre Orc][Audio] reprodução duplicada bloqueada', { id, source });
+    debugLog('[Mestre Orc][Audio] reprodução duplicada bloqueada', { id, source });
     return false;
   }
 
@@ -638,7 +687,7 @@ function publishNarrationAudio(audio, fallbackText, sceneId = null, publicationK
       latestAudioDirective = directive;
       speakAudioDirective(directive, { source: 'local-publish' });
     } else {
-      console.log('[Mestre Orc][Audio] diretiva duplicada bloqueada', { key });
+      debugLog('[Mestre Orc][Audio] diretiva duplicada bloqueada', { key });
     }
   }
 
@@ -705,7 +754,7 @@ function installAudioSocket() {
     }
     const publicationKey = String(payload.audio.publicationKey ?? '').trim();
     if (publicationKey && !claimBrowserPublication('audio-publication', publicationKey)) {
-      console.log('[Mestre Orc][Audio] socket duplicado bloqueado', { publicationKey });
+      debugLog('[Mestre Orc][Audio] socket duplicado bloqueado', { publicationKey });
       return;
     }
     latestAudioDirective = payload.audio;
@@ -1175,7 +1224,7 @@ function findJournalDirectlyByScene(scene) {
   const exactName = selected?.exactName ?? Boolean(exact);
   const folderMatch = namesRelated(scene?.name, journalFolderName(journal));
 
-  console.log('[Mestre Orc] Journal localizado diretamente no diretório', {
+  debugLog('[Mestre Orc] Journal localizado diretamente no diretório', {
     scene: scene?.name ?? null,
     journal: journal.name,
     page: page?.name ?? null,
@@ -1208,7 +1257,7 @@ async function findConfiguredSceneJournalReference(scene) {
   for (const candidate of candidates) {
     const resolved = await resolveJournalReferenceCandidate(candidate);
     if (resolved?.journal) {
-      console.log('[Mestre Orc] vínculo de Journal encontrado nas flags da Scene', candidate.key, candidate.value);
+      debugLog('[Mestre Orc] vínculo de Journal encontrado nas flags da Scene', candidate.key, candidate.value);
       return { ...resolved, explicit: true, source: `scene.flags.${candidate.key}` };
     }
   }
@@ -1594,7 +1643,7 @@ function primeRoomOccupancy() {
     .map((token) => roomOccupancyForToken(token, scene, markers))
     .filter((entry) => entry.tokenId && entry.roomKey);
   roomNarrationState.prime(scene.id, occupancies);
-  console.log('[Mestre Orc][Room] posição inicial registrada sem narração duplicada', {
+  debugLog('[Mestre Orc][Room] posição inicial registrada sem narração duplicada', {
     sceneId: scene.id,
     tokens: tokens.length,
     markers: markers.length,
@@ -1621,7 +1670,7 @@ async function synchronizeRoomSessionState() {
     roomNarrationState.reset();
   }
   if (active) {
-    console.log('[Mestre Orc][Room] sessão ativa recuperada automaticamente', {
+    debugLog('[Mestre Orc][Room] sessão ativa recuperada automaticamente', {
       sessionId: status.sessionId,
       sceneId: status.sceneId ?? null
     });
@@ -1648,7 +1697,7 @@ async function checkRoomTransitions() {
     const tokens = visiblePlayerTokens();
     const roomMarkers = roomMarkersForScene(scene);
     const detectedRoomNumbers = roomMarkers.map(extractRoomNumberFromMarker).filter(Boolean);
-    console.log('[Mestre Orc][Room] verificando transição', {
+    debugLog('[Mestre Orc][Room] verificando transição', {
       sceneId: scene.id,
       playerTokens: tokens.length,
       numberedRooms: detectedRoomNumbers.length,
@@ -1662,7 +1711,7 @@ async function checkRoomTransitions() {
       if (!observation.entered || !observation.shouldNarrate || !occupancy.roomNumber) continue;
       if (!roomNarrationState.begin(observation.entryKey)) continue;
 
-      console.log('[Mestre Orc][Room] entrada em nova sala detectada', {
+      debugLog('[Mestre Orc][Room] entrada em nova sala detectada', {
         tokenId: occupancy.tokenId,
         previousRoom: observation.previous,
         roomNumber: occupancy.roomNumber,
@@ -1719,7 +1768,7 @@ async function checkRoomTransitions() {
         const result = await request('/v1/session/room-entry', { method: 'POST', body: JSON.stringify(snapshot) });
         if (result.duplicate) {
           roomNarrationState.complete(observation.entryKey);
-          console.log('[Mestre Orc][Room] requisição duplicada bloqueada pelo Engine', {
+          debugLog('[Mestre Orc][Room] requisição duplicada bloqueada pelo Engine', {
             roomNumber: occupancy.roomNumber,
             roomKey: occupancy.roomKey,
             tokenId: occupancy.tokenId
@@ -1735,7 +1784,7 @@ async function checkRoomTransitions() {
           recipientUserIds
         );
         roomNarrationState.complete(observation.entryKey);
-        console.log('[Mestre Orc][Room] transição narrada', {
+        debugLog('[Mestre Orc][Room] transição narrada', {
           roomNumber: occupancy.roomNumber,
           roomName,
           journal: journal.name,
@@ -1774,7 +1823,7 @@ function installRoomTracking() {
     // Executa somente no cliente do GM, independentemente de quem moveu o token.
     if (!game.user?.isGM) return;
     if ('x' in changes || 'y' in changes) {
-      console.log('[Mestre Orc][Room] movimento de token recebido', {
+      debugLog('[Mestre Orc][Room] movimento de token recebido', {
         tokenId: document?.id ?? document?._id ?? null,
         x: changes.x ?? document?.x ?? null,
         y: changes.y ?? document?.y ?? null
@@ -1964,7 +2013,7 @@ async function processPlayerActionMessage(message) {
       })
     });
     if (result?.duplicate) {
-      console.log('[Mestre Orc][Action] requisição duplicada bloqueada pelo Engine', { eventId });
+      debugLog('[Mestre Orc][Action] requisição duplicada bloqueada pelo Engine', { eventId });
       return;
     }
     await refreshRoundButton(result?.round ?? null);
@@ -2025,7 +2074,7 @@ function serializeJournalReference(journal, page, scene, { explicit = false, sou
   if (!journal) return null;
   const resolvedPage = page ?? findPageContainingSceneSection(journal, scene.name);
   if (!page && resolvedPage) {
-    console.log('[Mestre Orc] página localizada pelo conteúdo estruturado da Scene', {
+    debugLog('[Mestre Orc] página localizada pelo conteúdo estruturado da Scene', {
       scene: scene.name,
       journal: journal.name,
       page: resolvedPage.name
@@ -2111,7 +2160,7 @@ async function collectSnapshot() {
   if (!sceneJournal?.selectedPage?.content && !stripHtml(scene.description ?? '')) {
     throw new Error('Journal localizado, mas nenhuma caixa read-aloud segura foi encontrada para a cena ativa.');
   }
-  console.log('[Mestre Orc] contexto de abertura coletado', {
+  debugLog('[Mestre Orc] contexto de abertura coletado', {
     scene: scene.name,
     journal: sceneJournal?.name ?? null,
     page: sceneJournal?.selectedPage?.name ?? null,
@@ -2145,9 +2194,15 @@ async function collectSnapshot() {
 }
 
 async function request(path, options = {}) {
-  const response = await fetch(`${API_URL}${path}`, {
+  const token = engineApiToken();
+  const response = await fetch(`${engineApiUrl()}${path}`, {
     ...options,
-    headers: { 'Content-Type': 'application/json', ...(options.headers ?? {}) }
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      ...(token ? { 'X-Mestre-Orc-Token': token } : {}),
+      ...(options.headers ?? {})
+    }
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
@@ -2650,7 +2705,7 @@ function installCombatTrackerHooks() {
 async function startSession(button) {
   if (startInFlight) return;
   startInFlight = true;
-  console.log('[Mestre Orc] clique recebido: iniciar sessão');
+  debugLog('[Mestre Orc] clique recebido: iniciar sessão');
   const original = button?.innerHTML ?? '';
   try {
     if (button) {
@@ -2751,7 +2806,7 @@ function injectStartButton(root = document) {
   if (chatForm?.parentElement) chatForm.parentElement.insertBefore(button, chatForm);
   else if (chatLog?.parentElement) chatLog.parentElement.insertBefore(button, chatLog.nextSibling);
   else chat.prepend(button);
-  console.log(`${MODULE_ID} | botão de início inserido`);
+  debugLog(`${MODULE_ID} | botão de início inserido`);
   return true;
 }
 
@@ -2781,7 +2836,7 @@ function injectResolveRoundButton(root = document) {
   else if (audioButton?.parentElement) audioButton.parentElement.insertBefore(button, audioButton);
   else chat.prepend(button);
   void refreshRoundButton();
-  console.log(`${MODULE_ID} | botão de resolver rodada inserido`);
+  debugLog(`${MODULE_ID} | botão de resolver rodada inserido`);
   return true;
 }
 
@@ -2930,7 +2985,7 @@ function installDelegatedStartHandler() {
 
     event.preventDefault();
     event.stopImmediatePropagation();
-    console.log('[Mestre Orc] handler delegado acionado', { action: target.dataset.mestreOrcAction });
+    debugLog('[Mestre Orc] handler delegado acionado', { action: target.dataset.mestreOrcAction });
     if (target.dataset.mestreOrcAction === 'open-central' || target.id === CENTRAL_BUTTON_ID) void openMestreOrcCentral();
     else if (target.dataset.mestreOrcAction === 'resolve-round' || target.id === ROUND_BUTTON_ID) void resolveRound(target);
     else if (target.dataset.mestreOrcAction === 'resolve-combat-turn' || target.id === COMBAT_TURN_BUTTON_ID) void resolveCombatTurn(null, { automatic: false });
@@ -2963,7 +3018,7 @@ function scheduleInjection(root) {
 }
 
 
-console.log('[Mestre Orc] main.js carregado', { version: MODULE_BUILD });
+debugLog('[Mestre Orc] main.js carregado', { version: MODULE_BUILD });
 
 // IDs mantidos para compatibilidade com atalhos e testes das versões anteriores.
 // Compatibilidade: inclui o antigo atalho "Saúde dos provedores de IA" dentro da Central.
@@ -2993,7 +3048,7 @@ Hooks.on('getSceneControlButtons', (controls) => {
       onChange: () => void openMestreOrcCentral()
     };
 
-    console.log('[Mestre Orc] Central unificada adicionada aos controles da Scene', {
+    debugLog('[Mestre Orc] Central unificada adicionada aos controles da Scene', {
       hiddenLegacyTools: LEGACY_SCENE_TOOL_IDS.length
     });
   } catch (error) {
@@ -3002,7 +3057,7 @@ Hooks.on('getSceneControlButtons', (controls) => {
 });
 
 Hooks.once('init', () => {
-  console.log(`${MODULE_ID} | módulo MVP inicializado`);
+  debugLog(`${MODULE_ID} | módulo MVP inicializado`);
   registerAudioSettings();
   installDelegatedStartHandler();
   installRoomTracking();
@@ -3016,7 +3071,7 @@ Hooks.once('init', () => {
   }
 });
 Hooks.once('ready', () => {
-  console.log('[Mestre Orc] módulo pronto', {
+  debugLog('[Mestre Orc] módulo pronto', {
     build: MODULE_BUILD,
     installedVersion: game.modules?.get?.(MODULE_ID)?.version ?? null
   });

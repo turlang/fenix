@@ -1,22 +1,24 @@
 # Contribuição
 
-1. Use Node.js entre as versões 20 e 24.
-2. Crie uma branch curta e mantenha cada alteração com um único propósito.
-3. Preserve o pipeline: captura, intenção, regras, narração e publicação.
-4. Normalize qualquer dado do Foundry no `NarrationContextBuilder`.
-5. Não acople serviços diretamente ao `SessionDirector`; injete dependências.
-6. Execute `npm ci` e `npm run check` antes de enviar mudanças.
-7. Inclua testes para correções e novos comportamentos.
+1. Use Node.js 20, 22 ou 24.
+2. Preserve o pipeline Captura → Intenção → Contexto → Regras → Narração → Foundry.
+3. Normalize dados do Foundry pelo `NarrationContextBuilder`.
+4. Injete serviços no `SessionDirector`; não crie acoplamentos globais.
+5. Não inclua `.env`, tokens, `data/`, backups, relatórios ou `node_modules`.
+6. Adicione testes para toda correção ou alteração de comportamento.
 
-Use mensagens de commit objetivas e não inclua segredos, dependências instaladas ou dados gerados.
-
-## Validação do Marco 16
-
-Antes de abrir um pull request que altere sessão, combate, memória, automações ou idempotência, execute:
+## Validação obrigatória
 
 ```bash
+npm ci --ignore-scripts
 npm run check:offline
+npm run rc:audit
 ```
 
-Para investigar uma regressão específica, use separadamente `npm run test:integration`, `npm run test:session` e `npm run test:load`. Relatórios locais devem ser gravados em `reports/`, pasta ignorada pelo Git.
+Quando o registro npm estiver acessível, execute também:
 
+```bash
+npm run check
+```
+
+Mudanças em sessão, combate, persistência ou atualização devem executar separadamente os testes de integração, sessão e carga. O PR deve mencionar qualquer limitação não testada em Foundry real.

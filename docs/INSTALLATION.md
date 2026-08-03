@@ -1,46 +1,62 @@
-# Instalação do Mestre Orc
+# Instalação do Mestre Orc 1.0.0-rc.1
 
 ## Requisitos
 
-- Windows 10 ou 11 para o instalador PowerShell.
+- Windows 10/11 para o instalador PowerShell, ou instalação manual em sistema compatível com Node.js.
 - Node.js 20, 22 ou 24.
 - Foundry VTT 13.
 - Acesso ao diretório de dados do Foundry.
 
-## Instalação pelo bundle Windows
-
-1. Extraia `mestre-orc-windows-bundle-<versão>.zip`.
-2. Abra PowerShell na pasta `windows`.
-3. Execute:
+## Bundle Windows
 
 ```powershell
 Set-ExecutionPolicy -Scope Process Bypass
 .\install-mestre-orc.ps1
 ```
 
-O instalador copia o Engine para `%LOCALAPPDATA%\MestreOrc\engine`, instala o módulo em `%LOCALAPPDATA%\FoundryVTT\Data\modules\mestre-orc`, cria `.env` a partir de `.env.example`, instala dependências e executa as migrações iniciais.
-
-Para usar outro diretório do Foundry:
+O instalador copia o Engine, instala o módulo, cria `.env`, instala dependências e executa migrações. Para outro diretório:
 
 ```powershell
 .\install-mestre-orc.ps1 -FoundryDataPath "D:\FoundryData"
 ```
 
-## Inicialização
+## Inicialização local
 
-Revise o arquivo `.env` e execute:
+O padrão seguro é:
+
+```env
+HOST=127.0.0.1
+MESTRE_ORC_REQUIRE_API_TOKEN=
+```
+
+Inicie com:
 
 ```powershell
 & "$env:LOCALAPPDATA\MestreOrc\start-mestre-orc.ps1"
 ```
 
-Depois, abra o Foundry e ative o módulo **Mestre Orc** no mundo desejado.
+No Foundry, mantenha `http://localhost:3001` como endereço da API.
+
+## Acesso em rede
+
+Ao permitir que outros computadores acessem o Engine:
+
+```env
+HOST=0.0.0.0
+MESTRE_ORC_API_TOKEN=um-token-aleatorio-com-ao-menos-24-caracteres
+MESTRE_ORC_REQUIRE_API_TOKEN=true
+CORS_ALLOWED_ORIGINS=https://endereco-exato-do-foundry
+```
+
+Reinicie o Engine e configure o mesmo endereço e token nas opções do módulo em cada navegador que fará chamadas à API. Prefira HTTPS e firewall restritivo.
 
 ## Instalação manual
 
-1. Extraia o ZIP do Engine.
-2. Execute `npm ci --omit=dev --ignore-scripts`.
-3. Copie `.env.example` para `.env` e configure os provedores.
-4. Execute `npm run migrate:apply`.
-5. Inicie com `npm start`.
-6. Extraia o ZIP do módulo em `<FoundryData>/modules/mestre-orc`.
+```bash
+npm ci --omit=dev --ignore-scripts
+cp .env.example .env
+npm run migrate:apply
+npm start
+```
+
+Extraia o módulo em `<FoundryData>/modules/mestre-orc` e ative-o no mundo.
