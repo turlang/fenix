@@ -18,6 +18,36 @@ Este projeto segue o formato do [Keep a Changelog](https://keepachangelog.com/pt
 - Comando `npm run check:offline` para validar estrutura e testes quando a auditoria remota do npm estiver indisponível.
 
 
+## [0.1.0-alpha.45] - 2026-08-02
+
+### Adicionado
+
+- `MapService` persistente e isolado por `worldId`, com arquivo atômico em `data/map-blueprints.json`.
+- Geração de plantas a partir de uma dungeon da Forja ou de uma descrição direta do mestre.
+- Planejamento por IA com fallback procedural seguro quando o provedor está indisponível ou retorna JSON inválido.
+- Layout determinístico de salas sem sobreposição, corredores ortogonais, paredes, aberturas, portas, luzes, Notes e pontos de entrada.
+- Renderização SVG vetorial com grade, temas visuais e numeração das áreas.
+- Painel **Mapas e Scenes** no chat e nos controles da cena.
+- Criação assistida de Scene com upload do SVG, grade, visão, paredes, portas, iluminação, Journal e Notes numeradas.
+- Endpoints para gerar, listar, consultar, vincular Scene e excluir plantas.
+- Fallback e circuit breaker dos provedores de IA aplicados também ao planejamento dos mapas.
+
+### Alterado
+
+- Dungeons arquivadas podem ser usadas como fonte estruturante de uma planta sem precisar ativá-las previamente.
+- O `/health` passa a informar a persistência dos mapas e os estilos disponíveis.
+- O gerador de IA passa a expor uma operação específica para plantas abstratas, separada da geração textual de dungeons.
+
+### Segurança e confiabilidade
+
+- A geração da planta e a criação da Scene são operações separadas e exigem confirmação do mestre.
+- `readAloud` e `secret` são mantidos em campos distintos; segredos não aparecem na resposta resumida da API.
+- Plantas equivalentes são bloqueadas por assinatura SHA-256.
+- Gerações simultâneas da mesma campanha são serializadas.
+- A exclusão da planta não remove Scene, Journal ou SVG já criados.
+- `data/map-blueprints.json` permanece fora do Git e das entregas limpas.
+
+
 ## [0.1.0-alpha.44] - 2026-08-02
 
 ### Adicionado

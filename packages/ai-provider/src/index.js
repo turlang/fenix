@@ -31,6 +31,10 @@ export class NarrativeProvider {
   async generateArtifact(payload) {
     return this.generateText({ purpose: 'CONTENT_GENERATOR', responseMode: 'json', ...payload });
   }
+
+  async generateMapBlueprint(payload) {
+    return this.generateText({ purpose: 'MAP_BLUEPRINT_GENERATOR', responseMode: 'json', ...payload });
+  }
 }
 
 function compactText(value, limit = 9000) {
@@ -319,6 +323,40 @@ function generatorPrompt({ type, brief, options = {}, generationNumber = 1, atte
   ].join('\n');
 }
 
+
+function mapBlueprintPrompt({ title, prompt, style = 'DUNGEON', roomCount = 8, sourceArtifact = null, attempt = 1 } = {}) {
+  const source = sourceArtifact
+    ? [
+      `Dungeon de origem: ${sourceArtifact.title || 'sem título'}.`,
+      `Resumo: ${compactText(sourceArtifact.summary, 1800) || 'não informado'}.`,
+      `Metadados: ${compactText(JSON.stringify(sourceArtifact.metadata || {}), 1600)}.`,
+      `Conteúdo de referência do mestre: ${compactText(sourceArtifact.content, 18000)}.`
+    ].join('\n')
+    : 'Nenhuma dungeon arquivada foi vinculada; use somente o pedido do mestre.';
+  return [
+    'Crie uma PLANTA ABSTRATA ORIGINAL para um mapa tático de RPG.',
+    `Tentativa ${attempt}.`,
+    'Responda SOMENTE com JSON válido, sem bloco de código e sem texto antes/depois.',
+    'Formato obrigatório:',
+    '{"title":"...","summary":"...","style":"DUNGEON|CAVE|CRYPT|TEMPLE|SEWER|FORTRESS|FOREST|CITY|GENERAL","tags":["..."],"rooms":[{"id":"room-1","label":"...","kind":"ENTRANCE|ROOM|OBJECTIVE|HAZARD|SOCIAL","width":8,"height":6,"description":"...","readAloud":"...","secret":"...","light":"BRIGHT|DIM|DARK"}],"connections":[{"from":"room-1","to":"room-2","doorType":"DOOR|SECRET|OPEN","locked":false,"secret":"..."}]}.',
+    `Crie entre ${Math.max(2, Number(roomCount) || 8)} e ${Math.min(80, Math.max(2, Number(roomCount) || 8) + 2)} áreas.`,
+    'Cada id deve ser único, simples e usado exatamente nas conexões.',
+    'O grafo precisa ser totalmente conectado: nenhuma sala pode ficar isolada.',
+    'Evite cruzamentos impossíveis, teletransportes, salas inacessíveis e conexões redundantes.',
+    'width e height são medidas em células de grade, entre 4 e 18.',
+    'Inclua uma entrada clara e pelo menos um objetivo final. Use portas secretas com moderação.',
+    'readAloud deve conter somente descrição segura para jogadores; secret deve conter somente informação reservada ao mestre.',
+    'Não copie mapas publicados, nomes protegidos, geometrias comerciais ou aventuras existentes.',
+    'Não determine resultados de testes, dano ou sucesso como fatos consumados.',
+    `Título preferido: ${compactText(title, 300) || 'não definido'}.`,
+    `Estilo: ${style}.`,
+    `Pedido adicional do mestre: ${compactText(prompt, 4000) || 'nenhum'}.`,
+    '',
+    'MATERIAL DE ORIGEM:',
+    source
+  ].join('\n');
+}
+
 export class PromptNarrativeProvider {
   constructor({ requestText, providerId = 'unknown', model = null, logger = console } = {}) {
     if (typeof requestText !== 'function') throw new TypeError('requestText é obrigatório.');
@@ -505,6 +543,14 @@ export class PromptNarrativeProvider {
       maxTokens: payload?.options?.length === 'LONG' ? 3000 : payload?.options?.length === 'SHORT' ? 1200 : 2200,
       temperature: Math.min(1, 0.82 + Math.max(0, Number(payload.attempt) - 1) * 0.05),
       topP: 0.96
+    });
+  }
+
+  async generateMapBlueprint(payload = {}) {
+    return this.requestText(mapBlueprintPrompt(payload), {
+      maxTokens: 2600,
+      temperature: Math.min(0.95, 0.72 + Math.max(0, Number(payload.attempt) - 1) * 0.06),
+      topP: 0.94
     });
   }
 
@@ -920,6 +966,7 @@ export class ResilientNarrativeProvider {
   narrateCombatTurn(payload) { return this.invoke('narrateCombatTurn', payload); }
   narrateCombatRound(payload) { return this.invoke('narrateCombatRound', payload); }
   generateArtifact(payload) { return this.invoke('generateArtifact', payload); }
+  generateMapBlueprint(payload) { return this.invoke('generateMapBlueprint', payload); }
 
   getStatus() {
     return {
@@ -1026,5 +1073,6 @@ export const aiProviderInternals = {
   openingPrompt,
   roomEntryPrompt,
   generatorPrompt,
-  generatorSchemaInstructions
+  generatorSchemaInstructions,
+  mapBlueprintPrompt
 };

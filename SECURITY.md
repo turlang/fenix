@@ -37,3 +37,13 @@ Enquanto o projeto estiver em fase alfa, somente a versão mais recente recebe c
 - O bloqueio de repetição combina histórico enviado ao provedor, assinatura SHA-256 e similaridade lexical local.
 - Não use a Forja para copiar aventuras comerciais, personagens protegidos ou material sem autorização.
 - `data/generated-content.json` pode conter segredos completos da campanha e deve permanecer fora do Git, backups públicos e logs.
+
+
+## Mapas gerados e Scenes
+
+- Plantas persistentes ficam em `data/map-blueprints.json`, fora do Git e das entregas.
+- A API não expõe campos `secret` na listagem resumida; detalhes completos são destinados ao painel do mestre.
+- A criação da Scene é iniciada somente por usuário GM dentro do Foundry.
+- SVGs são gerados pelo Engine a partir de dados normalizados; texto é escapado antes de entrar no XML.
+- A exclusão do registro da planta não apaga arquivos ou documentos do mundo automaticamente.
+- O módulo não cria tokens, inimigos, armadilhas ativas ou resultados mecânicos sem ação explícita do mestre.

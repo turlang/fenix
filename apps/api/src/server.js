@@ -9,6 +9,7 @@ import { createVoiceProfileServiceFromEnv } from '../../../packages/voice-profil
 import { createCampaignMemoryFromEnv } from '../../../packages/memory/src/index.js';
 import { createAdventureLibraryFromEnv, AdventureImportModes } from '../../../packages/adventure-library/src/index.js';
 import { createGeneratorServiceFromEnv, GeneratorArtifactTypes, GeneratorArtifactStatuses } from '../../../packages/generator-service/src/index.js';
+import { createMapServiceFromEnv, MapStatuses, MapStyles } from '../../../packages/map-service/src/index.js';
 import { createConfig, isOriginAllowed, loadEnvFile } from '../../../packages/config/src/index.js';
 
 
@@ -25,7 +26,8 @@ const voiceProfileService = createVoiceProfileServiceFromEnv({ logger: app.log }
 const campaignMemory = createCampaignMemoryFromEnv({ logger: app.log });
 const adventureLibrary = createAdventureLibraryFromEnv({ logger: app.log });
 const generatorService = createGeneratorServiceFromEnv({ narrator, campaignMemory, adventureLibrary, logger: app.log });
-const runtime = createSessionRuntime({ narrator, narrationMemory, audioNarrationService, campaignMemory, adventureLibrary, generatorService, logger: app.log });
+const mapService = createMapServiceFromEnv({ narrator, generatorService, logger: app.log });
+const runtime = createSessionRuntime({ narrator, narrationMemory, audioNarrationService, campaignMemory, adventureLibrary, generatorService, mapService, logger: app.log });
 
 app.addHook('onRequest', async (request, reply) => {
   const origin = request.headers.origin;
@@ -49,6 +51,8 @@ app.get('/health', { logLevel: 'silent' }, async () => ({
   adventureLibrary: 'persistent-file',
   generatedContent: 'persistent-file',
   generatorTypes: GeneratorArtifactTypes,
+  mapBlueprints: 'persistent-file',
+  mapStyles: MapStyles,
   documentFormats: ['txt', 'md', 'html', 'docx', 'pdf'],
   audio: audioNarrationService.enabled ? audioNarrationService.mode : 'disabled',
   neuralVoice: neuralVoiceService.getStatus(),
@@ -558,6 +562,113 @@ app.delete('/v1/generators/:campaignId/:artifactId', {
 }, async (request, reply) => {
   try { return await runtime.removeGeneratedArtifact(request.params.campaignId, request.params.artifactId); }
   catch (error) { return reply.code(Number(error.statusCode) || 400).send({ code: error.code || 'GENERATED_ARTIFACT_DELETE_FAILED', message: error.message }); }
+});
+
+
+app.get('/v1/maps/:campaignId', {
+  schema: {
+    params: {
+      type: 'object', required: ['campaignId'], additionalProperties: false,
+      properties: { campaignId: { type: 'string', minLength: 1, maxLength: 200 } }
+    },
+    querystring: {
+      type: 'object', additionalProperties: false,
+      properties: { status: { type: 'string', enum: MapStatuses } }
+    }
+  }
+}, async (request, reply) => {
+  try { return await runtime.listMapBlueprints(request.params.campaignId, request.query ?? {}); }
+  catch (error) { return reply.code(Number(error.statusCode) || 400).send({ code: error.code || 'MAP_ARCHIVE_READ_FAILED', message: error.message }); }
+});
+
+app.get('/v1/maps/:campaignId/:mapId', {
+  schema: {
+    params: {
+      type: 'object', required: ['campaignId', 'mapId'], additionalProperties: false,
+      properties: {
+        campaignId: { type: 'string', minLength: 1, maxLength: 200 },
+        mapId: { type: 'string', minLength: 1, maxLength: 200 }
+      }
+    }
+  }
+}, async (request, reply) => {
+  try {
+    const blueprint = await runtime.getMapBlueprint(request.params.campaignId, request.params.mapId, { includeSvg: true, includeSecrets: true });
+    if (!blueprint) return reply.code(404).send({ code: 'MAP_NOT_FOUND', message: 'Planta de mapa não encontrada.' });
+    return { blueprint };
+  } catch (error) {
+    return reply.code(Number(error.statusCode) || 400).send({ code: error.code || 'MAP_READ_FAILED', message: error.message });
+  }
+});
+
+app.post('/v1/maps/:campaignId/generate', {
+  schema: {
+    params: {
+      type: 'object', required: ['campaignId'], additionalProperties: false,
+      properties: { campaignId: { type: 'string', minLength: 1, maxLength: 200 } }
+    },
+    body: {
+      type: 'object', additionalProperties: false,
+      properties: {
+        sourceArtifactId: { anyOf: [{ type: 'string', maxLength: 200 }, { type: 'null' }] },
+        title: { anyOf: [{ type: 'string', maxLength: 300 }, { type: 'null' }] },
+        prompt: { anyOf: [{ type: 'string', maxLength: 4000 }, { type: 'null' }] },
+        style: { type: 'string', enum: MapStyles },
+        roomCount: { type: 'integer', minimum: 2, maximum: 80 },
+        gridSize: { type: 'integer', minimum: 50, maximum: 200 }
+      }
+    }
+  }
+}, async (request, reply) => {
+  try { return await runtime.generateMapBlueprint(request.params.campaignId, request.body ?? {}); }
+  catch (error) {
+    const status = Number(error.statusCode) || (error.code === 'MAP_DUPLICATE' ? 409 : 400);
+    return reply.code(status).send({ code: error.code || 'MAP_GENERATION_FAILED', message: error.message, mapId: error.mapId ?? null });
+  }
+});
+
+app.post('/v1/maps/:campaignId/:mapId/scene-created', {
+  schema: {
+    params: {
+      type: 'object', required: ['campaignId', 'mapId'], additionalProperties: false,
+      properties: {
+        campaignId: { type: 'string', minLength: 1, maxLength: 200 },
+        mapId: { type: 'string', minLength: 1, maxLength: 200 }
+      }
+    },
+    body: {
+      type: 'object', required: ['id', 'name'], additionalProperties: false,
+      properties: {
+        id: { type: 'string', minLength: 1, maxLength: 200 },
+        name: { type: 'string', minLength: 1, maxLength: 300 },
+        backgroundPath: { anyOf: [{ type: 'string', maxLength: 1000 }, { type: 'null' }] },
+        journalId: { anyOf: [{ type: 'string', maxLength: 200 }, { type: 'null' }] }
+      }
+    }
+  }
+}, async (request, reply) => {
+  try {
+    const result = await runtime.markMapSceneCreated(request.params.campaignId, request.params.mapId, request.body ?? {});
+    if (!result) return reply.code(404).send({ code: 'MAP_NOT_FOUND', message: 'Planta de mapa não encontrada.' });
+    return result;
+  } catch (error) {
+    return reply.code(Number(error.statusCode) || 400).send({ code: error.code || 'MAP_SCENE_LINK_FAILED', message: error.message });
+  }
+});
+
+app.delete('/v1/maps/:campaignId/:mapId', {
+  schema: {
+    params: {
+      type: 'object', required: ['campaignId', 'mapId'], additionalProperties: false,
+      properties: {
+        campaignId: { type: 'string', minLength: 1, maxLength: 200 },
+        mapId: { type: 'string', minLength: 1, maxLength: 200 }
+      }
+    }
+  }
+}, async (request, reply) => {
+  try { return await runtime.removeMapBlueprint(request.params.campaignId, request.params.mapId); }
+  catch (error) { return reply.code(Number(error.statusCode) || 400).send({ code: error.code || 'MAP_DELETE_FAILED', message: error.message }); }
 });
 
 

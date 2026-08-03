@@ -1,8 +1,8 @@
 # Mestre Orc Engine
 
-Versão `0.1.0-alpha.44` — Node.js 20–24 e Foundry VTT 13.
+Versão `0.1.0-alpha.45` — Node.js 20–24 e Foundry VTT 13.
 
-O fluxo atual localiza a Scene ativa, procura o Journal correspondente no diretório do Foundry e extrai exclusivamente uma caixa read-aloud reconhecida. São aceitos os formatos antigo e atual do Plutonium/5eTools, `blockquote` HTML e citação Markdown; blocos secretos ou exclusivos do GM são ignorados. A âncora canônica é interpretada pelo primeiro provedor de IA saudável da ordem configurada, validada e publicada no chat com áudio. Groq, OpenAI, Anthropic e endpoints OpenAI-compatible podem operar com fallback automático. A saída pode usar o TTS do navegador ou voz neural externa com perfis persistentes para narrador e NPCs. O mestre também pode gerar e arquivar aventuras, NPCs e dungeons originais com bloqueio de repetição.
+O fluxo atual localiza a Scene ativa, procura o Journal correspondente no diretório do Foundry e extrai exclusivamente uma caixa read-aloud reconhecida. São aceitos os formatos antigo e atual do Plutonium/5eTools, `blockquote` HTML e citação Markdown; blocos secretos ou exclusivos do GM são ignorados. A âncora canônica é interpretada pelo primeiro provedor de IA saudável da ordem configurada, validada e publicada no chat com áudio. Groq, OpenAI, Anthropic e endpoints OpenAI-compatible podem operar com fallback automático. A saída pode usar o TTS do navegador ou voz neural externa com perfis persistentes para narrador e NPCs. O mestre também pode gerar e arquivar aventuras, NPCs e dungeons originais com bloqueio de repetição, planejar mapas vetoriais e convertê-los em Scenes editáveis do Foundry.
 
 ## Engine
 
@@ -40,6 +40,8 @@ ADVENTURE_LIBRARY_FILE=./data/adventure-library.json
 GENERATOR_ARCHIVE_FILE=./data/generated-content.json
 GENERATOR_SIMILARITY_THRESHOLD=0.62
 GENERATOR_MAX_ATTEMPTS=3
+MAP_BLUEPRINT_FILE=./data/map-blueprints.json
+MAP_GENERATION_MAX_ATTEMPTS=2
 PDFTOTEXT_COMMAND=pdftotext
 MESTRE_ORC_AUDIO_ENABLED=true
 MESTRE_ORC_AUDIO_MODE=browser-tts
@@ -57,7 +59,7 @@ ELEVENLABS_TTS_VOICE_ID=
 COMPATIBLE_TTS_BASE_URL=
 ```
 
-Abra `http://localhost:3001/health`. Os campos esperados incluem `"ai":"configured"`, `"aiProviders"`, `"audio"`, `"neuralVoice"`, `"voiceProfiles":"persistent-file"`, `"campaignMemory":"persistent-file"`, `"adventureLibrary":"persistent-file"` e `"generatedContent":"persistent-file"`.
+Abra `http://localhost:3001/health`. Os campos esperados incluem `"ai":"configured"`, `"aiProviders"`, `"audio"`, `"neuralVoice"`, `"voiceProfiles":"persistent-file"`, `"campaignMemory":"persistent-file"`, `"adventureLibrary":"persistent-file"`, `"generatedContent":"persistent-file"` e `"mapBlueprints":"persistent-file"`.
 
 ## Comandos
 
@@ -68,6 +70,41 @@ Abra `http://localhost:3001/health`. Os campos esperados incluem `"ai":"configur
 - `npm run check:offline`: executa validação e testes quando o endpoint de auditoria do registro npm estiver indisponível.
 - `npm run check`: executa estrutura, auditoria de segurança e testes antes de cada entrega.
 - `npm run release:prepare`: gera em `dist/` uma cópia limpa, sem `.git`, `.env`, dependências ou histórico local.
+
+
+## Mapas automáticos e Scenes editáveis
+
+A alpha.45 adiciona o painel **Mapas e Scenes**, disponível no chat e nos controles da cena do Foundry. O mestre pode usar uma dungeon arquivada na Forja ou escrever uma descrição direta. A IA produz um grafo abstrato de áreas e conexões; o Engine valida o resultado e calcula de forma determinística:
+
+- posicionamento das salas sem sobreposição;
+- corredores ortogonais;
+- paredes com aberturas reais para portas;
+- portas comuns, secretas e trancadas;
+- iluminação por área;
+- pontos de entrada do grupo;
+- Notes numeradas e páginas de Journal;
+- uma imagem SVG vetorial com grade, rótulos e tema visual.
+
+A geração apenas arquiva a planta em `data/map-blueprints.json`. A criação da Scene exige uma ação separada do mestre. Ao confirmar, o módulo envia o SVG ao armazenamento do mundo, cria a Scene com grade e visão de token, insere `Wall`, `AmbientLight` e `Note`, cria um Journal com uma página por área e registra o vínculo no Engine.
+
+Quando o provedor de IA está indisponível ou retorna uma estrutura inválida, o serviço usa um layout procedural seguro baseado na dungeon ou na descrição. Isso mantém o fluxo funcional sem transformar texto secreto em conteúdo visível. `readAloud` e `secret` permanecem campos separados; segredos só entram nas páginas reservadas do Journal.
+
+Configurações:
+
+```env
+MAP_BLUEPRINT_FILE=./data/map-blueprints.json
+MAP_GENERATION_MAX_ATTEMPTS=2
+```
+
+Endpoints:
+
+- `GET /v1/maps/:campaignId`
+- `GET /v1/maps/:campaignId/:mapId`
+- `POST /v1/maps/:campaignId/generate`
+- `POST /v1/maps/:campaignId/:mapId/scene-created`
+- `DELETE /v1/maps/:campaignId/:mapId`
+
+A exclusão de uma planta não apaga automaticamente a Scene, o Journal ou o SVG já criados. Essa separação evita perda acidental de conteúdo editado dentro do Foundry.
 
 
 ## Forja persistente de aventuras, NPCs e dungeons

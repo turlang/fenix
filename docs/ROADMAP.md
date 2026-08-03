@@ -102,6 +102,17 @@
 - [x] painel Forja de conteúdo no chat e nos controles da cena;
 - [x] fallback e circuit breaker aplicados às operações de geração.
 
-## Próximos marcos liberados
-- Marco 9 — mapas automáticos e integração com cenas do Foundry;
+## Marco 9 — Mapas automáticos e Scenes ✅ — alpha.45
+- [x] geração a partir de dungeon arquivada ou descrição direta;
+- [x] planejamento abstrato por IA com fallback procedural;
+- [x] layout sem sobreposição e corredores ortogonais;
+- [x] SVG vetorial com grade, temas e áreas numeradas;
+- [x] paredes com aberturas, portas comuns, secretas e trancadas;
+- [x] iluminação por área e ponto inicial do grupo;
+- [x] painel Mapas e Scenes no Foundry;
+- [x] criação de Scene, upload do SVG, Journal e Notes;
+- [x] persistência, deduplicação e vínculo com a Scene criada;
+- [x] isolamento de read-aloud e segredos do mestre.
+
+## Próximo marco liberado
 - Marco 10 — tutor de ficha e tutor de mestre.

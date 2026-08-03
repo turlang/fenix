@@ -1,8 +1,8 @@
 {
   "id": "mestre-orc",
   "title": "Mestre Orc",
-  "description": "Narrações cinematográficas, geradores persistentes, voz neural, memória, aventuras, combate e provedores de IA resilientes.",
-  "version": "0.1.0-alpha.44",
+  "description": "Narrações cinematográficas, mapas automáticos, Scenes editáveis, geradores persistentes, voz neural, memória, aventuras, combate e IA resiliente.",
+  "version": "0.1.0-alpha.45",
   "compatibility": {
     "minimum": "13",
     "verified": "13"

@@ -13,6 +13,7 @@ import { InMemoryCampaignMemory } from '../../memory/src/index.js';
 import { CombatService } from '../../combat-service/src/index.js';
 import { InMemoryAdventureLibrary } from '../../adventure-library/src/index.js';
 import { InMemoryGeneratorService } from '../../generator-service/src/index.js';
+import { InMemoryMapService } from '../../map-service/src/index.js';
 
 function createInputApi(initial = {}) {
   let snapshot = initial;
@@ -39,6 +40,7 @@ export function createSessionRuntime({
   campaignMemory,
   adventureLibrary,
   generatorService,
+  mapService,
   logger = console
 } = {}) {
   const inputApi = foundryApi ?? createInputApi();
@@ -49,6 +51,11 @@ export function createSessionRuntime({
     narrator,
     campaignMemory: persistentMemory,
     adventureLibrary: persistentAdventureLibrary,
+    logger
+  });
+  const persistentMapService = mapService ?? new InMemoryMapService({
+    narrator,
+    generatorService: persistentGeneratorService,
     logger
   });
   const director = new SessionDirector({
@@ -121,6 +128,11 @@ export function createSessionRuntime({
     generateArtifact: (campaignId, input) => persistentGeneratorService.generate(campaignId, input),
     activateGeneratedArtifact: (campaignId, artifactId) => persistentGeneratorService.activate(campaignId, artifactId),
     archiveGeneratedArtifact: (campaignId, artifactId) => persistentGeneratorService.archive(campaignId, artifactId),
-    removeGeneratedArtifact: (campaignId, artifactId) => persistentGeneratorService.remove(campaignId, artifactId)
+    removeGeneratedArtifact: (campaignId, artifactId) => persistentGeneratorService.remove(campaignId, artifactId),
+    listMapBlueprints: (campaignId, options) => persistentMapService.list(campaignId, options),
+    getMapBlueprint: (campaignId, mapId, options) => persistentMapService.get(campaignId, mapId, options),
+    generateMapBlueprint: (campaignId, input) => persistentMapService.generate(campaignId, input),
+    markMapSceneCreated: (campaignId, mapId, scene) => persistentMapService.markSceneCreated(campaignId, mapId, scene),
+    removeMapBlueprint: (campaignId, mapId) => persistentMapService.remove(campaignId, mapId)
   };
 }
