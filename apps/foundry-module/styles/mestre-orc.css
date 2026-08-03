@@ -1321,3 +1321,150 @@
   .mestre-orc-tutor-history { grid-column: auto; }
   .mestre-orc-tutor-tabs { padding-inline: 12px; }
 }
+
+/* Marco 11 — automações assistidas e aprovadas */
+#mestre-orc-automations {
+  width: calc(100% - 12px);
+  min-height: 34px;
+  margin: 0 6px 6px;
+  padding: 6px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid rgba(205, 153, 77, .62);
+  border-radius: 7px;
+  background: linear-gradient(180deg, rgba(65, 45, 24, .96), rgba(35, 25, 16, .96));
+  color: #f1dfbd;
+  font-weight: 750;
+  cursor: pointer;
+}
+#mestre-orc-automations:hover,
+#mestre-orc-automations:focus-visible { border-color: #e2b96e; color: #fff4dc; box-shadow: 0 0 0 1px rgba(226,185,110,.25); }
+#mestre-orc-automations i { color: #e2b96e; }
+
+.mestre-orc-automation-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100000;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(2, 7, 9, .78);
+  backdrop-filter: blur(6px);
+}
+.mestre-orc-automation-panel {
+  width: min(1060px, 96vw);
+  max-height: 92vh;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: hidden;
+  border: 1px solid rgba(226,185,110,.5);
+  border-radius: 15px;
+  background: linear-gradient(145deg, rgba(31,27,22,.995), rgba(12,17,19,.995));
+  color: #f2eee5;
+  box-shadow: 0 28px 100px rgba(0,0,0,.75);
+}
+.mestre-orc-automation-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 18px 20px 15px;
+  border-bottom: 1px solid rgba(226,185,110,.2);
+  background: rgba(25,22,18,.98);
+}
+.mestre-orc-automation-header span { color: #e2b96e; font-size: .75rem; font-weight: 850; letter-spacing: .09em; text-transform: uppercase; }
+.mestre-orc-automation-header h2 { margin: 3px 0; font-size: 1.5rem; }
+.mestre-orc-automation-header p { margin: 0; color: #bdb5a8; }
+.mestre-orc-automation-header > button {
+  width: 34px; height: 34px; flex: 0 0 34px; border-radius: 50%;
+  border: 1px solid rgba(226,185,110,.34); background: rgba(255,255,255,.04); color: #fff3dd; cursor: pointer;
+}
+.mestre-orc-automation-panel > main { overflow: auto; padding: 16px 20px 20px; }
+.mestre-orc-automation-suggest-form {
+  display: grid;
+  gap: 11px;
+  padding: 14px;
+  border: 1px solid rgba(226,185,110,.2);
+  border-radius: 11px;
+  background: rgba(9,14,16,.62);
+}
+.mestre-orc-automation-suggest-form label { display: grid; gap: 7px; color: #e8dec9; font-weight: 750; }
+.mestre-orc-automation-suggest-form textarea {
+  width: 100%; min-height: 104px; resize: vertical; padding: 10px 11px;
+  border: 1px solid rgba(226,185,110,.32); border-radius: 8px;
+  background: rgba(2,8,10,.78); color: #fff8ea; line-height: 1.45;
+}
+.mestre-orc-automation-suggest-form > button.primary,
+.mestre-orc-automation-card button.primary {
+  border-color: rgba(94,200,172,.72);
+  background: linear-gradient(180deg, rgba(32,105,86,.96), rgba(19,65,55,.96));
+  color: #effff9;
+}
+.mestre-orc-automation-presets { display: flex; flex-wrap: wrap; gap: 7px; }
+.mestre-orc-automation-presets button {
+  border: 1px solid rgba(226,185,110,.25); border-radius: 999px;
+  background: rgba(80,59,31,.48); color: #f2dfbd; padding: 5px 10px; cursor: pointer;
+}
+.mestre-orc-automation-suggest-form > button,
+.mestre-orc-automation-toolbar button,
+.mestre-orc-automation-card button {
+  min-height: 36px; border: 1px solid rgba(226,185,110,.48); border-radius: 8px;
+  background: rgba(69,50,28,.72); color: #f5e7ce; padding: 7px 11px; font-weight: 750; cursor: pointer;
+}
+.mestre-orc-automation-panel[data-busy="true"] { cursor: progress; }
+.mestre-orc-automation-panel button:disabled { opacity: .5; cursor: wait; }
+.mestre-orc-automation-toolbar {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  margin: 14px 0 10px; padding: 9px 11px; border-radius: 9px; background: rgba(255,255,255,.035);
+}
+.mestre-orc-automation-toolbar label { display: flex; align-items: center; gap: 7px; }
+.mestre-orc-automation-toolbar select {
+  border: 1px solid rgba(226,185,110,.28); border-radius: 7px; background: rgba(3,9,11,.82); color: #f4ead8; padding: 6px 8px;
+}
+.mestre-orc-automation-queue { display: grid; gap: 11px; }
+.mestre-orc-automation-card {
+  border: 1px solid rgba(226,185,110,.2); border-left: 4px solid #d1a55d;
+  border-radius: 10px; background: rgba(5,12,14,.7); padding: 13px 14px;
+}
+.mestre-orc-automation-card[data-risk="MEDIUM"] { border-left-color: #d9844f; }
+.mestre-orc-automation-card[data-risk="HIGH"] { border-left-color: #dc665d; }
+.mestre-orc-automation-card[data-status="EXECUTED"] { border-left-color: #58bc9f; }
+.mestre-orc-automation-card[data-status="ROLLED_BACK"] { border-left-color: #7ca6c7; opacity: .82; }
+.mestre-orc-automation-card[data-status="REJECTED"] { opacity: .68; }
+.mestre-orc-automation-card > header { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
+.mestre-orc-automation-card > header span { color: #dcb779; font-size: .74rem; text-transform: uppercase; letter-spacing: .07em; }
+.mestre-orc-automation-card h3 { margin: 3px 0 0; font-size: 1.02rem; }
+.mestre-orc-automation-card > p { color: #c8c0b3; line-height: 1.5; }
+.mestre-orc-automation-badges { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.mestre-orc-automation-badges b {
+  border: 1px solid rgba(226,185,110,.24); border-radius: 999px; background: rgba(255,255,255,.04);
+  color: #ead6b2; padding: 4px 8px; font-size: .72rem; white-space: nowrap;
+}
+.mestre-orc-automation-warnings { color: #edc890; }
+.mestre-orc-automation-error { padding: 8px 10px; border-left: 3px solid #dc665d; background: rgba(120,35,30,.22); color: #ffd5d1; }
+.mestre-orc-automation-card details { margin-top: 10px; border-radius: 7px; background: rgba(255,255,255,.035); padding: 8px 10px; }
+.mestre-orc-automation-card summary { cursor: pointer; color: #d9c5a2; }
+.mestre-orc-automation-card pre {
+  max-height: 230px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere;
+  color: #d7e5e5; background: rgba(0,0,0,.28); padding: 9px; border-radius: 7px;
+}
+.mestre-orc-automation-card > footer {
+  display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap;
+  margin-top: 11px; padding-top: 10px; border-top: 1px solid rgba(226,185,110,.13); color: #9f988d;
+}
+.mestre-orc-automation-card > footer > div { display: flex; flex-wrap: wrap; gap: 7px; }
+.mestre-orc-automation-card button.danger { border-color: rgba(220,102,93,.52); background: rgba(102,35,31,.66); color: #ffd8d3; }
+.mestre-orc-automation-card button.warning { border-color: rgba(124,166,199,.58); background: rgba(39,69,92,.72); color: #dbefff; }
+.mestre-orc-automation-empty { min-height: 180px; display: grid; place-items: center; align-content: center; text-align: center; color: #aaa397; }
+.mestre-orc-automation-empty i { font-size: 2rem; color: #d6a84f; }
+.mestre-orc-automation-policy { display: flex; gap: 9px; align-items: center; padding: 11px 20px; border-top: 1px solid rgba(226,185,110,.17); background: rgba(24,21,17,.98); color: #c9c0af; }
+.mestre-orc-automation-policy i { color: #e2b96e; }
+@media (max-width: 720px) {
+  .mestre-orc-automation-overlay { padding: 7px; }
+  .mestre-orc-automation-panel { width: 100%; max-height: 97vh; }
+  .mestre-orc-automation-panel > main { padding: 12px; }
+  .mestre-orc-automation-header { padding: 14px; }
+  .mestre-orc-automation-card > header { flex-direction: column; }
+  .mestre-orc-automation-badges { justify-content: flex-start; }
+}

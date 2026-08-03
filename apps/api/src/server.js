@@ -11,6 +11,7 @@ import { createAdventureLibraryFromEnv, AdventureImportModes } from '../../../pa
 import { createGeneratorServiceFromEnv, GeneratorArtifactTypes, GeneratorArtifactStatuses } from '../../../packages/generator-service/src/index.js';
 import { createMapServiceFromEnv, MapStatuses, MapStyles } from '../../../packages/map-service/src/index.js';
 import { createTutorServiceFromEnv, TutorModes } from '../../../packages/tutor-service/src/index.js';
+import { createAutomationServiceFromEnv, AutomationActionTypes, AutomationStatuses } from '../../../packages/automation-service/src/index.js';
 import { createConfig, isOriginAllowed, loadEnvFile } from '../../../packages/config/src/index.js';
 
 
@@ -29,7 +30,8 @@ const adventureLibrary = createAdventureLibraryFromEnv({ logger: app.log });
 const generatorService = createGeneratorServiceFromEnv({ narrator, campaignMemory, adventureLibrary, logger: app.log });
 const mapService = createMapServiceFromEnv({ narrator, generatorService, logger: app.log });
 const tutorService = createTutorServiceFromEnv({ narrator, campaignMemory, adventureLibrary, logger: app.log });
-const runtime = createSessionRuntime({ narrator, narrationMemory, audioNarrationService, campaignMemory, adventureLibrary, generatorService, mapService, tutorService, logger: app.log });
+const automationService = createAutomationServiceFromEnv({ narrator, logger: app.log });
+const runtime = createSessionRuntime({ narrator, narrationMemory, audioNarrationService, campaignMemory, adventureLibrary, generatorService, mapService, tutorService, automationService, logger: app.log });
 
 app.addHook('onRequest', async (request, reply) => {
   const origin = request.headers.origin;
@@ -56,6 +58,7 @@ app.get('/health', { logLevel: 'silent' }, async () => ({
   mapBlueprints: 'persistent-file',
   mapStyles: MapStyles,
   tutors: { modes: TutorModes, history: 'persistent-file', automaticChanges: false },
+  automations: { proposals: 'persistent-file', actionTypes: AutomationActionTypes, statuses: AutomationStatuses, approvalRequired: true, automaticExecution: false },
   documentFormats: ['txt', 'md', 'html', 'docx', 'pdf'],
   audio: audioNarrationService.enabled ? audioNarrationService.mode : 'disabled',
   neuralVoice: neuralVoiceService.getStatus(),
@@ -749,6 +752,154 @@ app.get('/v1/tutors/:campaignId/history', {
     const entries = await runtime.getTutorHistory(request.params.campaignId, { id: request.query.requesterId, isGM: Boolean(request.query.isGM) });
     return { entries, count: entries.length };
   } catch (error) { return reply.code(400).send({ code: 'TUTOR_HISTORY_FAILED', message: error.message }); }
+});
+
+
+const automationParamsSchema = {
+  type: 'object', required: ['campaignId'], additionalProperties: false,
+  properties: { campaignId: { type: 'string', minLength: 1, maxLength: 200 } }
+};
+const automationProposalParamsSchema = {
+  type: 'object', required: ['campaignId', 'proposalId'], additionalProperties: false,
+  properties: {
+    campaignId: { type: 'string', minLength: 1, maxLength: 200 },
+    proposalId: { type: 'string', minLength: 1, maxLength: 200 }
+  }
+};
+const automationMutationBodySchema = {
+  type: 'object', required: ['requester'], additionalProperties: false,
+  properties: {
+    requester: tutorRequesterSchema,
+    expectedRevision: { type: 'integer', minimum: 1 },
+    reason: { type: 'string', maxLength: 1000 }
+  }
+};
+
+app.get('/v1/automations/definitions', async () => runtime.getAutomationDefinitions());
+
+app.get('/v1/automations/:campaignId', {
+  schema: {
+    params: automationParamsSchema,
+    querystring: {
+      type: 'object', additionalProperties: false,
+      properties: {
+        status: { type: 'string', enum: AutomationStatuses },
+        actionType: { type: 'string', enum: AutomationActionTypes }
+      }
+    }
+  }
+}, async (request, reply) => {
+  try { return await runtime.listAutomationProposals(request.params.campaignId, request.query ?? {}); }
+  catch (error) { return reply.code(Number(error.statusCode) || 400).send({ code: error.code || 'AUTOMATION_LIST_FAILED', message: error.message }); }
+});
+
+app.get('/v1/automations/:campaignId/:proposalId', {
+  schema: { params: automationProposalParamsSchema }
+}, async (request, reply) => {
+  try {
+    const proposal = await runtime.getAutomationProposal(request.params.campaignId, request.params.proposalId);
+    if (!proposal) return reply.code(404).send({ code: 'AUTOMATION_NOT_FOUND', message: 'Proposta de automação não encontrada.' });
+    return { proposal };
+  } catch (error) { return reply.code(Number(error.statusCode) || 400).send({ code: error.code || 'AUTOMATION_READ_FAILED', message: error.message }); }
+});
+
+app.post('/v1/automations/:campaignId/suggest', {
+  schema: {
+    params: automationParamsSchema,
+    body: {
+      type: 'object', required: ['goal', 'requester'], additionalProperties: false,
+      properties: {
+        goal: { type: 'string', minLength: 3, maxLength: 3000 },
+        requester: tutorRequesterSchema,
+        context: { type: 'object', additionalProperties: true }
+      }
+    }
+  }
+}, async (request, reply) => {
+  try { return await runtime.suggestAutomations(request.params.campaignId, request.body ?? {}); }
+  catch (error) { return reply.code(Number(error.statusCode) || 400).send({ code: error.code || 'AUTOMATION_SUGGESTION_FAILED', message: error.message }); }
+});
+
+app.post('/v1/automations/:campaignId', {
+  schema: {
+    params: automationParamsSchema,
+    body: {
+      type: 'object', required: ['actionType', 'payload', 'requester'], additionalProperties: false,
+      properties: {
+        actionType: { type: 'string', enum: AutomationActionTypes },
+        title: { type: 'string', maxLength: 300 },
+        rationale: { type: 'string', maxLength: 1500 },
+        warnings: { type: 'array', maxItems: 10, items: { type: 'string', maxLength: 600 } },
+        payload: { type: 'object', additionalProperties: true },
+        requester: tutorRequesterSchema
+      }
+    }
+  }
+}, async (request, reply) => {
+  try { return await runtime.createAutomationProposal(request.params.campaignId, request.body ?? {}); }
+  catch (error) { return reply.code(Number(error.statusCode) || 400).send({ code: error.code || 'AUTOMATION_CREATE_FAILED', message: error.message }); }
+});
+
+for (const [path, handler, failureCode] of [
+  ['approve', 'approveAutomationProposal', 'AUTOMATION_APPROVAL_FAILED'],
+  ['reject', 'rejectAutomationProposal', 'AUTOMATION_REJECTION_FAILED'],
+  ['execute/claim', 'claimAutomationExecution', 'AUTOMATION_EXECUTION_CLAIM_FAILED'],
+  ['rollback/claim', 'claimAutomationRollback', 'AUTOMATION_ROLLBACK_CLAIM_FAILED']
+]) {
+  app.post(`/v1/automations/:campaignId/:proposalId/${path}`, {
+    schema: { params: automationProposalParamsSchema, body: automationMutationBodySchema }
+  }, async (request, reply) => {
+    try {
+      const result = await runtime[handler](request.params.campaignId, request.params.proposalId, request.body ?? {});
+      if (!result) return reply.code(404).send({ code: 'AUTOMATION_NOT_FOUND', message: 'Proposta de automação não encontrada.' });
+      return result;
+    } catch (error) { return reply.code(Number(error.statusCode) || 400).send({ code: error.code || failureCode, message: error.message }); }
+  });
+}
+
+app.post('/v1/automations/:campaignId/:proposalId/execute/result', {
+  schema: {
+    params: automationProposalParamsSchema,
+    body: {
+      type: 'object', required: ['requester', 'executionToken', 'success'], additionalProperties: false,
+      properties: {
+        requester: tutorRequesterSchema,
+        expectedRevision: { type: 'integer', minimum: 1 },
+        executionToken: { type: 'string', minLength: 1, maxLength: 200 },
+        success: { type: 'boolean' },
+        receipt: { type: 'object', additionalProperties: true },
+        error: { type: 'string', maxLength: 1200 }
+      }
+    }
+  }
+}, async (request, reply) => {
+  try {
+    const result = await runtime.completeAutomationExecution(request.params.campaignId, request.params.proposalId, request.body ?? {});
+    if (!result) return reply.code(404).send({ code: 'AUTOMATION_NOT_FOUND', message: 'Proposta de automação não encontrada.' });
+    return result;
+  } catch (error) { return reply.code(Number(error.statusCode) || 400).send({ code: error.code || 'AUTOMATION_EXECUTION_RESULT_FAILED', message: error.message }); }
+});
+
+app.post('/v1/automations/:campaignId/:proposalId/rollback/result', {
+  schema: {
+    params: automationProposalParamsSchema,
+    body: {
+      type: 'object', required: ['requester', 'rollbackToken', 'success'], additionalProperties: false,
+      properties: {
+        requester: tutorRequesterSchema,
+        expectedRevision: { type: 'integer', minimum: 1 },
+        rollbackToken: { type: 'string', minLength: 1, maxLength: 200 },
+        success: { type: 'boolean' },
+        error: { type: 'string', maxLength: 1200 }
+      }
+    }
+  }
+}, async (request, reply) => {
+  try {
+    const result = await runtime.completeAutomationRollback(request.params.campaignId, request.params.proposalId, request.body ?? {});
+    if (!result) return reply.code(404).send({ code: 'AUTOMATION_NOT_FOUND', message: 'Proposta de automação não encontrada.' });
+    return result;
+  } catch (error) { return reply.code(Number(error.statusCode) || 400).send({ code: error.code || 'AUTOMATION_ROLLBACK_RESULT_FAILED', message: error.message }); }
 });
 
 app.get('/v1/voice/providers', async () => neuralVoiceService.getStatus());

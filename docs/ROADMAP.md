@@ -128,5 +128,18 @@
 - [x] histórico persistente, privado por usuário e isolado por campanha;
 - [x] painel no chat e controle de cena para o mestre.
 
+## Marco 11 — Automações assistidas e ações aprovadas ✅ — alpha.47
+- [x] fila persistente e isolada por campanha;
+- [x] sugestões assistidas por IA sem execução automática;
+- [x] allowlist de ações pequenas e reversíveis;
+- [x] aprovação e execução como passos separados;
+- [x] classificação de risco e confirmação adicional;
+- [x] revisão otimista e tokens temporários contra duplicação;
+- [x] execução local no Foundry somente por GM;
+- [x] recibos de execução e reversão;
+- [x] trilha de auditoria por proposta;
+- [x] painel no chat e nos controles da cena;
+- [x] bloqueio de scripts e caminhos arbitrários da ficha.
+
 ## Próximo marco liberado
-- Marco 11 — automações assistidas e ações aprovadas pelo mestre.
+- Marco 12 — backup, exportação e restauração segura da campanha.

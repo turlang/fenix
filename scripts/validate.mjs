@@ -12,6 +12,7 @@ const required = [
   'apps/foundry-module/scripts/generator-panel.js',
   'apps/foundry-module/scripts/map-panel.js',
   'apps/foundry-module/scripts/tutor-panel.js',
+  'apps/foundry-module/scripts/automation-panel.js',
   'apps/foundry-module/scripts/ai-provider-panel.js',
   'apps/foundry-module/scripts/voice-profile-panel.js',
   'apps/foundry-module/scripts/voice-input.js',
@@ -30,6 +31,7 @@ const required = [
   'packages/generator-service/src/index.js',
   'packages/map-service/src/index.js',
   'packages/tutor-service/src/index.js',
+  'packages/automation-service/src/index.js',
   'packages/audio-narration-service/src/index.js',
   'packages/neural-voice-service/src/index.js',
   'packages/voice-profile-service/src/index.js',
@@ -113,7 +115,7 @@ try {
   console.warn('Aviso: validação de arquivos rastreados pelo Git não pôde ser executada.');
 }
 
-const forbiddenLocal = ['.env', 'node_modules', 'data/narration-history.json', 'data/campaign-memory.json', 'data/adventure-library.json', 'data/voice-profiles.json', 'data/generated-content.json', 'data/map-blueprints.json', 'data/tutor-history.json'];
+const forbiddenLocal = ['.env', 'node_modules', 'data/narration-history.json', 'data/campaign-memory.json', 'data/adventure-library.json', 'data/voice-profiles.json', 'data/generated-content.json', 'data/map-blueprints.json', 'data/tutor-history.json', 'data/automation-proposals.json'];
 for (const path of forbiddenLocal) {
   try {
     await access(new URL(path, root));

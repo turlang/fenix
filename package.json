@@ -1,7 +1,7 @@
 {
   "name": "mestre-orc-engine",
-  "version": "0.1.0-alpha.46",
-  "description": "Motor modular de narração cinematográfica, tutores contextuais, mapas automáticos, geradores persistentes, memória, combate, voz neural e provedores resilientes.",
+  "version": "0.1.0-alpha.47",
+  "description": "Motor modular de narração cinematográfica, automações aprovadas, tutores contextuais, mapas, geradores, memória, combate, voz neural e IA resiliente.",
   "private": true,
   "type": "module",
   "workspaces": [

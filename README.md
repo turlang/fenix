@@ -1,8 +1,8 @@
 # Mestre Orc Engine
 
-Versão `0.1.0-alpha.46` — Node.js 20–24 e Foundry VTT 13.
+Versão `0.1.0-alpha.47` — Node.js 20–24 e Foundry VTT 13.
 
-O fluxo atual localiza a Scene ativa, procura o Journal correspondente no diretório do Foundry e extrai exclusivamente uma caixa read-aloud reconhecida. São aceitos os formatos antigo e atual do Plutonium/5eTools, `blockquote` HTML e citação Markdown; blocos secretos ou exclusivos do GM são ignorados. A âncora canônica é interpretada pelo primeiro provedor de IA saudável da ordem configurada, validada e publicada no chat com áudio. Groq, OpenAI, Anthropic e endpoints OpenAI-compatible podem operar com fallback automático. A saída pode usar o TTS do navegador ou voz neural externa com perfis persistentes para narrador e NPCs. O mestre também pode gerar e arquivar aventuras, NPCs e dungeons originais com bloqueio de repetição, planejar mapas vetoriais e convertê-los em Scenes editáveis do Foundry. A alpha.46 acrescenta Tutor de Ficha e Tutor de Mestre com respostas contextuais, fontes verificáveis e histórico privado.
+O fluxo atual localiza a Scene ativa, procura o Journal correspondente no diretório do Foundry e extrai exclusivamente uma caixa read-aloud reconhecida. São aceitos os formatos antigo e atual do Plutonium/5eTools, `blockquote` HTML e citação Markdown; blocos secretos ou exclusivos do GM são ignorados. A âncora canônica é interpretada pelo primeiro provedor de IA saudável da ordem configurada, validada e publicada no chat com áudio. Groq, OpenAI, Anthropic e endpoints OpenAI-compatible podem operar com fallback automático. A saída pode usar o TTS do navegador ou voz neural externa com perfis persistentes para narrador e NPCs. O mestre também pode gerar e arquivar aventuras, NPCs e dungeons originais com bloqueio de repetição, planejar mapas vetoriais e convertê-los em Scenes editáveis do Foundry. A alpha.47 acrescenta automações assistidas com fila persistente, aprovação explícita do mestre, execução local allowlisted, auditoria e reversão segura.
 
 ## Engine
 
@@ -43,6 +43,7 @@ GENERATOR_MAX_ATTEMPTS=3
 MAP_BLUEPRINT_FILE=./data/map-blueprints.json
 MAP_GENERATION_MAX_ATTEMPTS=2
 TUTOR_HISTORY_FILE=./data/tutor-history.json
+AUTOMATION_PROPOSALS_FILE=./data/automation-proposals.json
 PDFTOTEXT_COMMAND=pdftotext
 MESTRE_ORC_AUDIO_ENABLED=true
 MESTRE_ORC_AUDIO_MODE=browser-tts
@@ -60,7 +61,7 @@ ELEVENLABS_TTS_VOICE_ID=
 COMPATIBLE_TTS_BASE_URL=
 ```
 
-Abra `http://localhost:3001/health`. Os campos esperados incluem `"ai":"configured"`, `"aiProviders"`, `"audio"`, `"neuralVoice"`, `"voiceProfiles":"persistent-file"`, `"campaignMemory":"persistent-file"`, `"adventureLibrary":"persistent-file"`, `"generatedContent":"persistent-file"` , `"mapBlueprints":"persistent-file"` e `"tutors"` com modos `SHEET` e `GM`.
+Abra `http://localhost:3001/health`. Os campos esperados incluem `"ai":"configured"`, `"aiProviders"`, `"audio"`, `"neuralVoice"`, `"voiceProfiles":"persistent-file"`, `"campaignMemory":"persistent-file"`, `"adventureLibrary":"persistent-file"`, `"generatedContent":"persistent-file"` , `"mapBlueprints":"persistent-file"`, `"tutors"` com modos `SHEET` e `GM` e `"automations"` com aprovação obrigatória.
 
 ## Comandos
 
@@ -72,6 +73,49 @@ Abra `http://localhost:3001/health`. Os campos esperados incluem `"ai":"configur
 - `npm run check`: executa estrutura, auditoria de segurança e testes antes de cada entrega.
 - `npm run release:prepare`: gera em `dist/` uma cópia limpa, sem `.git`, `.env`, dependências ou histórico local.
 
+
+
+## Automações assistidas e aprovadas pelo mestre
+
+A alpha.47 adiciona o painel **Automações**, exclusivo para usuários GM no chat e nos controles da cena. A IA pode sugerir ações usando apenas o contexto autorizado, mas cada resultado entra em uma fila persistente com estado `PENDING`. Aprovar e executar são operações separadas; nenhuma sugestão é aplicada automaticamente.
+
+A allowlist inicial contém somente ações pequenas e reversíveis:
+
+- publicar mensagem pública, para GMs ou para usuários escolhidos;
+- criar um Journal privado;
+- adicionar uma página a um Journal existente;
+- criar uma Note na Scene vinculada a um Journal;
+- atualizar um recurso numérico permitido da ficha, como PV, exaustão, recursos ou moeda.
+
+Alterações de ficha são classificadas como risco alto, exigem confirmação adicional e aceitam apenas caminhos pré-definidos. O Foundry registra um recibo com os documentos criados ou o valor anterior; esse recibo habilita o botão **Desfazer**. A reversão verifica a marca de propriedade do documento e, em recursos numéricos, confirma que o valor não mudou depois da execução. Scripts arbitrários, exclusões de mundo, mudanças de ownership, rolagens inventadas e alterações fora da allowlist são rejeitados.
+
+Ciclo de uma proposta:
+
+`PENDING → APPROVED → EXECUTING → EXECUTED`
+
+Também existem os estados `FAILED`, `REJECTED`, `ROLLING_BACK` e `ROLLED_BACK`. Revisões otimistas e tokens temporários de execução impedem duplo clique e execução concorrente.
+
+Endpoints:
+
+- `GET /v1/automations/definitions`
+- `GET /v1/automations/:campaignId`
+- `GET /v1/automations/:campaignId/:proposalId`
+- `POST /v1/automations/:campaignId/suggest`
+- `POST /v1/automations/:campaignId`
+- `POST /v1/automations/:campaignId/:proposalId/approve`
+- `POST /v1/automations/:campaignId/:proposalId/reject`
+- `POST /v1/automations/:campaignId/:proposalId/execute/claim`
+- `POST /v1/automations/:campaignId/:proposalId/execute/result`
+- `POST /v1/automations/:campaignId/:proposalId/rollback/claim`
+- `POST /v1/automations/:campaignId/:proposalId/rollback/result`
+
+Configuração:
+
+```env
+AUTOMATION_PROPOSALS_FILE=./data/automation-proposals.json
+```
+
+O arquivo contém payloads, recibos e trilha de auditoria da campanha. Ele permanece fora do Git e das entregas públicas.
 
 ## Tutor de Ficha e Tutor de Mestre
 

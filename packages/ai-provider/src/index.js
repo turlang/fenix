@@ -43,6 +43,10 @@ export class NarrativeProvider {
   async answerGmTutor(payload) {
     return this.generateText({ purpose: 'GM_TUTOR', responseMode: 'json', ...payload });
   }
+
+  async suggestAutomations(payload) {
+    return this.generateText({ purpose: 'AUTOMATION_SUGGESTION', responseMode: 'json', ...payload });
+  }
 }
 
 function compactText(value, limit = 9000) {
@@ -422,6 +426,31 @@ function gmTutorPrompt({ question, context = {}, facts = [] } = {}) {
   ].join('\n');
 }
 
+
+function automationSuggestionPrompt({ goal, context = {}, allowedActions = [] } = {}) {
+  const actionLines = allowedActions.map((entry) =>
+    `- ${entry.id}: ${entry.description}; risco ${entry.risk}; reversível ${entry.reversible ? 'sim' : 'não'}.`
+  );
+  return [
+    'Você é o planejador de automações assistidas do Mestre Orc.',
+    'Você NÃO executa nada. Apenas propõe ações para uma fila que exige aprovação e um segundo clique explícito do mestre.',
+    'Responda SOMENTE com JSON válido, sem bloco de código e sem texto antes ou depois.',
+    'Formato obrigatório: {"proposals":[{"actionType":"...","title":"...","rationale":"...","warnings":["..."],"payload":{...}}]}.',
+    'Gere no máximo cinco propostas pequenas, independentes e reversíveis. Prefira uma proposta simples a uma mudança ampla.',
+    'Use somente os actionType listados. Nunca invente IDs de Actor, Journal, Scene, página, usuário ou coordenadas.',
+    'Quando um identificador necessário não estiver no contexto, não proponha aquela ação.',
+    'Nunca proponha dano, cura, condição, consumo de recurso, resultado de rolagem ou alteração de ficha sem valor, caminho e Actor explicitamente confirmados no contexto.',
+    'Não revele segredos em CHAT_MESSAGE. Conteúdo reservado pode ir apenas para Journal criado pelo mestre.',
+    'Não inclua chaves, tokens, cookies, credenciais, prompts internos ou dados fora do contexto.',
+    '',
+    `Objetivo do mestre: ${compactText(goal, 3000)}`,
+    `Contexto autorizado: ${compactText(JSON.stringify(context || {}), 12000)}`,
+    '',
+    'AÇÕES PERMITIDAS:',
+    ...(actionLines.length ? actionLines : ['- Nenhuma ação foi liberada.'])
+  ].join('\n');
+}
+
 export class PromptNarrativeProvider {
   constructor({ requestText, providerId = 'unknown', model = null, logger = console } = {}) {
     if (typeof requestText !== 'function') throw new TypeError('requestText é obrigatório.');
@@ -625,6 +654,10 @@ export class PromptNarrativeProvider {
 
   async answerGmTutor(payload = {}) {
     return this.requestText(gmTutorPrompt(payload), { maxTokens: 1500, temperature: 0.38, topP: 0.9 });
+  }
+
+  async suggestAutomations(payload = {}) {
+    return this.requestText(automationSuggestionPrompt(payload), { maxTokens: 1800, temperature: 0.22, topP: 0.82 });
   }
 
   async requestText(prompt, options) {
@@ -1042,6 +1075,7 @@ export class ResilientNarrativeProvider {
   generateMapBlueprint(payload) { return this.invoke('generateMapBlueprint', payload); }
   answerSheetTutor(payload) { return this.invoke('answerSheetTutor', payload); }
   answerGmTutor(payload) { return this.invoke('answerGmTutor', payload); }
+  suggestAutomations(payload) { return this.invoke('suggestAutomations', payload); }
 
   getStatus() {
     return {
@@ -1152,5 +1186,6 @@ export const aiProviderInternals = {
   mapBlueprintPrompt,
   sheetTutorPrompt,
   gmTutorPrompt,
+  automationSuggestionPrompt,
   tutorJsonContract
 };

@@ -58,3 +58,16 @@ Enquanto o projeto estiver em fase alfa, somente a versão mais recente recebe c
 - IDs de fontes retornados pela IA são aceitos somente quando existem no conjunto de fatos ou referências fornecido.
 - `data/tutor-history.json` pode conter perguntas, respostas e nomes de personagens. Mantenha-o fora do Git, logs públicos e backups compartilhados.
 - A API local atual não substitui autenticação de rede. Em exposição remota, use proxy autenticado, TLS e controle de origem.
+
+
+## Automações aprovadas
+
+- A IA e a API apenas criam propostas. A execução ocorre exclusivamente no Foundry de um usuário GM após aprovação e confirmação separadas.
+- A allowlist não aceita código, macros, comandos de console, exclusão de mundo, alteração de ownership ou caminhos arbitrários.
+- Mudanças numéricas de ficha são limitadas a PV, exaustão, recursos e moeda, com Actor, caminho e valor explícitos.
+- Cada execução produz um recibo mínimo para reversão. O recibo não deve conter credenciais, cookies ou dados desnecessários.
+- Antes de remover um documento, a reversão confirma que ele ainda possui a marca da proposta original. Recursos numéricos só voltam ao valor anterior quando o valor atual ainda coincide com o aplicado pela automação.
+- Revisões e tokens temporários reduzem risco de duplo clique, concorrência e resultado atribuído à proposta errada.
+- Mensagens públicas propostas pela IA devem ser revisadas para impedir spoilers; segredos devem permanecer em Journals privados.
+- `data/automation-proposals.json` pode conter decisões, mensagens, IDs e valores anteriores da campanha. Mantenha-o fora do Git, logs e backups públicos.
+- A API local não autentica usuários de rede por conta própria. Não a exponha diretamente à internet; use TLS, proxy autenticado e controle de origem.

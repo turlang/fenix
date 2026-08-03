@@ -15,6 +15,7 @@ import { InMemoryAdventureLibrary } from '../../adventure-library/src/index.js';
 import { InMemoryGeneratorService } from '../../generator-service/src/index.js';
 import { InMemoryMapService } from '../../map-service/src/index.js';
 import { InMemoryTutorService } from '../../tutor-service/src/index.js';
+import { InMemoryAutomationService } from '../../automation-service/src/index.js';
 
 function createInputApi(initial = {}) {
   let snapshot = initial;
@@ -43,6 +44,7 @@ export function createSessionRuntime({
   generatorService,
   mapService,
   tutorService,
+  automationService,
   logger = console
 } = {}) {
   const inputApi = foundryApi ?? createInputApi();
@@ -66,6 +68,7 @@ export function createSessionRuntime({
     adventureLibrary: persistentAdventureLibrary,
     logger
   });
+  const persistentAutomationService = automationService ?? new InMemoryAutomationService({ narrator, logger });
   const director = new SessionDirector({
     foundryAdapter: adapter,
     contextBuilder: createNarrationContextBuilder({ logger }),
@@ -144,6 +147,17 @@ export function createSessionRuntime({
     removeMapBlueprint: (campaignId, mapId) => persistentMapService.remove(campaignId, mapId),
     askSheetTutor: (campaignId, input) => persistentTutorService.askSheet(campaignId, input),
     askGmTutor: (campaignId, input) => persistentTutorService.askGm(campaignId, input),
-    getTutorHistory: (campaignId, requester) => persistentTutorService.history(campaignId, requester)
+    getTutorHistory: (campaignId, requester) => persistentTutorService.history(campaignId, requester),
+    getAutomationDefinitions: () => persistentAutomationService.definitions(),
+    listAutomationProposals: (campaignId, options) => persistentAutomationService.list(campaignId, options),
+    getAutomationProposal: (campaignId, proposalId) => persistentAutomationService.get(campaignId, proposalId),
+    createAutomationProposal: (campaignId, input) => persistentAutomationService.create(campaignId, input),
+    suggestAutomations: (campaignId, input) => persistentAutomationService.suggest(campaignId, input),
+    approveAutomationProposal: (campaignId, proposalId, input) => persistentAutomationService.approve(campaignId, proposalId, input),
+    rejectAutomationProposal: (campaignId, proposalId, input) => persistentAutomationService.reject(campaignId, proposalId, input),
+    claimAutomationExecution: (campaignId, proposalId, input) => persistentAutomationService.claimExecution(campaignId, proposalId, input),
+    completeAutomationExecution: (campaignId, proposalId, input) => persistentAutomationService.completeExecution(campaignId, proposalId, input),
+    claimAutomationRollback: (campaignId, proposalId, input) => persistentAutomationService.claimRollback(campaignId, proposalId, input),
+    completeAutomationRollback: (campaignId, proposalId, input) => persistentAutomationService.completeRollback(campaignId, proposalId, input)
   };
 }

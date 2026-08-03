@@ -18,6 +18,32 @@ Este projeto segue o formato do [Keep a Changelog](https://keepachangelog.com/pt
 - Comando `npm run check:offline` para validar estrutura e testes quando a auditoria remota do npm estiver indisponível.
 
 
+
+## [0.1.0-alpha.47] - 2026-08-03
+
+### Adicionado
+
+- `AutomationService` persistente, isolado por `worldId` e com trilha de auditoria.
+- Painel **Automações** exclusivo para GM no chat e nos controles da cena.
+- Sugestões por IA com allowlist, sanitização de contexto e fallback para Journal de planejamento.
+- Fluxo separado de criação, aprovação, claim de execução, resultado, claim de reversão e resultado da reversão.
+- Executores locais para chat, Journal, página de Journal, Note de Scene e recurso numérico permitido da ficha.
+- Recibos de execução para desfazer documentos criados e restaurar valores anteriores.
+- Endpoints de definições, fila, detalhe, sugestão, aprovação, rejeição, execução e rollback.
+
+### Segurança e confiabilidade
+
+- Nenhuma proposta é executada pela IA ou pela API; a alteração ocorre somente no cliente Foundry de um GM após um segundo clique explícito.
+- Tipos de ação e caminhos de recursos usam allowlist; scripts, ownership e propriedades arbitrárias são bloqueados.
+- Alterações de ficha são classificadas como risco alto e recebem confirmação adicional.
+- Revisão otimista evita decisões sobre uma versão desatualizada da proposta.
+- Tokens temporários vinculam o resultado à execução ou reversão reclamada.
+- A reversão valida a propriedade dos documentos criados e bloqueia restauração de recursos que receberam alterações posteriores.
+- Trilhas de auditoria possuem limites por proposta e por campanha para evitar crescimento indefinido.
+- Propostas pendentes idênticas são deduplicadas.
+- Campos com aparência de credencial são removidos do contexto, auditoria e recibos.
+- `data/automation-proposals.json` permanece fora do Git e das entregas limpas.
+
 ## [0.1.0-alpha.46] - 2026-08-02
 
 ### Adicionado

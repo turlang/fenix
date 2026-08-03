@@ -1,8 +1,8 @@
 {
   "id": "mestre-orc",
   "title": "Mestre Orc",
-  "description": "Narrações cinematográficas, Tutor de Ficha, Tutor de Mestre, mapas automáticos, geradores persistentes, voz neural, memória, combate e IA resiliente.",
-  "version": "0.1.0-alpha.46",
+  "description": "Narrações cinematográficas, automações aprovadas pelo mestre, tutores, mapas, geradores, voz neural, memória, combate e IA resiliente.",
+  "version": "0.1.0-alpha.47",
   "compatibility": {
     "minimum": "13",
     "verified": "13"
