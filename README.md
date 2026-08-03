@@ -2,6 +2,10 @@
 
 Versão `0.1.0-alpha.24` — Node.js 20–24 e Foundry VTT 13.
 
+## Preview
+
+![Preview do Mestre Orc Engine](docs/preview.svg)
+
 O fluxo atual localiza a Scene ativa, procura o Journal correspondente no diretório do Foundry, extrai exclusivamente a caixa `.ve-rd__b-inset--readaloud`, interpreta a âncora canônica com Groq, valida qualidade e novidade, publica no chat e reproduz a narração em áudio.
 
 ## Engine
