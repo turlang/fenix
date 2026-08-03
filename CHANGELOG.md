@@ -19,6 +19,30 @@ Este projeto segue o formato do [Keep a Changelog](https://keepachangelog.com/pt
 
 
 
+## [0.1.0-alpha.49] - 2026-08-03
+
+### Adicionado
+
+- `DiagnosticService` com verificações combinadas do Engine e do cliente Foundry.
+- Central de Diagnóstico exclusiva para GM no chat e nos controles da cena.
+- Testes de API, sessão, campanha, Scene, microfone, contexto seguro, Foundry 13, IA, TTS e armazenamento.
+- Métricas de latência, operações, falhas, filas idempotentes e eventos duplicados bloqueados.
+- Captura limitada de erros, rejeições não tratadas e perda de conexão no cliente GM.
+- Relatório JSON exportável com SHA-256 e histórico recente sanitizado.
+- Endpoints de consulta, execução completa, eventos do cliente e exportação.
+
+### Segurança
+
+- Campos com aparência de chave, autorização, cookie, token, senha, passphrase ou credencial são removidos em qualquer profundidade.
+- Stacks completas, conteúdo de documentos e caminhos de arquivos não são exportados.
+- Telemetria mantida somente em memória, limitada por `DIAGNOSTIC_MAX_EVENTS`.
+
+### Alterado
+
+- `SessionDirector` passa a expor operações, falhas, filas pendentes e contagem de eventos duplicados bloqueados.
+- Marco 13 foi adiado por decisão de roadmap; o Marco 14 passa a ser a alpha.49.
+
+
 ## [0.1.0-alpha.48] - 2026-08-03
 
 ### Adicionado

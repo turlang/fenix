@@ -1,8 +1,8 @@
 {
   "id": "mestre-orc",
   "title": "Mestre Orc",
-  "description": "Narrações cinematográficas, backups seguros, automações aprovadas, tutores, mapas, geradores, voz neural, memória, combate e IA resiliente.",
-  "version": "0.1.0-alpha.48",
+  "description": "Narrações cinematográficas, Central de Diagnóstico, backups seguros, automações aprovadas, tutores, mapas, voz neural, memória, combate e IA resiliente.",
+  "version": "0.1.0-alpha.49",
   "compatibility": {
     "minimum": "13",
     "verified": "13"

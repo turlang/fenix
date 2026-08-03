@@ -86,6 +86,7 @@ export class SessionDirector {
     this.logger = logger;
     this.state = SessionState.IDLE;
     this.session = null;
+    this.diagnostics = { duplicateEventsBlocked: 0, operations: 0, failures: 0, lastOperationAt: null, lastError: null };
   }
 
   async withAdventureContext(context, query, { limit = 4 } = {}) {
@@ -145,7 +146,12 @@ export class SessionDirector {
         counts: memory.counts,
         updatedAt: memory.updatedAt
       } : null,
-      adventureLibrary: this.session?.adventureSummary ?? null
+      adventureLibrary: this.session?.adventureSummary ?? null,
+      diagnostics: {
+        ...this.diagnostics,
+        pendingIdempotencyOperations: this.session?.idempotency ? Object.values(this.session.idempotency).reduce((total, bucket) => total + (bucket?.pending?.size ?? 0), 0) : 0,
+        cachedIdempotentResults: this.session?.idempotency ? Object.values(this.session.idempotency).reduce((total, bucket) => total + (bucket?.results?.size ?? 0), 0) : 0
+      }
     };
   }
 
@@ -153,15 +159,27 @@ export class SessionDirector {
     const key = String(eventKey ?? '').trim();
     const bucket = this.session?.idempotency?.[bucketName];
     if (!key || !bucket) return { ...(await operation()), duplicate: false };
-    if (bucket.results.has(key)) return { ...bucket.results.get(key), duplicate: true };
-    if (bucket.pending.has(key)) return { ...(await bucket.pending.get(key)), duplicate: true };
+    if (bucket.results.has(key)) {
+      this.diagnostics.duplicateEventsBlocked += 1;
+      return { ...bucket.results.get(key), duplicate: true };
+    }
+    if (bucket.pending.has(key)) {
+      this.diagnostics.duplicateEventsBlocked += 1;
+      return { ...(await bucket.pending.get(key)), duplicate: true };
+    }
 
+    this.diagnostics.operations += 1;
+    this.diagnostics.lastOperationAt = new Date().toISOString();
     const pending = Promise.resolve().then(operation);
     bucket.pending.set(key, pending);
     try {
       const result = await pending;
       bucket.results.set(key, result);
       return { ...result, duplicate: false };
+    } catch (error) {
+      this.diagnostics.failures += 1;
+      this.diagnostics.lastError = { code: error?.code ?? 'SESSION_OPERATION_FAILED', message: cleanText(error?.message, 500), at: new Date().toISOString() };
+      throw error;
     } finally {
       bucket.pending.delete(key);
     }

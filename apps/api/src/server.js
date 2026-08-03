@@ -13,6 +13,7 @@ import { createMapServiceFromEnv, MapStatuses, MapStyles } from '../../../packag
 import { createTutorServiceFromEnv, TutorModes } from '../../../packages/tutor-service/src/index.js';
 import { createAutomationServiceFromEnv, AutomationActionTypes, AutomationStatuses } from '../../../packages/automation-service/src/index.js';
 import { createBackupServiceFromEnv, BackupModes } from '../../../packages/backup-service/src/index.js';
+import { createDiagnosticService } from '../../../packages/diagnostic-service/src/index.js';
 import { createConfig, isOriginAllowed, loadEnvFile } from '../../../packages/config/src/index.js';
 
 
@@ -37,8 +38,23 @@ const backupService = createBackupServiceFromEnv({
   services: { campaignMemory, adventureLibrary, generatorService, mapService, voiceProfileService, tutorService, automationService, narrationMemory }
 });
 const runtime = createSessionRuntime({ narrator, narrationMemory, audioNarrationService, campaignMemory, adventureLibrary, generatorService, mapService, tutorService, automationService, logger: app.log });
+const diagnosticService = createDiagnosticService({
+  engineVersion: packageMetadata.version, runtime, narrator, neuralVoiceService, audioNarrationService, logger: app.log,
+  maxEvents: Number(process.env.DIAGNOSTIC_MAX_EVENTS) || 300,
+  storagePaths: {
+    narration: process.env.MESTRE_ORC_NARRATION_MEMORY_FILE || './data/narration-history.json',
+    campaignMemory: process.env.MESTRE_ORC_CAMPAIGN_MEMORY_FILE || './data/campaign-memory.json',
+    adventureLibrary: process.env.ADVENTURE_LIBRARY_FILE || './data/adventure-library.json',
+    generatedContent: process.env.GENERATOR_ARCHIVE_FILE || './data/generated-content.json',
+    maps: process.env.MAP_BLUEPRINT_FILE || './data/map-blueprints.json',
+    voiceProfiles: process.env.VOICE_PROFILE_FILE || './data/voice-profiles.json',
+    tutors: process.env.TUTOR_HISTORY_FILE || './data/tutor-history.json',
+    automations: process.env.AUTOMATION_PROPOSALS_FILE || './data/automation-proposals.json'
+  }
+});
 
 app.addHook('onRequest', async (request, reply) => {
+  request.mestreOrcStartedAt = process.hrtime.bigint();
   const origin = request.headers.origin;
   if (origin && isOriginAllowed(origin, config.allowedOrigins)) {
     reply.header('Access-Control-Allow-Origin', origin);
@@ -47,6 +63,19 @@ app.addHook('onRequest', async (request, reply) => {
   reply.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   reply.header('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
   if (request.method === 'OPTIONS') return reply.code(204).send();
+});
+
+app.addHook('onResponse', async (request, reply) => {
+  if (request.mestreOrcDiagnosticErrorRecorded) return;
+  const startedAt = request.mestreOrcStartedAt;
+  const latencyMs = startedAt ? Number(process.hrtime.bigint() - startedAt) / 1_000_000 : null;
+  diagnosticService.recordRequest({ method: request.method, route: request.routeOptions?.url || request.url, statusCode: reply.statusCode, latencyMs });
+});
+app.addHook('onError', async (request, _reply, error) => {
+  request.mestreOrcDiagnosticErrorRecorded = true;
+  const startedAt = request.mestreOrcStartedAt;
+  const latencyMs = startedAt ? Number(process.hrtime.bigint() - startedAt) / 1_000_000 : null;
+  diagnosticService.recordRequest({ method: request.method, route: request.routeOptions?.url || request.url, statusCode: error.statusCode || 500, latencyMs, error });
 });
 
 app.get('/health', { logLevel: 'silent' }, async () => ({
@@ -65,6 +94,7 @@ app.get('/health', { logLevel: 'silent' }, async () => ({
   tutors: { modes: TutorModes, history: 'persistent-file', automaticChanges: false },
   automations: { proposals: 'persistent-file', actionTypes: AutomationActionTypes, statuses: AutomationStatuses, approvalRequired: true, automaticExecution: false },
   backups: { storage: 'persistent-file', modes: BackupModes, integrity: 'sha256', encryption: 'optional-aes-256-gcm', automaticPreRestoreSnapshot: true },
+  diagnostics: { enabled: true, sanitizedLogs: true, clientChecks: true, maxEvents: Number(process.env.DIAGNOSTIC_MAX_EVENTS) || 300 },
   documentFormats: ['txt', 'md', 'html', 'docx', 'pdf'],
   audio: audioNarrationService.enabled ? audioNarrationService.mode : 'disabled',
   neuralVoice: neuralVoiceService.getStatus(),
@@ -1018,6 +1048,50 @@ app.delete('/v1/backups/:campaignId/:backupId', {
 }, async (request, reply) => {
   try { return await backupService.remove(request.params.campaignId, request.params.backupId, request.body ?? {}); }
   catch (error) { return reply.code(Number(error.statusCode) || 400).send({ code: error.code || 'BACKUP_DELETE_FAILED', message: error.message }); }
+});
+
+
+const diagnosticCampaignParamsSchema = {
+  type: 'object', required: ['campaignId'], additionalProperties: false,
+  properties: { campaignId: { type: 'string', minLength: 1, maxLength: 200 } }
+};
+const diagnosticRequesterSchema = {
+  type: 'object', required: ['id', 'isGM'], additionalProperties: false,
+  properties: { id: { type: 'string', minLength: 1, maxLength: 200 }, name: { type: 'string', maxLength: 300 }, isGM: { type: 'boolean' } }
+};
+const diagnosticClientSchema = { type: 'object', additionalProperties: true };
+
+app.get('/v1/diagnostics/:campaignId', {
+  schema: {
+    params: diagnosticCampaignParamsSchema,
+    querystring: { type: 'object', required: ['requesterId'], additionalProperties: false, properties: { requesterId: { type: 'string', minLength: 1, maxLength: 200 }, requesterName: { type: 'string', maxLength: 300 }, isGM: { type: 'string', enum: ['true', 'false'] } } }
+  }
+}, async (request, reply) => {
+  try { return await diagnosticService.snapshot(request.params.campaignId, { requester: { id: request.query.requesterId, name: request.query.requesterName, isGM: request.query.isGM === 'true' } }); }
+  catch (error) { return reply.code(Number(error.statusCode) || 400).send({ code: error.code || 'DIAGNOSTIC_READ_FAILED', message: error.message }); }
+});
+
+app.post('/v1/diagnostics/:campaignId/run', {
+  schema: { params: diagnosticCampaignParamsSchema, body: { type: 'object', required: ['requester'], additionalProperties: false, properties: { requester: diagnosticRequesterSchema, client: diagnosticClientSchema } } }
+}, async (request, reply) => {
+  try { return await diagnosticService.run(request.params.campaignId, request.body ?? {}); }
+  catch (error) { return reply.code(Number(error.statusCode) || 400).send({ code: error.code || 'DIAGNOSTIC_RUN_FAILED', message: error.message }); }
+});
+
+app.post('/v1/diagnostics/:campaignId/events', {
+  schema: { params: diagnosticCampaignParamsSchema, body: { type: 'object', required: ['requester', 'eventId', 'category', 'message'], additionalProperties: false, properties: { requester: diagnosticRequesterSchema, eventId: { type: 'string', minLength: 1, maxLength: 200 }, category: { type: 'string', minLength: 1, maxLength: 120 }, message: { type: 'string', minLength: 1, maxLength: 2000 }, level: { type: 'string', enum: ['PASS', 'WARN', 'FAIL', 'INFO'] }, context: diagnosticClientSchema } } }
+}, async (request, reply) => {
+  try {
+    if (!request.body?.requester?.isGM) return reply.code(403).send({ code: 'DIAGNOSTIC_GM_REQUIRED', message: 'Somente o mestre pode registrar eventos de diagnóstico.' });
+    return diagnosticService.recordClientEvent(request.params.campaignId, request.body ?? {});
+  } catch (error) { return reply.code(Number(error.statusCode) || 400).send({ code: error.code || 'DIAGNOSTIC_EVENT_FAILED', message: error.message }); }
+});
+
+app.post('/v1/diagnostics/:campaignId/export', {
+  schema: { params: diagnosticCampaignParamsSchema, body: { type: 'object', required: ['requester'], additionalProperties: false, properties: { requester: diagnosticRequesterSchema, client: diagnosticClientSchema } } }
+}, async (request, reply) => {
+  try { return await diagnosticService.exportReport(request.params.campaignId, request.body ?? {}); }
+  catch (error) { return reply.code(Number(error.statusCode) || 400).send({ code: error.code || 'DIAGNOSTIC_EXPORT_FAILED', message: error.message }); }
 });
 
 app.get('/v1/voice/providers', async () => neuralVoiceService.getStatus());

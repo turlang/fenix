@@ -65,6 +65,8 @@ test('Engine gera uma única narração para chamadas simultâneas da mesma sala
   assert.equal(counters.published, 2); // abertura + uma sala
   assert.deepEqual([first.duplicate, second.duplicate].sort(), [false, true]);
   assert.equal(first.opening, second.opening);
+  assert.equal(director.getStatus().diagnostics.duplicateEventsBlocked, 1);
+  assert.equal(director.getStatus().diagnostics.pendingIdempotencyOperations, 0);
 });
 
 test('Engine narra a mesma sala separadamente para tokens diferentes', async () => {
@@ -101,6 +103,8 @@ test('Engine registra uma mensagem apenas uma vez por eventId', async () => {
   assert.equal(result.resolvedRound, 1);
   assert.equal(counters.action, 1);
   assert.equal(counters.published, 2);
+  assert.equal(director.getStatus().diagnostics.operations >= 2, true);
+  assert.equal(director.getStatus().diagnostics.duplicateEventsBlocked, 1);
 });
 
 test('Engine normaliza a percepção individual antes de narrar a sala', async () => {

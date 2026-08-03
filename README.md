@@ -1,8 +1,8 @@
 # Mestre Orc Engine
 
-Versão `0.1.0-alpha.48` — Node.js 20–24 e Foundry VTT 13.
+Versão `0.1.0-alpha.49` — Node.js 20–24 e Foundry VTT 13.
 
-O fluxo atual localiza a Scene ativa, procura o Journal correspondente no diretório do Foundry e extrai exclusivamente uma caixa read-aloud reconhecida. São aceitos os formatos antigo e atual do Plutonium/5eTools, `blockquote` HTML e citação Markdown; blocos secretos ou exclusivos do GM são ignorados. A âncora canônica é interpretada pelo primeiro provedor de IA saudável da ordem configurada, validada e publicada no chat com áudio. Groq, OpenAI, Anthropic e endpoints OpenAI-compatible podem operar com fallback automático. A saída pode usar o TTS do navegador ou voz neural externa com perfis persistentes para narrador e NPCs. O mestre também pode gerar e arquivar aventuras, NPCs e dungeons originais com bloqueio de repetição, planejar mapas vetoriais e convertê-los em Scenes editáveis do Foundry. A alpha.48 acrescenta backups isolados por campanha, exportação criptografada opcional, inspeção de integridade, restauração por mesclagem ou substituição e snapshot automático pré-restauração.
+O fluxo atual localiza a Scene ativa, procura o Journal correspondente no diretório do Foundry e extrai exclusivamente uma caixa read-aloud reconhecida. São aceitos os formatos antigo e atual do Plutonium/5eTools, `blockquote` HTML e citação Markdown; blocos secretos ou exclusivos do GM são ignorados. A âncora canônica é interpretada pelo primeiro provedor de IA saudável da ordem configurada, validada e publicada no chat com áudio. Groq, OpenAI, Anthropic e endpoints OpenAI-compatible podem operar com fallback automático. A saída pode usar o TTS do navegador ou voz neural externa com perfis persistentes para narrador e NPCs. O mestre também pode gerar e arquivar aventuras, NPCs e dungeons originais com bloqueio de repetição, planejar mapas vetoriais e convertê-los em Scenes editáveis do Foundry. A alpha.49 acrescenta uma Central de Diagnóstico para Engine e Foundry, testes de sessão, rede, microfone, IA, TTS e armazenamento, telemetria limitada e exportação de relatórios sanitizados. Os backups seguros da alpha.48 permanecem integrados.
 
 ## Engine
 
@@ -46,6 +46,7 @@ TUTOR_HISTORY_FILE=./data/tutor-history.json
 AUTOMATION_PROPOSALS_FILE=./data/automation-proposals.json
 BACKUP_DIRECTORY=./data/backups
 BACKUP_RETENTION_PER_CAMPAIGN=20
+DIAGNOSTIC_MAX_EVENTS=300
 PDFTOTEXT_COMMAND=pdftotext
 MESTRE_ORC_AUDIO_ENABLED=true
 MESTRE_ORC_AUDIO_MODE=browser-tts
@@ -63,7 +64,7 @@ ELEVENLABS_TTS_VOICE_ID=
 COMPATIBLE_TTS_BASE_URL=
 ```
 
-Abra `http://localhost:3001/health`. Os campos esperados incluem `"ai":"configured"`, `"aiProviders"`, `"audio"`, `"neuralVoice"`, `"voiceProfiles":"persistent-file"`, `"campaignMemory":"persistent-file"`, `"adventureLibrary":"persistent-file"`, `"generatedContent":"persistent-file"` , `"mapBlueprints":"persistent-file"`, `"tutors"` com modos `SHEET` e `GM` e `"automations"` com aprovação obrigatória e `"backups"` com integridade SHA-256, criptografia opcional e snapshot pré-restauração.
+Abra `http://localhost:3001/health`. Os campos esperados incluem `"ai":"configured"`, `"aiProviders"`, `"audio"`, `"neuralVoice"`, `"voiceProfiles":"persistent-file"`, `"campaignMemory":"persistent-file"`, `"adventureLibrary":"persistent-file"`, `"generatedContent":"persistent-file"` , `"mapBlueprints":"persistent-file"`, `"tutors"` com modos `SHEET` e `GM` e `"automations"` com aprovação obrigatória e `"backups"` com integridade SHA-256, além de `"diagnostics"` habilitado com logs sanitizados e verificações do cliente.
 
 ## Comandos
 
@@ -77,6 +78,31 @@ Abra `http://localhost:3001/health`. Os campos esperados incluem `"ai":"configur
 
 
 
+
+
+## Central de Diagnóstico
+
+A alpha.49 adiciona o painel **Central de Diagnóstico**, exclusivo para usuários GM no chat e nos controles da cena. O botão **Executar diagnóstico completo** combina informações do Engine com uma coleta limitada do cliente Foundry:
+
+- disponibilidade e versão da API;
+- latência entre Foundry e Engine;
+- sessão, `worldId`, Scene, rodada e combate reconhecidos;
+- filas idempotentes, operações pendentes e eventos duplicados bloqueados;
+- estado dos provedores de IA e voz neural;
+- roteamento de áudio, suporte a TTS local e reconhecimento de voz;
+- permissão do microfone, contexto HTTPS/localhost e versão do Foundry;
+- leitura e gravação dos arquivos persistentes;
+- último erro sanitizado e eventos recentes limitados;
+- uso de memória e tempo de atividade do Engine.
+
+Endpoints:
+
+- `GET /v1/diagnostics/:campaignId`
+- `POST /v1/diagnostics/:campaignId/run`
+- `POST /v1/diagnostics/:campaignId/events`
+- `POST /v1/diagnostics/:campaignId/export`
+
+O relatório exportado é JSON, inclui SHA-256 e remove campos com aparência de chave, token, cookie, senha ou credencial. A telemetria permanece em memória e é limitada por `DIAGNOSTIC_MAX_EVENTS` (padrão `300`).
 
 ## Backup, exportação e restauração segura
 

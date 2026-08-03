@@ -81,3 +81,13 @@ Enquanto o projeto estiver em fase alfa, somente a versão mais recente recebe c
 - A inspeção não grava dados. A restauração exige um token temporário, vinculado ao GM e à campanha, e de uso único.
 - Restaurações criam snapshot automático e usam rollback transacional quando uma fonte falha.
 - `data/backups/` deve permanecer fora do Git, de imagens públicas e de entregas compartilhadas.
+
+
+## Central de Diagnóstico
+
+- A Central é exclusiva para GM e não substitui autenticação de rede. Não exponha a API diretamente à internet.
+- Relatórios removem campos com aparência de chave, token, cookie, senha, passphrase, autorização ou credencial.
+- O hostname do servidor é representado apenas por um hash curto; caminhos completos de arquivos e conteúdo de campanha não são exportados.
+- Eventos do cliente enviam somente categoria, mensagem limitada e contexto mínimo. Stacks completas não são coletadas.
+- A telemetria fica em memória, possui retenção limitada e desaparece ao reiniciar o Engine.
+- Revise o JSON antes de compartilhá-lo, pois nomes de campanha, Scene, sistema e usuário GM podem aparecer no relatório.

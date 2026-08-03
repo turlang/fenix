@@ -141,5 +141,33 @@
 - [x] painel no chat e nos controles da cena;
 - [x] bloqueio de scripts e caminhos arbitrários da ficha.
 
+## Marco 12 — Backup e restauração segura ✅ — alpha.48
+- [x] backup isolado por campanha e exportação `.mobackup`;
+- [x] Gzip, SHA-256 e criptografia AES-256-GCM opcional;
+- [x] inspeção antes da restauração;
+- [x] modos `MERGE` e `REPLACE`;
+- [x] snapshot automático e rollback transacional;
+- [x] painel exclusivo para GM.
+
+## Marco 13 — Estabilização real no Foundry ⏸ adiado
+- [ ] validação com múltiplos clientes em Foundry VTT 13;
+- [ ] matriz manual de voz, salas, combate e permissões;
+- [ ] revisão visual dos painéis no ambiente real;
+- [ ] correções encontradas durante sessões completas.
+
+> Decisão de roadmap: este marco será retomado após os demais ciclos planejados.
+
+## Marco 14 — Central de Diagnóstico ✅ — alpha.49
+- [x] diagnóstico combinado de Engine e cliente Foundry;
+- [x] estado da API, sessão, campanha, Scene, rodada e combate;
+- [x] latência, filas pendentes e eventos duplicados bloqueados;
+- [x] saúde de IA, voz neural e roteamento de áudio;
+- [x] suporte e permissão de microfone;
+- [x] verificação de leitura e gravação dos armazenamentos;
+- [x] telemetria limitada de requisições e erros do cliente GM;
+- [x] sanitização de chaves, tokens, cookies e credenciais;
+- [x] exportação de relatório JSON com SHA-256;
+- [x] painel no chat e nos controles da cena.
+
 ## Próximo marco liberado
-- Marco 12 — backup, exportação e restauração segura da campanha.
+- Marco 15 — revisão visual e Central Mestre Orc unificada.
