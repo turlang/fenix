@@ -76,7 +76,18 @@
 - [x] endpoints de consulta e rearme manual;
 - [x] preservação dos eventos quando todos os provedores falham.
 
+## Marco 7 — Voz neural e perfis avançados de NPC ✅ — alpha.43
+- [x] OpenAI TTS, ElevenLabs e endpoint OpenAI-compatible;
+- [x] perfis persistentes e isolados por campanha;
+- [x] perfil do narrador e perfil individual por NPC;
+- [x] idioma, modelo, voice ID, velocidade e direção vocal;
+- [x] estabilidade, similaridade, expressividade e speaker boost quando suportados;
+- [x] seleção automática da voz do NPC no turno de combate;
+- [x] cache e deduplicação de sínteses simultâneas;
+- [x] fallback opcional para SpeechSynthesis;
+- [x] painel do mestre no Foundry e prévia de voz;
+- [x] credenciais restritas à API e aviso de voz gerada por IA.
+
 ## Próximos marcos liberados
-- Marco 7 — voz neural externa e perfis avançados de NPC;
 - Marco 8 — geradores persistentes de aventuras, NPCs e dungeons;
 - Marco 9 — mapas automáticos e integração com cenas do Foundry.

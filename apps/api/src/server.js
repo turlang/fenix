@@ -4,6 +4,8 @@ import { createSessionRuntime } from '../../../packages/session-runtime/src/inde
 import { createNarrativeProviderFromEnv } from '../../../packages/ai-provider/src/index.js';
 import { createNarrationMemoryFromEnv } from '../../../packages/narration-memory/src/index.js';
 import { createAudioNarrationServiceFromEnv } from '../../../packages/audio-narration-service/src/index.js';
+import { createNeuralVoiceServiceFromEnv } from '../../../packages/neural-voice-service/src/index.js';
+import { createVoiceProfileServiceFromEnv } from '../../../packages/voice-profile-service/src/index.js';
 import { createCampaignMemoryFromEnv } from '../../../packages/memory/src/index.js';
 import { createAdventureLibraryFromEnv, AdventureImportModes } from '../../../packages/adventure-library/src/index.js';
 import { createConfig, isOriginAllowed, loadEnvFile } from '../../../packages/config/src/index.js';
@@ -17,6 +19,8 @@ const app = Fastify({ logger: true, bodyLimit: config.bodyLimit, trustProxy: con
 const narrator = createNarrativeProviderFromEnv({ logger: app.log });
 const narrationMemory = createNarrationMemoryFromEnv({ logger: app.log });
 const audioNarrationService = createAudioNarrationServiceFromEnv({ logger: app.log });
+const neuralVoiceService = createNeuralVoiceServiceFromEnv({ logger: app.log });
+const voiceProfileService = createVoiceProfileServiceFromEnv({ logger: app.log });
 const campaignMemory = createCampaignMemoryFromEnv({ logger: app.log });
 const adventureLibrary = createAdventureLibraryFromEnv({ logger: app.log });
 const runtime = createSessionRuntime({ narrator, narrationMemory, audioNarrationService, campaignMemory, adventureLibrary, logger: app.log });
@@ -43,6 +47,8 @@ app.get('/health', { logLevel: 'silent' }, async () => ({
   adventureLibrary: 'persistent-file',
   documentFormats: ['txt', 'md', 'html', 'docx', 'pdf'],
   audio: audioNarrationService.enabled ? audioNarrationService.mode : 'disabled',
+  neuralVoice: neuralVoiceService.getStatus(),
+  voiceProfiles: 'persistent-file',
   runtime: runtime.getStatus()
 }));
 
@@ -420,6 +426,122 @@ app.delete('/v1/adventure-library/:campaignId/:documentId', {
   catch (error) { return reply.code(400).send({ code: 'ADVENTURE_DELETE_FAILED', message: error.message }); }
 });
 
+
+
+app.get('/v1/voice/providers', async () => neuralVoiceService.getStatus());
+
+app.get('/v1/voice-profiles/:campaignId', {
+  schema: {
+    params: {
+      type: 'object', required: ['campaignId'], additionalProperties: false,
+      properties: { campaignId: { type: 'string', minLength: 1, maxLength: 200 } }
+    }
+  }
+}, async (request, reply) => {
+  try { return await voiceProfileService.list(request.params.campaignId); }
+  catch (error) { return reply.code(400).send({ code: 'VOICE_PROFILE_READ_FAILED', message: error.message }); }
+});
+
+app.post('/v1/voice-profiles/:campaignId', {
+  schema: {
+    params: {
+      type: 'object', required: ['campaignId'], additionalProperties: false,
+      properties: { campaignId: { type: 'string', minLength: 1, maxLength: 200 } }
+    },
+    body: {
+      type: 'object', additionalProperties: false,
+      properties: {
+        id: { type: 'string', maxLength: 200 },
+        profileId: { type: 'string', maxLength: 200 },
+        speakerType: { type: 'string', enum: ['NARRATOR', 'NPC'] },
+        npcId: { anyOf: [{ type: 'string', maxLength: 200 }, { type: 'null' }] },
+        npcName: { anyOf: [{ type: 'string', maxLength: 300 }, { type: 'null' }] },
+        provider: { type: 'string', enum: ['browser', 'openai', 'elevenlabs', 'compatible'] },
+        voiceId: { anyOf: [{ type: 'string', maxLength: 300 }, { type: 'null' }] },
+        model: { anyOf: [{ type: 'string', maxLength: 300 }, { type: 'null' }] },
+        language: { type: 'string', maxLength: 30 },
+        instructions: { anyOf: [{ type: 'string', maxLength: 2000 }, { type: 'null' }] },
+        speed: { type: 'number', minimum: 0.25, maximum: 4 },
+        stability: { type: 'number', minimum: 0, maximum: 1 },
+        similarityBoost: { type: 'number', minimum: 0, maximum: 1 },
+        style: { type: 'number', minimum: 0, maximum: 1 },
+        useSpeakerBoost: { type: 'boolean' },
+        enabled: { type: 'boolean' },
+        fallbackToBrowser: { type: 'boolean' }
+      }
+    }
+  }
+}, async (request, reply) => {
+  try { return await voiceProfileService.upsert(request.params.campaignId, request.body ?? {}); }
+  catch (error) { return reply.code(400).send({ code: 'VOICE_PROFILE_WRITE_FAILED', message: error.message }); }
+});
+
+app.delete('/v1/voice-profiles/:campaignId/:profileId', {
+  schema: {
+    params: {
+      type: 'object', required: ['campaignId', 'profileId'], additionalProperties: false,
+      properties: {
+        campaignId: { type: 'string', minLength: 1, maxLength: 200 },
+        profileId: { type: 'string', minLength: 1, maxLength: 200 }
+      }
+    }
+  }
+}, async (request, reply) => {
+  try { return await voiceProfileService.remove(request.params.campaignId, request.params.profileId); }
+  catch (error) { return reply.code(400).send({ code: 'VOICE_PROFILE_DELETE_FAILED', message: error.message }); }
+});
+
+app.post('/v1/audio/synthesize', {
+  bodyLimit: 18 * 1024 * 1024,
+  schema: {
+    body: {
+      type: 'object', required: ['text', 'campaignId'], additionalProperties: false,
+      properties: {
+        text: { type: 'string', minLength: 1, maxLength: 4096 },
+        campaignId: { type: 'string', minLength: 1, maxLength: 200 },
+        profileId: { anyOf: [{ type: 'string', maxLength: 200 }, { type: 'null' }] },
+        speakerType: { type: 'string', enum: ['NARRATOR', 'NPC'] },
+        npcId: { anyOf: [{ type: 'string', maxLength: 200 }, { type: 'null' }] },
+        npcName: { anyOf: [{ type: 'string', maxLength: 300 }, { type: 'null' }] },
+        directiveId: { anyOf: [{ type: 'string', maxLength: 200 }, { type: 'null' }] }
+      }
+    }
+  }
+}, async (request, reply) => {
+  const input = request.body ?? {};
+  let profile = null;
+  try {
+    profile = await voiceProfileService.resolve(input.campaignId, input);
+    if (profile?.provider === 'browser') {
+      return reply.code(409).send({
+        code: 'BROWSER_VOICE_PROFILE',
+        message: 'Este perfil usa a voz local do navegador.',
+        fallbackToBrowser: true
+      });
+    }
+    const result = await neuralVoiceService.synthesize({ text: input.text, profile });
+    return {
+      ...result,
+      directiveId: input.directiveId ?? null,
+      profile: profile ? {
+        id: profile.id,
+        speakerType: profile.speakerType,
+        npcId: profile.npcId,
+        npcName: profile.npcName,
+        provider: profile.provider,
+        fallbackToBrowser: profile.fallbackToBrowser
+      } : null
+    };
+  } catch (error) {
+    const status = Number(error.statusCode) || 502;
+    return reply.code(status).send({
+      code: error.code || 'VOICE_SYNTHESIS_FAILED',
+      message: error.message,
+      fallbackToBrowser: profile?.fallbackToBrowser !== false,
+      failures: Array.isArray(error.failures) ? error.failures : undefined
+    });
+  }
+});
 
 app.setErrorHandler((error, request, reply) => {
   const status = Number(error.statusCode) || 500;

@@ -40,9 +40,14 @@ import {
   injectAiProviderButton,
   openAiProviderPanel
 } from './ai-provider-panel.js';
+import {
+  VOICE_PROFILE_BUTTON_ID,
+  injectVoiceProfileButton,
+  openVoiceProfilePanel
+} from './voice-profile-panel.js';
 
 const MODULE_ID = 'mestre-orc';
-const MODULE_BUILD = '0.1.0-alpha.42';
+const MODULE_BUILD = '0.1.0-alpha.43';
 const BUTTON_ID = 'mestre-orc-start';
 const ROUND_BUTTON_ID = 'mestre-orc-resolve-round';
 const AUDIO_BUTTON_ID = 'mestre-orc-audio-toggle';
@@ -64,6 +69,8 @@ let lastAudioDirectiveId = null;
 let speechVoices = [];
 let activeUtterance = null;
 let activePauseTimer = null;
+let activeNeuralAudio = null;
+let activeNeuralObjectUrl = null;
 let activeNarrationRun = 0;
 let latestAudioDirective = null;
 let voiceInputController = null;
@@ -379,6 +386,15 @@ function stopNarrationAudio() {
     clearTimeout(activePauseTimer);
     activePauseTimer = null;
   }
+  if (activeNeuralAudio) {
+    activeNeuralAudio.pause?.();
+    activeNeuralAudio.src = '';
+    activeNeuralAudio = null;
+  }
+  if (activeNeuralObjectUrl) {
+    URL.revokeObjectURL?.(activeNeuralObjectUrl);
+    activeNeuralObjectUrl = null;
+  }
   if (supportsSpeechSynthesis()) window.speechSynthesis.cancel();
   activeUtterance = null;
 }
@@ -442,13 +458,94 @@ function speakCinematicSegments(segments, directive, { source = 'unknown' } = {}
   playNext(0);
 }
 
-function speakAudioDirective(directive, { force = false, source = 'unknown' } = {}) {
-  if (!directive || directive.mode !== 'browser-tts') return false;
-  if (!force && !audioSetting('audioEnabled', true)) return false;
+function speakBrowserDirectivePrepared(directive, { source = 'unknown' } = {}) {
   if (!supportsSpeechSynthesis()) {
     console.warn('[Mestre Orc][Audio] SpeechSynthesis não está disponível neste navegador.');
     return false;
   }
+  const segments = parseCinematicSpeechScript(directive.text, {
+    rate: Number(audioSetting('audioRate', directive.rate ?? 0.9)),
+    pitch: Number(audioSetting('audioPitch', directive.pitch ?? 0.85)),
+    volume: Number(audioSetting('audioVolume', directive.volume ?? 1))
+  });
+  if (!segments.some((segment) => segment.type === 'speech')) return false;
+  console.log('[Mestre Orc][Audio] roteiro expressivo preparado', {
+    id: lastAudioDirectiveId,
+    source,
+    mode: 'browser-tts',
+    segments: segments.length,
+    pauses: segments.filter((segment) => segment.type === 'pause').length
+  });
+  speakCinematicSegments(segments, directive, { source });
+  return true;
+}
+
+function base64AudioBlob(audioBase64, mimeType = 'audio/mpeg') {
+  const binary = atob(String(audioBase64 ?? ''));
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  return new Blob([bytes], { type: mimeType });
+}
+
+async function speakNeuralDirectivePrepared(directive, { source = 'unknown' } = {}) {
+  const runId = activeNarrationRun;
+  try {
+    const result = await request(directive.synthesisPath || '/v1/audio/synthesize', {
+      method: 'POST',
+      body: JSON.stringify({
+        text: normalizeSpeechText(directive.text),
+        campaignId: directive.campaignId || game.world?.id || 'default',
+        profileId: directive.profileId || null,
+        speakerType: directive.speakerType || 'NARRATOR',
+        npcId: directive.npcId || null,
+        npcName: directive.npcName || null,
+        directiveId: directive.id || null
+      })
+    });
+    if (runId !== activeNarrationRun) return false;
+    if (!result?.audioBase64) throw new Error('O servidor não retornou áudio neural.');
+    const blob = base64AudioBlob(result.audioBase64, result.mimeType);
+    activeNeuralObjectUrl = URL.createObjectURL(blob);
+    const audio = new Audio(activeNeuralObjectUrl);
+    activeNeuralAudio = audio;
+    audio.volume = Math.min(1, Math.max(0, Number(audioSetting('audioVolume', directive.volume ?? 1)) || 1));
+    audio.onended = () => {
+      if (activeNeuralAudio === audio) activeNeuralAudio = null;
+      if (activeNeuralObjectUrl) URL.revokeObjectURL(activeNeuralObjectUrl);
+      activeNeuralObjectUrl = null;
+    };
+    audio.onerror = () => {
+      if (activeNeuralAudio === audio) activeNeuralAudio = null;
+      if (activeNeuralObjectUrl) URL.revokeObjectURL(activeNeuralObjectUrl);
+      activeNeuralObjectUrl = null;
+    };
+    console.log('[Mestre Orc][Audio] voz neural preparada', {
+      id: directive.id ?? null,
+      source,
+      provider: result.provider,
+      model: result.model,
+      profileId: result.profile?.id ?? directive.profileId ?? null,
+      cached: Boolean(result.cached),
+      fallbackUsed: Boolean(result.fallbackUsed),
+      aiGenerated: true
+    });
+    await audio.play();
+    return true;
+  } catch (error) {
+    console.warn('[Mestre Orc][Audio] voz neural indisponível', { id: directive.id ?? null, source, message: error.message });
+    if (runId !== activeNarrationRun) return false;
+    if (directive.fallbackMode === 'browser-tts' && error.fallbackToBrowser !== false) {
+      ui.notifications?.warn?.('Mestre Orc: voz neural indisponível; usando a voz local do navegador.');
+      return speakBrowserDirectivePrepared({ ...directive, mode: 'browser-tts' }, { source: `${source}:fallback` });
+    }
+    ui.notifications?.warn?.('Mestre Orc: não foi possível reproduzir a voz neural e o fallback está desativado.');
+    return false;
+  }
+}
+
+function speakAudioDirective(directive, { force = false, source = 'unknown' } = {}) {
+  if (!directive || !['browser-tts', 'neural-auto', 'neural-only'].includes(directive.mode)) return false;
+  if (!force && !audioSetting('audioEnabled', true)) return false;
 
   const id = String(directive.id ?? '');
   if (id && id === lastAudioDirectiveId) return false;
@@ -461,20 +558,8 @@ function speakAudioDirective(directive, { force = false, source = 'unknown' } = 
 
   lastAudioDirectiveId = id || crypto.randomUUID();
   stopNarrationAudio();
-  const segments = parseCinematicSpeechScript(directive.text, {
-    rate: Number(audioSetting('audioRate', directive.rate ?? 0.9)),
-    pitch: Number(audioSetting('audioPitch', directive.pitch ?? 0.85)),
-    volume: Number(audioSetting('audioVolume', directive.volume ?? 1))
-  });
-  if (!segments.some((segment) => segment.type === 'speech')) return false;
-
-  console.log('[Mestre Orc][Audio] roteiro expressivo preparado', {
-    id: lastAudioDirectiveId,
-    source,
-    segments: segments.length,
-    pauses: segments.filter((segment) => segment.type === 'pause').length
-  });
-  speakCinematicSegments(segments, directive, { source });
+  if (directive.mode === 'browser-tts') return speakBrowserDirectivePrepared(directive, { source });
+  void speakNeuralDirectivePrepared(directive, { source });
   return true;
 }
 
@@ -486,6 +571,8 @@ function buildAudioDirective(audio, fallbackText, sceneId = null, publicationKey
   return {
     id: source.id ?? crypto.randomUUID(),
     mode: source.mode ?? 'browser-tts',
+    fallbackMode: source.fallbackMode ?? ((source.mode ?? 'browser-tts') === 'neural-only' ? null : 'browser-tts'),
+    synthesisPath: source.synthesisPath ?? '/v1/audio/synthesize',
     text: source.text ?? fallbackText ?? '',
     language: source.language ?? 'pt-BR',
     rate: source.rate ?? 0.9,
@@ -493,6 +580,13 @@ function buildAudioDirective(audio, fallbackText, sceneId = null, publicationKey
     volume: source.volume ?? 1,
     sceneId: source.sceneId ?? sceneId ?? null,
     sessionId: source.sessionId ?? null,
+    campaignId: source.campaignId ?? game.world?.id ?? null,
+    profileId: source.profileId ?? null,
+    speakerType: source.speakerType ?? 'NARRATOR',
+    npcId: source.npcId ?? null,
+    npcName: source.npcName ?? null,
+    aiGenerated: Boolean(source.aiGenerated ?? ((source.mode ?? 'browser-tts') !== 'browser-tts')),
+    disclosure: source.disclosure ?? null,
     publicationKey: source.publicationKey ?? publicationKey ?? null,
     recipientUserIds: recipients
   };
@@ -2013,7 +2107,14 @@ async function request(path, options = {}) {
     headers: { 'Content-Type': 'application/json', ...(options.headers ?? {}) }
   });
   const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(payload.message || `Engine respondeu HTTP ${response.status}.`);
+  if (!response.ok) {
+    const error = new Error(payload.message || `Engine respondeu HTTP ${response.status}.`);
+    error.code = payload.code || `HTTP_${response.status}`;
+    error.status = response.status;
+    error.fallbackToBrowser = payload.fallbackToBrowser;
+    error.failures = payload.failures;
+    throw error;
+  }
   return payload;
 }
 
@@ -2721,7 +2822,7 @@ function installDelegatedStartHandler() {
 
   document.addEventListener('click', (event) => {
     const target = event.target instanceof Element
-      ? event.target.closest('[data-mestre-orc-action="start-session"], [data-mestre-orc-action="resolve-round"], [data-mestre-orc-action="resolve-combat-turn"], [data-mestre-orc-action="summarize-combat-round"], [data-mestre-orc-action="open-memory"], [data-mestre-orc-action="open-adventure-library"], [data-mestre-orc-action="open-ai-providers"], #mestre-orc-start, #mestre-orc-resolve-round, #mestre-orc-combat-turn, #mestre-orc-combat-round, #mestre-orc-memory, #mestre-orc-adventure-library, #mestre-orc-ai-providers')
+      ? event.target.closest('[data-mestre-orc-action="start-session"], [data-mestre-orc-action="resolve-round"], [data-mestre-orc-action="resolve-combat-turn"], [data-mestre-orc-action="summarize-combat-round"], [data-mestre-orc-action="open-memory"], [data-mestre-orc-action="open-adventure-library"], [data-mestre-orc-action="open-ai-providers"], [data-mestre-orc-action="open-voice-profiles"], #mestre-orc-start, #mestre-orc-resolve-round, #mestre-orc-combat-turn, #mestre-orc-combat-round, #mestre-orc-memory, #mestre-orc-adventure-library, #mestre-orc-ai-providers, #mestre-orc-voice-profiles')
       : null;
     if (!target) return;
 
@@ -2734,6 +2835,7 @@ function installDelegatedStartHandler() {
     else if (target.dataset.mestreOrcAction === 'open-memory' || target.id === MEMORY_BUTTON_ID) void openCampaignMemoryPanel();
     else if (target.dataset.mestreOrcAction === 'open-adventure-library' || target.id === ADVENTURE_BUTTON_ID) void openAdventureLibraryPanel({ request });
     else if (target.dataset.mestreOrcAction === 'open-ai-providers' || target.id === AI_PROVIDER_BUTTON_ID) void openAiProviderPanel({ request });
+    else if (target.dataset.mestreOrcAction === 'open-voice-profiles' || target.id === VOICE_PROFILE_BUTTON_ID) void openVoiceProfilePanel({ request });
     else void startSession(target);
   }, true);
 }
@@ -2746,6 +2848,7 @@ function scheduleInjection(root) {
     injectMemoryButton(root);
     injectAdventureLibraryButton({ root, request, findChatContainer });
     injectAiProviderButton({ root, request, findChatContainer });
+    injectVoiceProfileButton({ root, request, findChatContainer });
     injectAudioToggleButton(root);
     injectVoiceInputButton(root);
     setTimeout(() => {
@@ -2755,6 +2858,7 @@ function scheduleInjection(root) {
       injectMemoryButton(document);
       injectAdventureLibraryButton({ root: document, request, findChatContainer });
       injectAiProviderButton({ root: document, request, findChatContainer });
+      injectVoiceProfileButton({ root: document, request, findChatContainer });
       injectAudioToggleButton(document);
       injectVoiceInputButton(document);
     }, 250);
@@ -2765,6 +2869,7 @@ function scheduleInjection(root) {
       injectMemoryButton(document);
       injectAdventureLibraryButton({ root: document, request, findChatContainer });
       injectAiProviderButton({ root: document, request, findChatContainer });
+      injectVoiceProfileButton({ root: document, request, findChatContainer });
       injectAudioToggleButton(document);
       injectVoiceInputButton(document);
     }, 1000);
@@ -2865,6 +2970,19 @@ Hooks.on('getSceneControlButtons', (controls) => {
       onChange: () => {
         console.log('[Mestre Orc] painel de provedores aberto pelos controles da cena');
         void openAiProviderPanel({ request });
+      }
+    };
+
+    tokenControls.tools.mestreOrcVoiceProfiles = {
+      name: 'mestreOrcVoiceProfiles',
+      title: 'Mestre Orc — Vozes do narrador e dos NPCs',
+      icon: 'fa-solid fa-microphone-lines',
+      order: Object.keys(tokenControls.tools).length,
+      button: true,
+      visible: true,
+      onChange: () => {
+        console.log('[Mestre Orc] perfis de voz abertos pelos controles da cena');
+        void openVoiceProfilePanel({ request });
       }
     };
 

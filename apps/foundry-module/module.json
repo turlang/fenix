@@ -1,8 +1,8 @@
 {
   "id": "mestre-orc",
   "title": "Mestre Orc",
-  "description": "Narrações cinematográficas, voz, memória, aventuras, combate e múltiplos provedores de IA com fallback automático.",
-  "version": "0.1.0-alpha.42",
+  "description": "Narrações cinematográficas, voz neural, perfis de NPC, memória, aventuras, combate e provedores de IA resilientes.",
+  "version": "0.1.0-alpha.43",
   "compatibility": {
     "minimum": "13",
     "verified": "13"

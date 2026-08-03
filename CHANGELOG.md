@@ -17,6 +17,33 @@ Este projeto segue o formato do [Keep a Changelog](https://keepachangelog.com/pt
 - Comando `npm run release:prepare` para gerar uma pasta de distribuição higienizada em `dist/`.
 - Comando `npm run check:offline` para validar estrutura e testes quando a auditoria remota do npm estiver indisponível.
 
+## [0.1.0-alpha.43] - 2026-08-02
+
+### Adicionado
+
+- `NeuralVoiceService` com suporte a OpenAI TTS, ElevenLabs e endpoints OpenAI-compatible.
+- `VoiceProfileService` persistente e isolado por `worldId`, com perfil do narrador e perfis individuais de NPC.
+- Configurações de idioma, modelo, voice ID, velocidade, direção vocal, estabilidade, similaridade, expressividade e speaker boost.
+- Endpoints de saúde, síntese e CRUD de perfis de voz.
+- Painel **Vozes dos NPCs** no chat e nos controles da cena, com edição e prévia.
+- Seleção automática do perfil de NPC ao narrar o turno de um combatente NPC.
+- Cache de áudio e deduplicação de requisições simultâneas para evitar sínteses pagas repetidas.
+
+### Alterado
+
+- As diretivas de áudio passam a aceitar `browser-tts`, `neural-auto` e `neural-only`.
+- O áudio neural é gerado pela API, transmitido sem credenciais e reproduzido como `Blob` no Foundry.
+- O fallback para voz local pode ser permitido ou bloqueado em cada perfil.
+- O `/health` passa a informar a configuração sanitizada da voz neural.
+
+### Segurança e confiabilidade
+
+- Chaves de OpenAI, ElevenLabs e endpoints compatíveis nunca são enviadas ao Foundry.
+- Respostas de erro são sanitizadas antes de chegar ao cliente.
+- O módulo não cria nem clona vozes; somente referencia vozes já disponíveis no provedor.
+- O painel informa que a voz neural é gerada por inteligência artificial.
+- Arquivos persistentes de perfis permanecem fora do Git e das entregas limpas.
+
 ## [0.1.0-alpha.42] - 2026-08-02
 
 ### Adicionado

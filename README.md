@@ -1,8 +1,8 @@
 # Mestre Orc Engine
 
-Versão `0.1.0-alpha.42` — Node.js 20–24 e Foundry VTT 13.
+Versão `0.1.0-alpha.43` — Node.js 20–24 e Foundry VTT 13.
 
-O fluxo atual localiza a Scene ativa, procura o Journal correspondente no diretório do Foundry e extrai exclusivamente uma caixa read-aloud reconhecida. São aceitos os formatos antigo e atual do Plutonium/5eTools, `blockquote` HTML e citação Markdown; blocos secretos ou exclusivos do GM são ignorados. A âncora canônica é interpretada pelo primeiro provedor de IA saudável da ordem configurada, validada e publicada no chat com áudio. Groq, OpenAI, Anthropic e endpoints OpenAI-compatible podem operar com fallback automático.
+O fluxo atual localiza a Scene ativa, procura o Journal correspondente no diretório do Foundry e extrai exclusivamente uma caixa read-aloud reconhecida. São aceitos os formatos antigo e atual do Plutonium/5eTools, `blockquote` HTML e citação Markdown; blocos secretos ou exclusivos do GM são ignorados. A âncora canônica é interpretada pelo primeiro provedor de IA saudável da ordem configurada, validada e publicada no chat com áudio. Groq, OpenAI, Anthropic e endpoints OpenAI-compatible podem operar com fallback automático. A saída pode usar o TTS do navegador ou voz neural externa com perfis persistentes para narrador e NPCs.
 
 ## Engine
 
@@ -44,9 +44,17 @@ MESTRE_ORC_AUDIO_LANGUAGE=pt-BR
 MESTRE_ORC_AUDIO_RATE=0.90
 MESTRE_ORC_AUDIO_PITCH=0.85
 MESTRE_ORC_AUDIO_VOLUME=1.00
+NEURAL_VOICE_ENABLED=true
+VOICE_PROVIDER_ORDER=elevenlabs,openai,compatible
+VOICE_PROFILE_FILE=./data/voice-profiles.json
+OPENAI_TTS_MODEL=gpt-4o-mini-tts
+OPENAI_TTS_VOICE=marin
+ELEVENLABS_API_KEY=
+ELEVENLABS_TTS_VOICE_ID=
+COMPATIBLE_TTS_BASE_URL=
 ```
 
-Abra `http://localhost:3001/health`. Os campos esperados incluem `"ai":"configured"`, `"aiProviders"`, `"audio":"browser-tts"`, `"campaignMemory":"persistent-file"` e `"adventureLibrary":"persistent-file"`.
+Abra `http://localhost:3001/health`. Os campos esperados incluem `"ai":"configured"`, `"aiProviders"`, `"audio"`, `"neuralVoice"`, `"voiceProfiles":"persistent-file"`, `"campaignMemory":"persistent-file"` e `"adventureLibrary":"persistent-file"`.
 
 ## Comandos
 
@@ -57,6 +65,40 @@ Abra `http://localhost:3001/health`. Os campos esperados incluem `"ai":"configur
 - `npm run check:offline`: executa validação e testes quando o endpoint de auditoria do registro npm estiver indisponível.
 - `npm run check`: executa estrutura, auditoria de segurança e testes antes de cada entrega.
 - `npm run release:prepare`: gera em `dist/` uma cópia limpa, sem `.git`, `.env`, dependências ou histórico local.
+
+
+## Voz neural e perfis avançados de NPC
+
+A alpha.43 adiciona uma camada de síntese neural no servidor sem remover o TTS local. `MESTRE_ORC_AUDIO_MODE` aceita:
+
+- `browser-tts`: mantém o `SpeechSynthesis` do navegador e não chama provedores externos;
+- `neural-auto`: tenta gerar o áudio no servidor e usa o TTS local quando o perfil autoriza fallback;
+- `neural-only`: exige áudio neural e não reproduz voz local quando a geração falha.
+
+São suportados `elevenlabs`, `openai` e `compatible`. A ordem de tentativa é definida por `VOICE_PROVIDER_ORDER`. O endpoint compatível usa o contrato `/audio/speech`, permitindo integrar um serviço local ou outro provedor que implemente o formato da OpenAI. As chaves permanecem somente na API e nunca são enviadas ao Foundry.
+
+O mestre abre **Perfis de voz** no chat ou nos controles da cena. Cada campanha, isolada pelo `worldId`, pode manter:
+
+- um perfil do narrador;
+- perfis individuais vinculados ao ID de cada NPC;
+- provedor, modelo, voice ID e idioma;
+- velocidade, estabilidade, similaridade, expressividade e speaker boost;
+- instruções de interpretação;
+- ativação do perfil e permissão de fallback para o navegador.
+
+Quando o Combat Tracker identifica um NPC ativo, a diretiva de áudio inclui automaticamente seu `npcId` e o servidor resolve o perfil correspondente. Narrações ambientais continuam usando o perfil `narrator`. Se nenhum perfil neural válido existir, o comportamento segue a política de fallback configurada.
+
+O áudio é armazenado apenas em cache temporário por uma chave derivada do texto e do perfil. Chamadas simultâneas iguais compartilham a mesma geração, reduzindo cobranças duplicadas. O cache não persiste amostras de voz, e o projeto não oferece clonagem, treinamento ou upload de voz. A interface identifica a reprodução neural como **voz gerada por inteligência artificial**.
+
+Endpoints:
+
+- `GET /v1/voice/providers`
+- `GET /v1/voice-profiles/:campaignId`
+- `POST /v1/voice-profiles/:campaignId`
+- `DELETE /v1/voice-profiles/:campaignId/:profileId`
+- `POST /v1/audio/synthesize`
+
+Configuração completa disponível em `.env.example`. Para usar ElevenLabs, informe a chave e uma voz padrão; para OpenAI, configure `OPENAI_API_KEY`; para um endpoint compatível, informe `COMPATIBLE_TTS_BASE_URL`.
 
 
 ## Múltiplos provedores de IA e fallback
@@ -155,7 +197,7 @@ Copie o conteúdo de `apps/foundry-module` para:
 FoundryVTT/Data/modules/mestre-orc/
 ```
 
-A pasta precisa conter diretamente `module.json`, `scripts/main.js`, `scripts/read-aloud.js`, `scripts/room-transition-state.js`, `scripts/chat-action-filter.js`, `scripts/audio-routing.js`, `scripts/token-vision.js`, `scripts/cinematic-speech.js`, `scripts/voice-input.js`, `scripts/combat-tracker.js`, `scripts/adventure-library-panel.js`, `scripts/ai-provider-panel.js` e `styles/mestre-orc.css`.
+A pasta precisa conter diretamente `module.json`, `scripts/main.js`, `scripts/read-aloud.js`, `scripts/room-transition-state.js`, `scripts/chat-action-filter.js`, `scripts/audio-routing.js`, `scripts/token-vision.js`, `scripts/cinematic-speech.js`, `scripts/voice-input.js`, `scripts/combat-tracker.js`, `scripts/adventure-library-panel.js`, `scripts/ai-provider-panel.js`, `scripts/voice-profile-panel.js` e `styles/mestre-orc.css`.
 
 O botão **Áudio ligado/desligado** aparece junto ao chat para cada usuário. Nas configurações do módulo é possível ajustar voz, velocidade, tom e volume. O mestre pode desativar a transmissão para os demais clientes.
 
@@ -185,9 +227,9 @@ O botão **Resolver rodada** mostra o número da rodada e a quantidade de person
 
 ### Talking Actors e vozes neurais
 
-O Talking Actors pode coexistir com o Mestre Orc, mas não é uma dependência obrigatória desta versão. O requisito de áudio privado por proprietário do token continua sendo controlado pelo socket do Mestre Orc e pelo TTS local. Isso evita que uma integração externa reproduza uma narração de sala para toda a mesa.
+O Talking Actors pode coexistir com o Mestre Orc, mas não é uma dependência obrigatória. O áudio privado por proprietário do token continua sendo controlado pelo socket e pelo roteamento do próprio Mestre Orc. A voz neural da alpha.43 é gerada pela API e reproduzida somente nos clientes destinatários; quando necessário, o módulo volta ao `SpeechSynthesis` local.
 
-O arquivo `scripts/cinematic-speech.js` já inclui conversão das marcações em português para tags compatíveis com ElevenLabs v3. Essa camada deixa preparado um futuro adaptador opcional para Talking Actors/ElevenLabs sem acoplar o motor narrativo a um único provedor.
+O arquivo `scripts/cinematic-speech.js` continua interpretando marcações como `[sussurro]`, `[tenso]` e `[pausa]`. Perfis neurais usam instruções próprias de interpretação, sem depender do Talking Actors e sem acoplar o motor narrativo a um único fornecedor.
 
 ## Pipeline validado
 
@@ -197,8 +239,10 @@ Início de sessão
 → Journal de mesmo nome ou pasta da cena
 → área inicial
 → caixa read-aloud
-→ Groq + SafetyGuard + QualityGuard + NoveltyGuard
-→ abertura no chat e áudio
+→ orquestrador de IA + SafetyGuard + QualityGuard + NoveltyGuard
+→ abertura no chat
+→ perfil do narrador
+→ voz neural com fallback ou TTS local
 
 Rodada fora de combate
 → texto digitado ou ação reconhecida por voz
@@ -209,7 +253,8 @@ Rodada fora de combate
 → NPC Coordinator
 → World State
 → uma narração consolidada
-→ chat + AudioNarrationService
+→ perfil do narrador ou do NPC ativo
+→ chat + voz neural com fallback ou TTS local
 ```
 
 Os arquivos `README-ALPHA*.md` preservam o histórico de evolução das versões anteriores.
@@ -222,9 +267,9 @@ Crie um repositório vazio no GitHub e execute na raiz do projeto:
 git init
 git branch -M main
 git add .
-git commit -m "feat: add voice action input alpha.38"
+git commit -m "feat: add neural voices and npc profiles alpha.43"
 git remote add origin https://github.com/SEU-USUARIO/SEU-REPOSITORIO.git
 git push -u origin main
 ```
 
-Antes do primeiro push, confirme com `git status` que `.env`, `node_modules`, `dist/` e `data/narration-history.json` não aparecem na lista. Para preparar uma pasta de entrega higienizada, execute `npm run release:prepare`.
+Antes do primeiro push, confirme com `git status` que `.env`, `node_modules`, `dist/` e `data/narration-history.json`, `data/campaign-memory.json`, `data/adventure-library.json` e `data/voice-profiles.json` não aparecem na lista. Para preparar uma pasta de entrega higienizada, execute `npm run release:prepare`.

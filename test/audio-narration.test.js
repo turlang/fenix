@@ -78,3 +78,27 @@ test('socket respeita destinatários da diretiva antes de reproduzir', async () 
   assert.match(block, /diretiva destinada a outro usuário ignorada/);
   assert.ok(block.indexOf('audioTargetsUser') < block.indexOf("claimBrowserPublication('audio-publication'"));
 });
+
+test('AudioNarrationService cria diretiva neural com perfil persistente e fallback', () => {
+  const service = new AudioNarrationService({ mode: 'neural-auto', synthesisPath: '/v1/audio/synthesize' });
+  const directive = service.createDirective('[tenso] A porta se abre.', {
+    campaignId: 'world-1', profileId: 'npc:goblin-1', speakerType: 'NPC', npcId: 'goblin-1', npcName: 'Snig'
+  });
+
+  assert.equal(directive.mode, 'neural-auto');
+  assert.equal(directive.fallbackMode, 'browser-tts');
+  assert.equal(directive.synthesisPath, '/v1/audio/synthesize');
+  assert.equal(directive.campaignId, 'world-1');
+  assert.equal(directive.profileId, 'npc:goblin-1');
+  assert.equal(directive.speakerType, 'NPC');
+  assert.equal(directive.npcId, 'goblin-1');
+  assert.equal(directive.npcName, 'Snig');
+  assert.equal(directive.aiGenerated, true);
+  assert.match(directive.disclosure, /inteligência artificial/i);
+});
+
+test('modo neural-only não autoriza fallback local', () => {
+  const directive = new AudioNarrationService({ mode: 'neural-only' }).createDirective('A voz ecoa.', { campaignId: 'world-2' });
+  assert.equal(directive.mode, 'neural-only');
+  assert.equal(directive.fallbackMode, null);
+});

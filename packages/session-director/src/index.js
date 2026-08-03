@@ -197,7 +197,8 @@ export class SessionDirector {
       const opening = await this.narrationService.createOpening(context);
       const audio = this.audioNarrationService?.createDirective(opening, {
         sceneId: context.scene?.id ?? null,
-        sessionId
+        sessionId,
+        campaignId
       }) ?? null;
       await this.foundryPublisher.postNarration(opening);
       const memory = await this.campaignMemory.startSession({
@@ -332,7 +333,8 @@ export class SessionDirector {
             });
         const audio = this.audioNarrationService?.createDirective(narration, {
           sceneId: context.scene?.id ?? this.session.context?.scene?.id ?? null,
-          sessionId: this.session.id
+          sessionId: this.session.id,
+          campaignId: this.session.campaignId
         }) ?? null;
         await this.foundryPublisher.postNarration(narration);
         const worldState = this.worldStateService.applyRound({
@@ -460,7 +462,12 @@ export class SessionDirector {
           context
         });
         const audio = this.audioNarrationService?.createDirective(narration, {
-          sceneId: context.scene?.id ?? null, sessionId: this.session.id
+          sceneId: context.scene?.id ?? null,
+          sessionId: this.session.id,
+          campaignId: this.session.campaignId,
+          speakerType: existingTurn?.combatant?.isNpc ? 'NPC' : 'NARRATOR',
+          npcId: existingTurn?.combatant?.isNpc ? (existingTurn.combatant.actorId ?? existingTurn.actorId) : null,
+          npcName: existingTurn?.combatant?.isNpc ? (existingTurn.combatant.name ?? existingTurn.actorName) : null
         }) ?? null;
         await this.foundryPublisher.postNarration(narration);
         const turn = this.combatService.markTurnResolved(reference, {
@@ -516,7 +523,9 @@ export class SessionDirector {
           combat: status, roundNumber, turns, context
         });
         const audio = this.audioNarrationService?.createDirective(narration, {
-          sceneId: context.scene?.id ?? null, sessionId: this.session.id
+          sceneId: context.scene?.id ?? null,
+          sessionId: this.session.id,
+          campaignId: this.session.campaignId
         }) ?? null;
         await this.foundryPublisher.postNarration(narration);
         const summary = this.combatService.markRoundSummarized(roundNumber, { narration, audio, turnCount: turns.length });
@@ -586,7 +595,8 @@ export class SessionDirector {
         const opening = await this.narrationService.describeRoom(context);
         const audio = this.audioNarrationService?.createDirective(opening, {
           sceneId: context.scene?.id ?? null,
-          sessionId: this.session.id
+          sessionId: this.session.id,
+          campaignId: this.session.campaignId
         }) ?? null;
         await this.foundryPublisher.postNarration(opening);
         const memory = await this.campaignMemory.recordRoomEntry({
