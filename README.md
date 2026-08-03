@@ -1,8 +1,8 @@
 # Mestre Orc Engine
 
-Versão `0.1.0-alpha.49` — Node.js 20–24 e Foundry VTT 13.
+Versão `0.1.0-alpha.50` — Node.js 20–24 e Foundry VTT 13.
 
-O fluxo atual localiza a Scene ativa, procura o Journal correspondente no diretório do Foundry e extrai exclusivamente uma caixa read-aloud reconhecida. São aceitos os formatos antigo e atual do Plutonium/5eTools, `blockquote` HTML e citação Markdown; blocos secretos ou exclusivos do GM são ignorados. A âncora canônica é interpretada pelo primeiro provedor de IA saudável da ordem configurada, validada e publicada no chat com áudio. Groq, OpenAI, Anthropic e endpoints OpenAI-compatible podem operar com fallback automático. A saída pode usar o TTS do navegador ou voz neural externa com perfis persistentes para narrador e NPCs. O mestre também pode gerar e arquivar aventuras, NPCs e dungeons originais com bloqueio de repetição, planejar mapas vetoriais e convertê-los em Scenes editáveis do Foundry. A alpha.49 acrescenta uma Central de Diagnóstico para Engine e Foundry, testes de sessão, rede, microfone, IA, TTS e armazenamento, telemetria limitada e exportação de relatórios sanitizados. Os backups seguros da alpha.48 permanecem integrados.
+O fluxo atual localiza a Scene ativa, procura o Journal correspondente no diretório do Foundry e extrai exclusivamente uma caixa read-aloud reconhecida. São aceitos os formatos antigo e atual do Plutonium/5eTools, `blockquote` HTML e citação Markdown; blocos secretos ou exclusivos do GM são ignorados. A âncora canônica é interpretada pelo primeiro provedor de IA saudável da ordem configurada, validada e publicada no chat com áudio. Groq, OpenAI, Anthropic e endpoints OpenAI-compatible podem operar com fallback automático. A saída pode usar o TTS do navegador ou voz neural externa com perfis persistentes para narrador e NPCs. O mestre também pode gerar e arquivar aventuras, NPCs e dungeons originais com bloqueio de repetição, planejar mapas vetoriais e convertê-los em Scenes editáveis do Foundry. A alpha.50 acrescenta a Central Mestre Orc unificada, uma barra compacta no chat e um único controle na Scene. Sessão, narração, combate, memória, biblioteca, criação, tutores, automações, provedores, vozes, backups e diagnóstico permanecem acessíveis por navegação organizada e responsiva.
 
 ## Engine
 
@@ -79,6 +79,12 @@ Abra `http://localhost:3001/health`. Os campos esperados incluem `"ai":"configur
 
 
 
+
+## Central Mestre Orc unificada
+
+A alpha.50 substitui os atalhos espalhados por uma interface única. No chat permanecem somente **Central Mestre Orc**, **áudio** e **microfone**. Nos controles da Scene existe somente um botão do módulo.
+
+A Central possui navegação por Visão geral, Sessão, Narração, Combate, Campanha, Criação, Assistentes e Sistema. Jogadores veem apenas voz, áudio e Tutor de Ficha; ferramentas administrativas permanecem exclusivas para GM. A tela apresenta estado da API, sessão, Scene, combate, voz, filas de rodada e ações rápidas, com layout adaptado para desktop e dispositivos menores.
 
 ## Central de Diagnóstico
 

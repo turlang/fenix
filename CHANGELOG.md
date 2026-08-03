@@ -19,6 +19,22 @@ Este projeto segue o formato do [Keep a Changelog](https://keepachangelog.com/pt
 
 
 
+## [0.1.0-alpha.50] - 2026-08-03
+
+### Adicionado
+
+- Central Mestre Orc unificada com navegação por áreas e visão operacional da campanha.
+- Barra compacta no chat com Central, áudio e entrada por voz.
+- Um único controle do Mestre Orc na barra da Scene.
+- Ações rápidas contextuais para sessão, rodadas, combate e diagnóstico.
+- Interface específica para jogadores com voz, áudio e Tutor de Ficha.
+- Design system responsivo, estados de foco e suporte a redução de movimento.
+
+### Alterado
+
+- Botões individuais de memória, biblioteca, forja, mapas, tutores, automações, backup, diagnóstico, IA e vozes deixam de ser injetados diretamente no chat.
+- Controles antigos da Scene são consolidados em um único acesso, preservando todas as funções.
+
 ## [0.1.0-alpha.49] - 2026-08-03
 
 ### Adicionado

@@ -1,7 +1,7 @@
 {
   "name": "mestre-orc-engine",
-  "version": "0.1.0-alpha.49",
-  "description": "Motor modular de narração cinematográfica com Central de Diagnóstico, backups seguros, automações aprovadas, tutores, mapas, geradores, memória, combate, voz neural e IA resiliente.",
+  "version": "0.1.0-alpha.50",
+  "description": "Motor modular de narração cinematográfica com Central Mestre Orc unificada, diagnóstico, backups, automações, tutores, mapas, memória, combate, voz neural e IA resiliente.",
   "private": true,
   "type": "module",
   "workspaces": [

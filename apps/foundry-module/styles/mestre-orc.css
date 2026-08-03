@@ -1499,3 +1499,413 @@
 .mestre-orc-diagnostic-panel>footer{display:flex;gap:10px;align-items:center;padding:15px 22px;border-top:1px solid rgba(255,255,255,.08);color:#94a8b7;background:#080d13}
 @media(max-width:900px){.mestre-orc-diagnostic-stats{grid-template-columns:repeat(2,1fr)}.mestre-orc-diagnostic-checks,.mestre-orc-diagnostic-provider-grid{grid-template-columns:1fr}.mestre-orc-diagnostic-overview{align-items:flex-start;flex-direction:column}.mestre-orc-diagnostic-score{width:100%}}
 @media(max-width:600px){.mestre-orc-diagnostic-overlay{padding:6px}.mestre-orc-diagnostic-panel{width:100%;max-height:98vh}.mestre-orc-diagnostic-header,.mestre-orc-diagnostic-panel main{padding:15px}.mestre-orc-diagnostic-score,.mestre-orc-diagnostic-stats{grid-template-columns:1fr 1fr}}
+
+/* Marco 15 — Central Mestre Orc unificada e design system */
+:root {
+  --mo-bg-950: #06080d;
+  --mo-bg-900: #0b1018;
+  --mo-bg-850: #101722;
+  --mo-bg-800: #151e2b;
+  --mo-line: rgba(255, 255, 255, 0.09);
+  --mo-line-strong: rgba(255, 255, 255, 0.17);
+  --mo-text: #f4f7fb;
+  --mo-muted: #98a6b8;
+  --mo-gold: #d8ad58;
+  --mo-gold-soft: #f1d291;
+  --mo-cyan: #59c7df;
+  --mo-green: #61d89a;
+  --mo-red: #f27d86;
+  --mo-radius-sm: 9px;
+  --mo-radius-md: 14px;
+  --mo-radius-lg: 20px;
+  --mo-shadow: 0 28px 100px rgba(0, 0, 0, 0.72);
+}
+
+.mestre-orc-command-dock {
+  width: calc(100% - 12px);
+  margin: 6px;
+  padding: 5px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 42px 42px;
+  gap: 5px;
+  border: 1px solid rgba(216, 173, 88, 0.32);
+  border-radius: 12px;
+  background: linear-gradient(145deg, rgba(17, 24, 35, 0.98), rgba(8, 12, 19, 0.98));
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.34), inset 0 1px rgba(255, 255, 255, 0.035);
+}
+
+.mestre-orc-command-dock button {
+  min-width: 0;
+  min-height: 38px;
+  margin: 0 !important;
+  border-radius: 8px !important;
+  transition: transform 140ms ease, border-color 140ms ease, background 140ms ease, box-shadow 140ms ease;
+}
+
+.mestre-orc-command-dock button:not(:disabled):hover,
+.mestre-orc-command-dock button:not(:disabled):focus-visible {
+  transform: translateY(-1px);
+  outline: none;
+}
+
+.mestre-orc-command-dock-main {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 9px;
+  padding: 7px 10px;
+  border: 1px solid rgba(216, 173, 88, 0.62);
+  background: linear-gradient(135deg, rgba(86, 61, 27, 0.96), rgba(39, 29, 17, 0.98));
+  color: #fff0c8;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.06);
+}
+.mestre-orc-command-dock-main > i:first-child { color: var(--mo-gold-soft); }
+.mestre-orc-command-dock-main > i:last-child { margin-left: auto; color: rgba(255, 240, 200, 0.62); font-size: .78rem; }
+.mestre-orc-command-dock-main:hover { border-color: var(--mo-gold-soft); box-shadow: 0 5px 16px rgba(0, 0, 0, .32); }
+
+.mestre-orc-command-dock #mestre-orc-audio-toggle,
+.mestre-orc-command-dock #mestre-orc-voice-input {
+  width: 42px;
+  height: 38px;
+  min-height: 38px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--mo-line-strong);
+  background: rgba(255, 255, 255, 0.045);
+  color: var(--mo-text);
+  overflow: hidden;
+}
+.mestre-orc-command-dock #mestre-orc-audio-toggle span,
+.mestre-orc-command-dock #mestre-orc-voice-input span { display: none; }
+.mestre-orc-command-dock #mestre-orc-audio-toggle i,
+.mestre-orc-command-dock #mestre-orc-voice-input i { margin: 0; font-size: .95rem; }
+.mestre-orc-command-dock #mestre-orc-audio-toggle[data-enabled="true"] { border-color: rgba(89, 199, 223, .45); }
+.mestre-orc-command-dock #mestre-orc-voice-input:not(:disabled) { border-color: rgba(97, 216, 154, .45); }
+.mestre-orc-command-dock #mestre-orc-voice-input[data-state="listening"] { border-color: rgba(242, 125, 134, .8); }
+
+.mestre-orc-command-dock + .mestre-orc-voice-preview {
+  width: calc(100% - 12px);
+  margin: 0 6px 6px;
+  border-radius: 8px;
+}
+
+.mestre-orc-central-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100100;
+  display: grid;
+  place-items: center;
+  padding: 22px;
+  background: rgba(3, 5, 9, 0.82);
+  backdrop-filter: blur(12px) saturate(.85);
+  animation: mestre-orc-central-fade 160ms ease-out;
+}
+
+.mestre-orc-central-panel {
+  width: min(1240px, 97vw);
+  height: min(820px, 94vh);
+  display: grid;
+  grid-template-columns: 226px minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid rgba(216, 173, 88, 0.28);
+  border-radius: var(--mo-radius-lg);
+  background: var(--mo-bg-900);
+  color: var(--mo-text);
+  box-shadow: var(--mo-shadow), inset 0 1px rgba(255, 255, 255, .045);
+  font-family: var(--font-primary, "Inter", "Segoe UI", sans-serif);
+  animation: mestre-orc-central-rise 180ms ease-out;
+}
+
+.mestre-orc-central-sidebar {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--mo-line);
+  background:
+    radial-gradient(circle at 20% 0, rgba(216, 173, 88, .12), transparent 33%),
+    linear-gradient(180deg, #10151e, #090d14);
+}
+.mestre-orc-central-sidebar > header {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-height: 76px;
+  padding: 16px;
+  border-bottom: 1px solid var(--mo-line);
+}
+.mestre-orc-central-logo {
+  width: 39px;
+  height: 39px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  border: 1px solid rgba(216, 173, 88, .55);
+  border-radius: 11px;
+  background: linear-gradient(145deg, rgba(104, 73, 28, .94), rgba(48, 35, 19, .96));
+  color: var(--mo-gold-soft);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, .3);
+}
+.mestre-orc-central-sidebar > header strong { display: block; font-size: .98rem; }
+.mestre-orc-central-sidebar > header small { display: block; margin-top: 2px; color: var(--mo-muted); font-size: .7rem; }
+.mestre-orc-central-sidebar nav { flex: 1; display: grid; align-content: start; gap: 4px; padding: 12px 9px; overflow-y: auto; }
+.mestre-orc-central-nav-item {
+  width: 100%;
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 11px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: #a8b4c4;
+  text-align: left;
+  cursor: pointer;
+  transition: color 130ms ease, background 130ms ease, border-color 130ms ease;
+}
+.mestre-orc-central-nav-item i { width: 17px; color: #728196; text-align: center; }
+.mestre-orc-central-nav-item:hover { color: var(--mo-text); background: rgba(255, 255, 255, .045); }
+.mestre-orc-central-nav-item.is-active {
+  border-color: rgba(216, 173, 88, .25);
+  background: linear-gradient(90deg, rgba(216, 173, 88, .15), rgba(216, 173, 88, .045));
+  color: #fff0c9;
+}
+.mestre-orc-central-nav-item.is-active i { color: var(--mo-gold-soft); }
+.mestre-orc-central-sidebar > footer { padding: 13px 15px 15px; border-top: 1px solid var(--mo-line); }
+.mestre-orc-central-sidebar > footer small { display: block; margin-top: 5px; color: #647286; font-size: .66rem; }
+.mestre-orc-central-connection { display: flex; align-items: center; gap: 7px; color: var(--mo-muted); font-size: .72rem; }
+.mestre-orc-central-connection i { font-size: .48rem; }
+.mestre-orc-central-connection.is-ok i { color: var(--mo-green); box-shadow: 0 0 9px rgba(97, 216, 154, .62); border-radius: 50%; }
+.mestre-orc-central-connection.is-danger i { color: var(--mo-red); }
+
+.mestre-orc-central-workspace { min-width: 0; display: grid; grid-template-rows: 64px minmax(0, 1fr); background: var(--mo-bg-900); }
+.mestre-orc-central-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 10px 18px 10px 22px;
+  border-bottom: 1px solid var(--mo-line);
+  background: rgba(11, 16, 24, .92);
+}
+.mestre-orc-central-topbar span { display: block; color: var(--mo-muted); font-size: .68rem; }
+.mestre-orc-central-topbar strong { display: block; margin-top: 2px; font-size: .94rem; }
+.mestre-orc-central-topbar > div:last-child { display: flex; gap: 7px; }
+.mestre-orc-central-topbar button {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--mo-line-strong);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, .035);
+  color: #b7c3d2;
+  cursor: pointer;
+}
+.mestre-orc-central-topbar button:hover { border-color: rgba(216, 173, 88, .48); color: var(--mo-gold-soft); }
+.mestre-orc-central-topbar button.is-loading i { animation: mestre-orc-central-spin .8s linear infinite; }
+.mestre-orc-central-content { min-width: 0; overflow-y: auto; padding: 24px; scrollbar-color: rgba(216, 173, 88, .35) transparent; }
+
+.mestre-orc-central-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 200px;
+  gap: 24px;
+  align-items: center;
+  padding: 25px;
+  border: 1px solid rgba(216, 173, 88, .17);
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at 83% 5%, rgba(89, 199, 223, .13), transparent 28%),
+    radial-gradient(circle at 12% 0, rgba(216, 173, 88, .14), transparent 35%),
+    linear-gradient(145deg, #151d28, #0d131c);
+  box-shadow: inset 0 1px rgba(255, 255, 255, .035);
+}
+.mestre-orc-central-eyebrow,
+.mestre-orc-central-group-heading > span,
+.mestre-orc-central-section > header span {
+  display: block;
+  color: var(--mo-gold-soft);
+  font-size: .65rem;
+  font-weight: 800;
+  letter-spacing: .13em;
+  text-transform: uppercase;
+}
+.mestre-orc-central-hero h2 { margin: 7px 0 9px; font-size: clamp(1.45rem, 2.4vw, 2.15rem); line-height: 1.08; }
+.mestre-orc-central-hero p { max-width: 720px; margin: 0; color: #aeb9c8; line-height: 1.55; }
+.mestre-orc-central-orb {
+  min-height: 132px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 5px;
+  border: 1px solid var(--mo-line);
+  border-radius: 15px;
+  background: rgba(0, 0, 0, .19);
+  text-align: center;
+}
+.mestre-orc-central-orb i { font-size: 1.55rem; color: var(--mo-muted); }
+.mestre-orc-central-orb strong { font-size: .88rem; }
+.mestre-orc-central-orb span { color: var(--mo-muted); font-size: .72rem; }
+.mestre-orc-central-orb.is-ok { border-color: rgba(97, 216, 154, .25); }
+.mestre-orc-central-orb.is-ok i { color: var(--mo-green); }
+.mestre-orc-central-orb.is-danger { border-color: rgba(242, 125, 134, .28); }
+.mestre-orc-central-orb.is-danger i { color: var(--mo-red); }
+
+.mestre-orc-central-status-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
+.mestre-orc-central-status-grid article {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 12px;
+  border: 1px solid var(--mo-line);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, .025);
+}
+.mestre-orc-central-status-grid article > i { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 9px; background: rgba(255, 255, 255, .045); color: var(--mo-muted); }
+.mestre-orc-central-status-grid span { display: block; color: var(--mo-muted); font-size: .65rem; text-transform: uppercase; }
+.mestre-orc-central-status-grid strong { display: block; margin-top: 2px; overflow: hidden; color: #eaf0f7; font-size: .79rem; text-overflow: ellipsis; white-space: nowrap; }
+.mestre-orc-central-status-grid .is-ok > i { color: var(--mo-green); }
+.mestre-orc-central-status-grid .is-danger > i { color: var(--mo-red); }
+
+.mestre-orc-central-section { margin-top: 24px; }
+.mestre-orc-central-section > header { display: flex; align-items: end; justify-content: space-between; margin-bottom: 10px; padding: 0 2px; }
+.mestre-orc-central-section h3 { margin: 3px 0 0; font-size: 1rem; }
+.mestre-orc-central-group-heading { max-width: 760px; margin-bottom: 18px; }
+.mestre-orc-central-group-heading h2 { margin: 5px 0 7px; font-size: 1.65rem; }
+.mestre-orc-central-group-heading p { margin: 0; color: var(--mo-muted); line-height: 1.5; }
+.mestre-orc-central-tool-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.mestre-orc-central-tool-grid.is-quick { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.mestre-orc-central-tool {
+  min-width: 0;
+  min-height: 92px;
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 13px;
+  border: 1px solid var(--mo-line);
+  border-radius: 13px;
+  background: linear-gradient(145deg, rgba(255, 255, 255, .035), rgba(255, 255, 255, .016));
+  color: var(--mo-text);
+  text-align: left;
+  cursor: pointer;
+  box-shadow: inset 0 1px rgba(255, 255, 255, .02);
+  transition: border-color 140ms ease, background 140ms ease, transform 140ms ease, box-shadow 140ms ease;
+}
+.mestre-orc-central-tool:not(:disabled):hover,
+.mestre-orc-central-tool:not(:disabled):focus-visible {
+  border-color: rgba(216, 173, 88, .42);
+  background: linear-gradient(145deg, rgba(216, 173, 88, .085), rgba(255, 255, 255, .022));
+  transform: translateY(-1px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .22), inset 0 1px rgba(255, 255, 255, .035);
+  outline: none;
+}
+.mestre-orc-central-tool:disabled { opacity: .48; cursor: not-allowed; filter: saturate(.6); }
+.mestre-orc-central-tool.is-loading { opacity: .65; cursor: wait; }
+.mestre-orc-central-tool-icon { width: 42px; height: 42px; display: grid; place-items: center; border: 1px solid rgba(216, 173, 88, .23); border-radius: 11px; background: rgba(216, 173, 88, .075); color: var(--mo-gold-soft); }
+.mestre-orc-central-tool-copy { min-width: 0; }
+.mestre-orc-central-tool-copy strong { display: block; font-size: .88rem; }
+.mestre-orc-central-tool-copy small { display: -webkit-box; margin-top: 5px; overflow: hidden; color: var(--mo-muted); font-size: .71rem; line-height: 1.35; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.mestre-orc-central-badge { padding: 4px 7px; border: 1px solid rgba(89, 199, 223, .24); border-radius: 999px; background: rgba(89, 199, 223, .075); color: #aeeafa; font-size: .62rem; font-weight: 800; white-space: nowrap; }
+.mestre-orc-central-chevron { color: #526176; font-size: .72rem; }
+.mestre-orc-central-facts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 9px; margin: 0; }
+.mestre-orc-central-facts > div { min-width: 0; padding: 11px 12px; border: 1px solid var(--mo-line); border-radius: 11px; background: rgba(255, 255, 255, .022); }
+.mestre-orc-central-facts dt { color: var(--mo-muted); font-size: .62rem; text-transform: uppercase; }
+.mestre-orc-central-facts dd { margin: 4px 0 0; overflow: hidden; color: #e9eef5; font-size: .76rem; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Coesão visual entre os painéis legados abertos pela Central. */
+:where(
+  .mestre-orc-memory-panel,
+  .mestre-orc-adventure-panel,
+  .mestre-orc-generator-panel,
+  .mestre-orc-map-panel,
+  .mestre-orc-tutor-panel,
+  .mestre-orc-automation-panel,
+  .mestre-orc-backup-panel,
+  .mestre-orc-diagnostic-panel,
+  .mestre-orc-ai-provider-panel,
+  .mestre-orc-voice-profile-panel
+) {
+  font-family: var(--font-primary, "Inter", "Segoe UI", sans-serif);
+  scrollbar-color: rgba(216, 173, 88, .35) transparent;
+}
+:where(
+  .mestre-orc-memory-panel,
+  .mestre-orc-adventure-panel,
+  .mestre-orc-generator-panel,
+  .mestre-orc-map-panel,
+  .mestre-orc-tutor-panel,
+  .mestre-orc-automation-panel,
+  .mestre-orc-backup-panel,
+  .mestre-orc-diagnostic-panel,
+  .mestre-orc-ai-provider-panel,
+  .mestre-orc-voice-profile-panel
+) button {
+  transition: border-color 130ms ease, background 130ms ease, color 130ms ease, transform 130ms ease, opacity 130ms ease;
+}
+:where(
+  .mestre-orc-memory-panel,
+  .mestre-orc-adventure-panel,
+  .mestre-orc-generator-panel,
+  .mestre-orc-map-panel,
+  .mestre-orc-tutor-panel,
+  .mestre-orc-automation-panel,
+  .mestre-orc-backup-panel,
+  .mestre-orc-diagnostic-panel,
+  .mestre-orc-ai-provider-panel,
+  .mestre-orc-voice-profile-panel
+) button:not(:disabled):active { transform: translateY(1px); }
+
+@keyframes mestre-orc-central-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes mestre-orc-central-rise { from { opacity: 0; transform: translateY(10px) scale(.992); } to { opacity: 1; transform: none; } }
+@keyframes mestre-orc-central-spin { to { transform: rotate(360deg); } }
+
+@media (max-width: 900px) {
+  .mestre-orc-central-panel { grid-template-columns: 74px minmax(0, 1fr); }
+  .mestre-orc-central-sidebar > header { justify-content: center; padding: 13px 8px; }
+  .mestre-orc-central-sidebar > header > div,
+  .mestre-orc-central-nav-item span,
+  .mestre-orc-central-sidebar > footer small { display: none; }
+  .mestre-orc-central-nav-item { justify-content: center; padding: 8px; }
+  .mestre-orc-central-nav-item i { width: auto; font-size: 1rem; }
+  .mestre-orc-central-sidebar > footer { display: grid; place-items: center; padding: 11px 6px; }
+  .mestre-orc-central-connection { font-size: 0; }
+  .mestre-orc-central-hero { grid-template-columns: 1fr; }
+  .mestre-orc-central-orb { min-height: 92px; grid-template-columns: auto auto; column-gap: 9px; }
+  .mestre-orc-central-orb span { grid-column: 1 / -1; }
+  .mestre-orc-central-status-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .mestre-orc-central-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 620px) {
+  .mestre-orc-central-overlay { padding: 0; }
+  .mestre-orc-central-panel { width: 100vw; height: 100dvh; max-height: none; grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) 64px; border: 0; border-radius: 0; }
+  .mestre-orc-central-sidebar { grid-row: 2; border-top: 1px solid var(--mo-line); border-right: 0; }
+  .mestre-orc-central-sidebar > header,
+  .mestre-orc-central-sidebar > footer { display: none; }
+  .mestre-orc-central-sidebar nav { display: flex; align-items: center; gap: 2px; padding: 6px; overflow-x: auto; }
+  .mestre-orc-central-nav-item { min-width: 46px; min-height: 46px; flex: 0 0 auto; }
+  .mestre-orc-central-workspace { grid-row: 1; min-height: 0; grid-template-rows: 58px minmax(0, 1fr); }
+  .mestre-orc-central-content { padding: 15px; }
+  .mestre-orc-central-topbar { padding: 8px 10px 8px 14px; }
+  .mestre-orc-central-hero { padding: 18px; gap: 16px; }
+  .mestre-orc-central-tool-grid,
+  .mestre-orc-central-tool-grid.is-quick,
+  .mestre-orc-central-facts { grid-template-columns: 1fr; }
+  .mestre-orc-central-status-grid { grid-template-columns: 1fr 1fr; }
+  .mestre-orc-central-tool { min-height: 84px; }
+  .mestre-orc-command-dock { grid-template-columns: minmax(0, 1fr) 38px 38px; }
+  .mestre-orc-command-dock #mestre-orc-audio-toggle,
+  .mestre-orc-command-dock #mestre-orc-voice-input { width: 38px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mestre-orc-central-overlay,
+  .mestre-orc-central-panel { animation: none; }
+  .mestre-orc-central-tool,
+  .mestre-orc-command-dock button { transition: none; }
+}

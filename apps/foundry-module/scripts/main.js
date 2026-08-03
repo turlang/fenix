@@ -76,9 +76,15 @@ import {
   installDiagnosticClientTelemetry,
   openDiagnosticPanel
 } from './diagnostic-panel.js';
+import {
+  CENTRAL_BUTTON_ID,
+  CENTRAL_DOCK_ID,
+  injectCentralButton,
+  openCentralPanel
+} from './central-panel.js';
 
 const MODULE_ID = 'mestre-orc';
-const MODULE_BUILD = '0.1.0-alpha.49';
+const MODULE_BUILD = '0.1.0-alpha.50';
 const BUTTON_ID = 'mestre-orc-start';
 const ROUND_BUTTON_ID = 'mestre-orc-resolve-round';
 const AUDIO_BUTTON_ID = 'mestre-orc-audio-toggle';
@@ -745,9 +751,11 @@ function injectAudioToggleButton(root = document) {
   };
   refreshAudioToggleButton();
 
+  const dock = document.getElementById(CENTRAL_DOCK_ID);
   const startButton = document.getElementById(BUTTON_ID);
   const chatForm = chat.querySelector('#chat-form, .chat-form, form.chat-form');
-  if (startButton?.parentElement) startButton.insertAdjacentElement('afterend', button);
+  if (dock) dock.append(button);
+  else if (startButton?.parentElement) startButton.insertAdjacentElement('afterend', button);
   else if (chatForm?.parentElement) chatForm.parentElement.insertBefore(button, chatForm);
   else chat.prepend(button);
   refreshAudioToggleButton();
@@ -987,8 +995,12 @@ function injectVoiceInputButton(root = document) {
   preview.dataset.final = 'false';
   preview.setAttribute('aria-live', 'polite');
 
+  const dock = document.getElementById(CENTRAL_DOCK_ID);
   const chatForm = chat.querySelector('#chat-form, .chat-form, form.chat-form');
-  if (chatForm?.parentElement) {
+  if (dock) {
+    dock.append(button);
+    dock.insertAdjacentElement('afterend', preview);
+  } else if (chatForm?.parentElement) {
     chatForm.parentElement.insertBefore(button, chatForm);
     chatForm.parentElement.insertBefore(preview, chatForm);
   } else {
@@ -2847,20 +2859,80 @@ function injectMemoryButton(root = document) {
   return true;
 }
 
+
+function centralClientState() {
+  const selectedActor = currentVoiceActorIdentity();
+  return {
+    isGM: Boolean(game.user?.isGM),
+    userName: String(game.user?.name ?? 'Usuário'),
+    worldName: String(game.world?.title ?? game.world?.id ?? 'Campanha'),
+    worldId: String(game.world?.id ?? ''),
+    sceneId: String(canvas?.scene?.id ?? ''),
+    sceneName: String(canvas?.scene?.name ?? ''),
+    combatActive: Boolean(game.combat?.started),
+    selectedActorName: selectedActor?.actorName ?? null,
+    audioEnabled: Boolean(audioSetting('audioEnabled', true)),
+    voiceSupported: speechRecognitionSupported(globalThis),
+    voiceSessionActive: Boolean(voiceSessionActive),
+    voiceListening: voiceInputController?.state === 'listening',
+    moduleVersion: MODULE_BUILD
+  };
+}
+
+function centralActions() {
+  return {
+    startSession: () => startSession(null),
+    resolveRound: () => resolveRound(null),
+    resolveCombatTurn: () => resolveCombatTurn(null, { automatic: false }),
+    summarizeCombatRound: () => summarizeCombatRound(null, null, { automatic: false }),
+    voiceInput: () => startOrStopVoiceInput(),
+    toggleAudio: async () => {
+      const next = !Boolean(audioSetting('audioEnabled', true));
+      await game.settings.set(MODULE_ID, 'audioEnabled', next);
+      if (!next) stopNarrationAudio();
+      if (next && latestAudioDirective) {
+        lastAudioDirectiveId = null;
+        speakAudioDirective(latestAudioDirective, { force: true });
+      }
+      refreshAudioToggleButton();
+      ui.notifications?.info?.(`Mestre Orc: áudio ${next ? 'ativado' : 'desativado'} neste navegador.`);
+    },
+    openMemory: () => openCampaignMemoryPanel(),
+    openLibrary: () => openAdventureLibraryPanel({ request }),
+    openGenerators: () => openGeneratorPanel({ request }),
+    openMaps: () => openMapPanel({ request }),
+    openTutors: () => openTutorPanel({ request }),
+    openAutomations: () => openAutomationPanel({ request }),
+    openAiProviders: () => openAiProviderPanel({ request }),
+    openVoiceProfiles: () => openVoiceProfilePanel({ request }),
+    openBackups: () => openBackupPanel({ request }),
+    openDiagnostics: () => openDiagnosticPanel({ request })
+  };
+}
+
+function openMestreOrcCentral() {
+  return openCentralPanel({
+    request,
+    actions: centralActions(),
+    getClientState: centralClientState
+  });
+}
+
 function installDelegatedStartHandler() {
   if (document.documentElement.dataset.mestreOrcDelegated === '1') return;
   document.documentElement.dataset.mestreOrcDelegated = '1';
 
   document.addEventListener('click', (event) => {
     const target = event.target instanceof Element
-      ? event.target.closest('[data-mestre-orc-action="start-session"], [data-mestre-orc-action="resolve-round"], [data-mestre-orc-action="resolve-combat-turn"], [data-mestre-orc-action="summarize-combat-round"], [data-mestre-orc-action="open-memory"], [data-mestre-orc-action="open-adventure-library"], [data-mestre-orc-action="open-ai-providers"], [data-mestre-orc-action="open-voice-profiles"], [data-mestre-orc-action="open-generators"], [data-mestre-orc-action="open-maps"], [data-mestre-orc-action="open-tutors"], [data-mestre-orc-action="open-automations"], [data-mestre-orc-action="open-backups"], [data-mestre-orc-action="open-diagnostics"], #mestre-orc-start, #mestre-orc-resolve-round, #mestre-orc-combat-turn, #mestre-orc-combat-round, #mestre-orc-memory, #mestre-orc-adventure-library, #mestre-orc-ai-providers, #mestre-orc-voice-profiles, #mestre-orc-generators, #mestre-orc-maps, #mestre-orc-tutors, #mestre-orc-automations, #mestre-orc-backups, #mestre-orc-diagnostics')
+      ? event.target.closest('[data-mestre-orc-action="open-central"], [data-mestre-orc-action="start-session"], [data-mestre-orc-action="resolve-round"], [data-mestre-orc-action="resolve-combat-turn"], [data-mestre-orc-action="summarize-combat-round"], [data-mestre-orc-action="open-memory"], [data-mestre-orc-action="open-adventure-library"], [data-mestre-orc-action="open-ai-providers"], [data-mestre-orc-action="open-voice-profiles"], [data-mestre-orc-action="open-generators"], [data-mestre-orc-action="open-maps"], [data-mestre-orc-action="open-tutors"], [data-mestre-orc-action="open-automations"], [data-mestre-orc-action="open-backups"], [data-mestre-orc-action="open-diagnostics"], #mestre-orc-start, #mestre-orc-resolve-round, #mestre-orc-combat-turn, #mestre-orc-combat-round, #mestre-orc-memory, #mestre-orc-adventure-library, #mestre-orc-ai-providers, #mestre-orc-voice-profiles, #mestre-orc-generators, #mestre-orc-maps, #mestre-orc-tutors, #mestre-orc-automations, #mestre-orc-backups, #mestre-orc-diagnostics, #mestre-orc-central')
       : null;
     if (!target) return;
 
     event.preventDefault();
     event.stopImmediatePropagation();
     console.log('[Mestre Orc] handler delegado acionado', { action: target.dataset.mestreOrcAction });
-    if (target.dataset.mestreOrcAction === 'resolve-round' || target.id === ROUND_BUTTON_ID) void resolveRound(target);
+    if (target.dataset.mestreOrcAction === 'open-central' || target.id === CENTRAL_BUTTON_ID) void openMestreOrcCentral();
+    else if (target.dataset.mestreOrcAction === 'resolve-round' || target.id === ROUND_BUTTON_ID) void resolveRound(target);
     else if (target.dataset.mestreOrcAction === 'resolve-combat-turn' || target.id === COMBAT_TURN_BUTTON_ID) void resolveCombatTurn(null, { automatic: false });
     else if (target.dataset.mestreOrcAction === 'summarize-combat-round' || target.id === COMBAT_ROUND_BUTTON_ID) void summarizeCombatRound(null, null, { automatic: false });
     else if (target.dataset.mestreOrcAction === 'open-memory' || target.id === MEMORY_BUTTON_ID) void openCampaignMemoryPanel();
@@ -2878,61 +2950,29 @@ function installDelegatedStartHandler() {
 }
 
 function scheduleInjection(root) {
+  const inject = (target) => {
+    injectCentralButton({ root: target, findChatContainer, open: openMestreOrcCentral });
+    injectAudioToggleButton(target);
+    injectVoiceInputButton(target);
+  };
   requestAnimationFrame(() => {
-    injectStartButton(root);
-    injectResolveRoundButton(root);
-    injectCombatButtons(root);
-    injectMemoryButton(root);
-    injectAdventureLibraryButton({ root, request, findChatContainer });
-    injectGeneratorButton({ root, request, findChatContainer });
-    injectMapButton({ root, request, findChatContainer });
-    injectTutorButton({ root, request, findChatContainer });
-    injectAutomationButton({ root, request, findChatContainer });
-    injectBackupButton({ root, request, findChatContainer });
-    injectDiagnosticButton({ root, request, findChatContainer });
-    injectAiProviderButton({ root, request, findChatContainer });
-    injectVoiceProfileButton({ root, request, findChatContainer });
-    injectAudioToggleButton(root);
-    injectVoiceInputButton(root);
-    setTimeout(() => {
-      injectStartButton(document);
-      injectResolveRoundButton(document);
-      injectCombatButtons(document);
-      injectMemoryButton(document);
-      injectAdventureLibraryButton({ root: document, request, findChatContainer });
-      injectGeneratorButton({ root: document, request, findChatContainer });
-      injectMapButton({ root: document, request, findChatContainer });
-      injectTutorButton({ root: document, request, findChatContainer });
-      injectAutomationButton({ root: document, request, findChatContainer });
-      injectBackupButton({ root: document, request, findChatContainer });
-      injectDiagnosticButton({ root: document, request, findChatContainer });
-      injectAiProviderButton({ root: document, request, findChatContainer });
-      injectVoiceProfileButton({ root: document, request, findChatContainer });
-      injectAudioToggleButton(document);
-      injectVoiceInputButton(document);
-    }, 250);
-    setTimeout(() => {
-      injectStartButton(document);
-      injectResolveRoundButton(document);
-      injectCombatButtons(document);
-      injectMemoryButton(document);
-      injectAdventureLibraryButton({ root: document, request, findChatContainer });
-      injectGeneratorButton({ root: document, request, findChatContainer });
-      injectMapButton({ root: document, request, findChatContainer });
-      injectTutorButton({ root: document, request, findChatContainer });
-      injectAutomationButton({ root: document, request, findChatContainer });
-      injectBackupButton({ root: document, request, findChatContainer });
-      injectDiagnosticButton({ root: document, request, findChatContainer });
-      injectAiProviderButton({ root: document, request, findChatContainer });
-      injectVoiceProfileButton({ root: document, request, findChatContainer });
-      injectAudioToggleButton(document);
-      injectVoiceInputButton(document);
-    }, 1000);
+    inject(root);
+    setTimeout(() => inject(document), 250);
+    setTimeout(() => inject(document), 1000);
   });
 }
 
 
 console.log('[Mestre Orc] main.js carregado', { version: MODULE_BUILD });
+
+// IDs mantidos para compatibilidade com atalhos e testes das versões anteriores.
+// Compatibilidade: inclui o antigo atalho "Saúde dos provedores de IA" dentro da Central.
+const LEGACY_SCENE_TOOL_IDS = Object.freeze([
+  'mestreOrcStart', 'mestreOrcResolveRound', 'mestreOrcCombatTurn', 'mestreOrcCombatRound',
+  'mestreOrcMemory', 'mestreOrcAdventureLibrary', 'mestreOrcGenerators', 'mestreOrcMaps',
+  'mestreOrcTutors', 'mestreOrcAutomations', 'mestreOrcBackups', 'mestreOrcDiagnostics',
+  'mestreOrcAiProviders', 'mestreOrcVoiceProfiles'
+]);
 
 Hooks.on('getSceneControlButtons', (controls) => {
   try {
@@ -2943,185 +2983,21 @@ Hooks.on('getSceneControlButtons', (controls) => {
       return;
     }
 
-    tokenControls.tools.mestreOrcStart = {
-      name: 'mestreOrcStart',
-      title: 'Mestre Orc — Iniciar sessão',
+    tokenControls.tools.mestreOrcCentral = {
+      name: 'mestreOrcCentral',
+      title: 'Mestre Orc — Central unificada (inclui Central de Diagnóstico)',
       icon: 'fa-solid fa-hat-wizard',
       order: Object.keys(tokenControls.tools).length,
       button: true,
       visible: true,
-      onChange: () => {
-        console.log('[Mestre Orc] botão dos controles de cena acionado');
-        void startSession(null);
-      }
+      onChange: () => void openMestreOrcCentral()
     };
 
-    tokenControls.tools.mestreOrcResolveRound = {
-      name: 'mestreOrcResolveRound',
-      title: 'Mestre Orc — Resolver rodada narrativa',
-      icon: 'fa-solid fa-dice-d20',
-      order: Object.keys(tokenControls.tools).length,
-      button: true,
-      visible: true,
-      onChange: () => {
-        console.log('[Mestre Orc] resolução de rodada acionada pelos controles da cena');
-        void resolveRound(null);
-      }
-    };
-
-    tokenControls.tools.mestreOrcCombatTurn = {
-      name: 'mestreOrcCombatTurn',
-      title: 'Mestre Orc — Narrar turno de combate',
-      icon: 'fa-solid fa-hand-fist',
-      order: Object.keys(tokenControls.tools).length,
-      button: true,
-      visible: true,
-      onChange: () => void resolveCombatTurn(null, { automatic: false })
-    };
-
-    tokenControls.tools.mestreOrcCombatRound = {
-      name: 'mestreOrcCombatRound',
-      title: 'Mestre Orc — Resumo da rodada de combate',
-      icon: 'fa-solid fa-shield-halved',
-      order: Object.keys(tokenControls.tools).length,
-      button: true,
-      visible: true,
-      onChange: () => void summarizeCombatRound(null, null, { automatic: false })
-    };
-
-    tokenControls.tools.mestreOrcMemory = {
-      name: 'mestreOrcMemory',
-      title: 'Mestre Orc — Memória da campanha',
-      icon: 'fa-solid fa-book-atlas',
-      order: Object.keys(tokenControls.tools).length,
-      button: true,
-      visible: true,
-      onChange: () => {
-        console.log('[Mestre Orc] memória da campanha aberta pelos controles da cena');
-        void openCampaignMemoryPanel();
-      }
-    };
-
-    tokenControls.tools.mestreOrcAdventureLibrary = {
-      name: 'mestreOrcAdventureLibrary',
-      title: 'Mestre Orc — Biblioteca da aventura',
-      icon: 'fa-solid fa-book-open-reader',
-      order: Object.keys(tokenControls.tools).length,
-      button: true,
-      visible: true,
-      onChange: () => {
-        console.log('[Mestre Orc] biblioteca da aventura aberta pelos controles da cena');
-        void openAdventureLibraryPanel({ request });
-      }
-    };
-
-    tokenControls.tools.mestreOrcGenerators = {
-      name: 'mestreOrcGenerators',
-      title: 'Mestre Orc — Forja de conteúdo',
-      icon: 'fa-solid fa-wand-magic-sparkles',
-      order: Object.keys(tokenControls.tools).length,
-      button: true,
-      visible: true,
-      onChange: () => {
-        console.log('[Mestre Orc] geradores abertos pelos controles da cena');
-        void openGeneratorPanel({ request });
-      }
-    };
-
-    tokenControls.tools.mestreOrcMaps = {
-      name: 'mestreOrcMaps',
-      title: 'Mestre Orc — Mapas automáticos e Scenes',
-      icon: 'fa-solid fa-map',
-      order: Object.keys(tokenControls.tools).length,
-      button: true,
-      visible: true,
-      onChange: () => {
-        console.log('[Mestre Orc] mapas abertos pelos controles da cena');
-        void openMapPanel({ request });
-      }
-    };
-
-    tokenControls.tools.mestreOrcTutors = {
-      name: 'mestreOrcTutors',
-      title: 'Mestre Orc — Tutor de Ficha e Tutor de Mestre',
-      icon: 'fa-solid fa-graduation-cap',
-      order: Object.keys(tokenControls.tools).length,
-      button: true,
-      visible: true,
-      onChange: () => {
-        console.log('[Mestre Orc] tutores abertos pelos controles da cena');
-        void openTutorPanel({ request });
-      }
-    };
-
-    tokenControls.tools.mestreOrcAutomations = {
-      name: 'mestreOrcAutomations',
-      title: 'Mestre Orc — Automações assistidas e aprovadas',
-      icon: 'fa-solid fa-list-check',
-      order: Object.keys(tokenControls.tools).length,
-      button: true,
-      visible: true,
-      onChange: () => {
-        console.log('[Mestre Orc] automações abertas pelos controles da cena');
-        void openAutomationPanel({ request });
-      }
-    };
-
-    tokenControls.tools.mestreOrcBackups = {
-      name: 'mestreOrcBackups',
-      title: 'Mestre Orc — Backup, exportação e restauração',
-      icon: 'fa-solid fa-box-archive',
-      order: Object.keys(tokenControls.tools).length,
-      button: true,
-      visible: true,
-      onChange: () => {
-        console.log('[Mestre Orc] backups abertos pelos controles da cena');
-        void openBackupPanel({ request });
-      }
-    };
-
-    tokenControls.tools.mestreOrcDiagnostics = {
-      name: 'mestreOrcDiagnostics',
-      title: 'Mestre Orc — Central de Diagnóstico',
-      icon: 'fa-solid fa-stethoscope',
-      order: Object.keys(tokenControls.tools).length,
-      button: true,
-      visible: true,
-      onChange: () => {
-        console.log('[Mestre Orc] Central de Diagnóstico aberta pelos controles da cena');
-        void openDiagnosticPanel({ request });
-      }
-    };
-
-    tokenControls.tools.mestreOrcAiProviders = {
-      name: 'mestreOrcAiProviders',
-      title: 'Mestre Orc — Saúde dos provedores de IA',
-      icon: 'fa-solid fa-tower-broadcast',
-      order: Object.keys(tokenControls.tools).length,
-      button: true,
-      visible: true,
-      onChange: () => {
-        console.log('[Mestre Orc] painel de provedores aberto pelos controles da cena');
-        void openAiProviderPanel({ request });
-      }
-    };
-
-    tokenControls.tools.mestreOrcVoiceProfiles = {
-      name: 'mestreOrcVoiceProfiles',
-      title: 'Mestre Orc — Vozes do narrador e dos NPCs',
-      icon: 'fa-solid fa-microphone-lines',
-      order: Object.keys(tokenControls.tools).length,
-      button: true,
-      visible: true,
-      onChange: () => {
-        console.log('[Mestre Orc] perfis de voz abertos pelos controles da cena');
-        void openVoiceProfilePanel({ request });
-      }
-    };
-
-    console.log('[Mestre Orc] botões adicionados aos controles da cena');
+    console.log('[Mestre Orc] Central unificada adicionada aos controles da Scene', {
+      hiddenLegacyTools: LEGACY_SCENE_TOOL_IDS.length
+    });
   } catch (error) {
-    console.error('[Mestre Orc] falha ao registrar controle da cena', error);
+    console.error('[Mestre Orc] falha ao registrar a Central na Scene', error);
   }
 });
 

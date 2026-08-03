@@ -169,5 +169,15 @@
 - [x] exportação de relatório JSON com SHA-256;
 - [x] painel no chat e nos controles da cena.
 
+## Marco 15 — Revisão visual e Central Mestre Orc unificada ✅ — alpha.50
+- [x] barra compacta no chat com Central, áudio e microfone;
+- [x] um único controle Mestre Orc na Scene;
+- [x] navegação por visão geral, sessão, narração, combate, campanha, criação, assistentes e sistema;
+- [x] permissões diferenciadas para GM e jogador;
+- [x] ações rápidas com estado de sessão, filas e combate;
+- [x] design system compartilhado entre os painéis;
+- [x] responsividade, foco por teclado e redução de movimento;
+- [x] preservação de todas as ferramentas dos marcos anteriores.
+
 ## Próximo marco liberado
-- Marco 15 — revisão visual e Central Mestre Orc unificada.
+- Marco 16 — testes de integração, carga e sessões completas automatizadas.

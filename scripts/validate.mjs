@@ -15,6 +15,7 @@ const required = [
   'apps/foundry-module/scripts/automation-panel.js',
   'apps/foundry-module/scripts/backup-panel.js',
   'apps/foundry-module/scripts/diagnostic-panel.js',
+  'apps/foundry-module/scripts/central-panel.js',
   'apps/foundry-module/scripts/ai-provider-panel.js',
   'apps/foundry-module/scripts/voice-profile-panel.js',
   'apps/foundry-module/scripts/voice-input.js',
