@@ -28,8 +28,8 @@ export class AudioNarrationService {
     enabled = true,
     mode = 'browser-tts',
     language = 'pt-BR',
-    rate = 0.9,
-    pitch = 0.85,
+    rate = 0.96,
+    pitch = 1,
     volume = 1,
     synthesisPath = '/v1/audio/synthesize',
     logger = console
@@ -37,8 +37,8 @@ export class AudioNarrationService {
     this.enabled = Boolean(enabled);
     this.mode = normalizeMode(mode);
     this.language = String(language || 'pt-BR');
-    this.rate = clamp(rate, 0.5, 2, 0.9);
-    this.pitch = clamp(pitch, 0, 2, 0.85);
+    this.rate = clamp(rate, 0.5, 2, 0.96);
+    this.pitch = clamp(pitch, 0, 2, 1);
     this.volume = clamp(volume, 0, 1, 1);
     this.synthesisPath = String(synthesisPath || '/v1/audio/synthesize');
     this.logger = logger;
@@ -92,8 +92,8 @@ export function createAudioNarrationServiceFromEnv({ logger = console } = {}) {
     enabled,
     mode: process.env.MESTRE_ORC_AUDIO_MODE ?? 'browser-tts',
     language: process.env.MESTRE_ORC_AUDIO_LANGUAGE ?? 'pt-BR',
-    rate: process.env.MESTRE_ORC_AUDIO_RATE ?? 0.9,
-    pitch: process.env.MESTRE_ORC_AUDIO_PITCH ?? 0.85,
+    rate: process.env.MESTRE_ORC_AUDIO_RATE ?? 0.96,
+    pitch: process.env.MESTRE_ORC_AUDIO_PITCH ?? 1,
     volume: process.env.MESTRE_ORC_AUDIO_VOLUME ?? 1,
     synthesisPath: process.env.MESTRE_ORC_AUDIO_SYNTHESIS_PATH ?? '/v1/audio/synthesize',
     logger

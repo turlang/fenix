@@ -2,7 +2,7 @@
   "id": "mestre-orc",
   "title": "Mestre Orc",
   "description": "Release Candidate da Central Mestre Orc para Foundry VTT 13, com narração, voz, combate, memória, criação assistida, mapas e Scenes, diagnóstico, backup e atualizações seguras.",
-  "version": "1.0.0-rc.2",
+  "version": "1.0.0-rc.3",
   "compatibility": {
     "minimum": "13",
     "verified": "13"

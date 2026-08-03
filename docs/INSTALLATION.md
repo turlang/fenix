@@ -1,4 +1,4 @@
-# Instalação do Mestre Orc 1.0.0-rc.2
+# Instalação do Mestre Orc 1.0.0-rc.3
 
 ## Requisitos
 

@@ -225,6 +225,83 @@ function ensureDecisionEnding(value) {
   return `${text}\n\nO que vocês fazem?`;
 }
 
+const DYNAMIC_META_PATTERNS = Object.freeze([
+  ['FOUNDRY_META', /\b(?:Foundry|Combat Tracker|resultado de regras|estado mec[aâ]nico)\b/i],
+  ['ROLL_META', /\b(?:rolagem (?:foi )?confirmada|total\s*[:=]?\s*-?\d+|dano\s*[:=]?\s*-?\d+|CD\s*\d+)\b/i],
+  ['GENERIC_CLIFFHANGER', /\b(?:o que vir[aá] a seguir|o momento [eé] de expectativa|resta saber|s[oó] o tempo dir[aá]|a cena aguarda o pr[oó]ximo passo)\b/i],
+  ['ROBOTIC_RESULT', /\b(?:o resultado [eé] claro|a a[cç][aã]o declarada|a rodada produz um resultado)\b/i]
+]);
+
+function hasAuthoritativeMechanics(resolutions = []) {
+  return (resolutions ?? []).some((resolution) => {
+    const result = resolution?.rules?.result;
+    const roll = resolution?.rules?.combat?.roll ?? resolution?.action?.roll;
+    return Boolean(result?.authoritative) || Boolean(roll?.authoritative && (
+      roll.total !== null && roll.total !== undefined ||
+      roll.damageTotal !== null && roll.damageTotal !== undefined ||
+      roll.outcome
+    ));
+  });
+}
+
+function dynamicMarkerMetrics(text) {
+  const markers = [...String(text ?? '').matchAll(/\[([^\]]{1,50})\]/g)];
+  let misplaced = 0;
+  for (const marker of markers) {
+    const before = String(text ?? '').slice(0, marker.index).trimEnd().slice(-1);
+    if (before && !/[.!?…—:]/.test(before)) misplaced += 1;
+  }
+  return {
+    count: markers.length,
+    stacked: /\[[^\]]+\]\s*\[[^\]]+\]/.test(text),
+    misplaced
+  };
+}
+
+export function evaluateDynamicNarration(candidate, {
+  authoritativeMechanics = false,
+  allowQuestionEnding = false
+} = {}) {
+  const text = String(candidate ?? '').trim();
+  const hardIssues = [];
+  const issues = [];
+  if (!text) hardIssues.push('EMPTY_NARRATION');
+  for (const [code, pattern] of DYNAMIC_META_PATTERNS) {
+    if (!pattern.test(text)) continue;
+    if (code === 'ROLL_META' && authoritativeMechanics) issues.push(code);
+    else if (code === 'ROLL_META' || code === 'FOUNDRY_META') hardIssues.push(code);
+    else issues.push(code);
+  }
+  if (!allowQuestionEnding && /\?\s*$/.test(text)) issues.push('QUESTION_ENDING');
+  const markerMetrics = dynamicMarkerMetrics(text);
+  if (markerMetrics.count > 3) issues.push('EXCESSIVE_MARKERS');
+  if (markerMetrics.stacked) issues.push('STACKED_MARKERS');
+  if (markerMetrics.misplaced > 0) issues.push('MID_SENTENCE_MARKER');
+  return {
+    accepted: hardIssues.length === 0 && issues.length === 0,
+    hardSafe: hardIssues.length === 0,
+    hardIssues,
+    issues,
+    markerMetrics,
+    penalty: hardIssues.length * 100 + issues.length * 10
+  };
+}
+
+function dynamicFeedback(evaluation) {
+  const descriptions = {
+    EMPTY_NARRATION: 'produza uma narração completa',
+    FOUNDRY_META: 'remova qualquer menção a Foundry, Combat Tracker, regras ou bastidores',
+    ROLL_META: 'não leia números nem diga que uma rolagem foi confirmada; transforme somente resultados autoritativos em consequência narrativa',
+    GENERIC_CLIFFHANGER: 'substitua a expectativa genérica por uma imagem concreta do estado atual da cena',
+    ROBOTIC_RESULT: 'abandone fórmulas mecânicas como “o resultado é claro” e escreva com oralidade natural',
+    QUESTION_ENDING: 'encerre com uma imagem ou estado concreto, sem pergunta',
+    EXCESSIVE_MARKERS: 'use no máximo três marcações expressivas',
+    STACKED_MARKERS: 'não empilhe marcações',
+    MID_SENTENCE_MARKER: 'coloque marcações somente no início de frases ou entre períodos completos'
+  };
+  return [...evaluation.hardIssues, ...evaluation.issues].map((issue) => descriptions[issue] ?? issue);
+}
+
 function createRecord({ context, openingContext, sceneKey, plan, candidate, evaluation, quality, noveltyStatus, guard }) {
   return {
     id: crypto.randomUUID(),
@@ -260,6 +337,7 @@ export class NarrationService {
     roomQualityGuard = null,
     narrationMemory = null,
     maxOpeningAttempts = 5,
+    maxDynamicAttempts = 3,
     logger = console
   } = {}) {
     this.provider = provider;
@@ -271,6 +349,35 @@ export class NarrationService {
     this.roomQualityGuard = roomQualityGuard ?? createNarrationQualityGuard({ minWords: 50, maxWords: 120, minimumHardWords: 25, minParagraphs: 1, maxParagraphs: 2 });
     this.narrationMemory = narrationMemory ?? new InMemoryNarrationMemory();
     this.maxOpeningAttempts = Math.max(1, Number(maxOpeningAttempts) || 5);
+    this.maxDynamicAttempts = Math.max(1, Number(maxDynamicAttempts) || 3);
+  }
+
+  async narrateDynamic(operation, payload, { authoritativeMechanics = false } = {}) {
+    const attempts = [];
+    for (let attempt = 0; attempt < this.maxDynamicAttempts; attempt += 1) {
+      const candidate = String(await this.provider[operation]({
+        ...payload,
+        qualityFeedback: attempts.length ? dynamicFeedback(attempts.at(-1).evaluation) : []
+      }) ?? '').trim();
+      const evaluation = evaluateDynamicNarration(candidate, { authoritativeMechanics });
+      attempts.push({ candidate, evaluation });
+      if (evaluation.accepted) return candidate;
+      this.logger.warn?.('[Mestre Orc][DynamicNarration] tentativa rejeitada', {
+        operation,
+        attempt: attempt + 1,
+        hardIssues: evaluation.hardIssues,
+        issues: evaluation.issues,
+        markerMetrics: evaluation.markerMetrics
+      });
+    }
+    const best = [...attempts]
+      .filter((entry) => entry.evaluation.hardSafe)
+      .sort((left, right) => left.evaluation.penalty - right.evaluation.penalty)[0];
+    if (best) return best.candidate;
+    throw createServiceError('A IA não produziu uma narração segura e natural após as tentativas de correção.', {
+      statusCode: 502,
+      code: 'NARRATION_QUALITY_FAILED'
+    });
   }
 
   async createOpening(context) {
@@ -639,16 +746,18 @@ export class NarrationService {
         throw createServiceError('A rodada não possui ações para narrar.', { statusCode: 400, code: 'EMPTY_ROUND' });
       }
       if (this.provider?.narrateRound) {
-        return await this.provider.narrateRound({ roundNumber, resolutions, npcCoordination, worldState, context });
+        return await this.narrateDynamic('narrateRound', {
+          roundNumber, resolutions, npcCoordination, worldState, context
+        }, { authoritativeMechanics: hasAuthoritativeMechanics(resolutions) });
       }
       if (resolutions.length === 1 && this.provider?.narrateResolution) {
         const [resolution] = resolutions;
-        return await this.provider.narrateResolution({
+        return await this.narrateDynamic('narrateResolution', {
           intent: resolution.intent,
           rules: resolution.rules,
           relationship: resolution.relationship,
           context
-        });
+        }, { authoritativeMechanics: hasAuthoritativeMechanics(resolutions) });
       }
       throw createServiceError(
         'A Groq não está configurada para narrar a resolução consolidada da rodada.',
@@ -667,7 +776,9 @@ export class NarrationService {
         throw createServiceError('O turno não possui ações para narrar.', { statusCode: 400, code: 'EMPTY_COMBAT_TURN' });
       }
       if (this.provider?.narrateCombatTurn) {
-        return await this.provider.narrateCombatTurn({ combat, turn, resolutions, context });
+        return await this.narrateDynamic('narrateCombatTurn', {
+          combat, turn, resolutions, context
+        }, { authoritativeMechanics: hasAuthoritativeMechanics(resolutions) });
       }
       throw createServiceError(
         'A Groq não está configurada para narrar o turno de combate.',
@@ -685,7 +796,10 @@ export class NarrationService {
         throw createServiceError('A rodada não possui turnos resolvidos para resumir.', { statusCode: 400, code: 'EMPTY_COMBAT_ROUND' });
       }
       if (this.provider?.narrateCombatRound) {
-        return await this.provider.narrateCombatRound({ combat, roundNumber, turns, context });
+        const resolutions = turns.flatMap((turn) => turn.resolutions ?? []);
+        return await this.narrateDynamic('narrateCombatRound', {
+          combat, roundNumber, turns, context
+        }, { authoritativeMechanics: hasAuthoritativeMechanics(resolutions) });
       }
       throw createServiceError(
         'A Groq não está configurada para resumir a rodada de combate.',
@@ -700,7 +814,9 @@ export class NarrationService {
   async narrateResolution({ intent, rules, relationship, context }) {
     try {
       if (this.provider?.narrateResolution) {
-        return await this.provider.narrateResolution({ intent, rules, relationship, context });
+        return await this.narrateDynamic('narrateResolution', {
+          intent, rules, relationship, context
+        }, { authoritativeMechanics: hasAuthoritativeMechanics([{ rules }]) });
       }
       throw createServiceError(
         'A Groq não está configurada para narrar a resolução da ação.',

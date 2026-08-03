@@ -28,6 +28,17 @@ test('extrai rolagem confirmada sem inventar resultado', () => {
   assert.equal(result.outcome, null);
 });
 
+test('não transforma ausência de rolagem ou dano em total zero autoritativo', () => {
+  const empty = extractCombatRoll({});
+  assert.equal(empty.total, null);
+  assert.equal(empty.damageTotal, null);
+  assert.equal(empty.authoritative, false);
+
+  const explicitZero = extractCombatRoll({ rolls: [{ total: 0, formula: '1d20-1' }] });
+  assert.equal(explicitZero.total, 0);
+  assert.equal(explicitZero.authoritative, true);
+});
+
 test('normaliza documento do Combat Tracker e cria payload', () => {
   const combatant = { id: 'c1', actorId: 'a1', tokenId: 't1', name: 'Arannis', initiative: 18, actor: { type: 'character' } };
   const snapshot = combatSnapshotFromDocument({

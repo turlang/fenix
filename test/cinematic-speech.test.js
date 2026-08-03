@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   normalizeCinematicScriptText,
+  naturalizeBrowserProsody,
   parseCinematicSpeechScript,
   resolveCinematicMarker,
   stripCinematicMarkers,
@@ -29,6 +30,15 @@ test('parser remove marcações da fala e cria pausas expressivas', () => {
   assert.match(spoken, /O corredor/);
   assert.ok(pauses.length >= 3);
   assert.ok(segments.find((segment) => segment.type === 'speech' && segment.marker === 'whisper' && segment.volume < 1));
+});
+
+test('prosódia natural aproxima tom extremo da faixa humana sem ignorar a preferência', () => {
+  const natural = naturalizeBrowserProsody({ rate: 0.9, pitch: 0.85, volume: 1, enabled: true });
+  assert.ok(natural.rate > 0.9 && natural.rate < 1);
+  assert.ok(natural.pitch > 0.94 && natural.pitch < 1);
+  const manual = naturalizeBrowserProsody({ rate: 0.9, pitch: 0.85, volume: 1, enabled: false });
+  assert.equal(manual.rate, 0.9);
+  assert.equal(manual.pitch, 0.85);
 });
 
 test('quebras de linha preservam a respiração do roteiro', () => {
@@ -67,6 +77,7 @@ test('prompt de masmorra exige marcações e ritmo apropriados sem liberar inven
   });
   assert.match(prompt, /Perfil detectado: MASMORRA/i);
   assert.match(prompt, /\[sussurro\].*\[tenso\].*\[medo\]/s);
-  assert.match(prompt, /Insira de 2 a 5 marcações/i);
+  assert.match(prompt, /somente de 1 a 3 marcações/i);
+  assert.match(prompt, /nunca interrompa uma oração no meio/i);
   assert.match(prompt, /não use uma marcação para justificar a invenção/i);
 });

@@ -23,8 +23,9 @@
 - [x] Engine, módulo Foundry e bundle Windows separados.
 - [x] Checksums SHA-256 e manifesto.
 - [x] Relatório de auditoria e SBOM nos artefatos.
-- [ ] Instalação física no Windows.
-- [ ] Validação visual no Foundry VTT 13.
+- [x] Instalação física inicial no Windows.
+- [x] Módulo, Engine, Central e Diagnóstico validados no Foundry VTT 13.351.
+- [ ] Revisão visual completa de todos os painéis e fluxos.
 - [ ] Sessão real com GM e pelo menos dois jogadores.
 
-Os três itens pendentes pertencem ao Marco 13 e bloqueiam a versão estável `1.0.0`, mas não a publicação de `1.0.0-rc.2`.
+Os itens pendentes pertencem ao Marco 13 e bloqueiam a versão estável `1.0.0`, mas não a publicação de `1.0.0-rc.3`.

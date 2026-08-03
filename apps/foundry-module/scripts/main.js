@@ -84,7 +84,7 @@ import {
 } from './central-panel.js';
 
 const MODULE_ID = 'mestre-orc';
-const MODULE_BUILD = '1.0.0-rc.2';
+const MODULE_BUILD = '1.0.0-rc.3';
 const BUTTON_ID = 'mestre-orc-start';
 const ROUND_BUTTON_ID = 'mestre-orc-resolve-round';
 const AUDIO_BUTTON_ID = 'mestre-orc-audio-toggle';
@@ -293,7 +293,7 @@ function registerAudioSettings() {
     scope: 'client',
     config: true,
     type: Number,
-    default: 0.9,
+    default: 0.96,
     range: { min: 0.5, max: 1.5, step: 0.05 }
   });
   game.settings.register(MODULE_ID, 'audioPitch', {
@@ -301,7 +301,7 @@ function registerAudioSettings() {
     scope: 'client',
     config: true,
     type: Number,
-    default: 0.85,
+    default: 1,
     range: { min: 0, max: 2, step: 0.05 }
   });
   game.settings.register(MODULE_ID, 'audioVolume', {
@@ -311,6 +311,14 @@ function registerAudioSettings() {
     type: Number,
     default: 1,
     range: { min: 0, max: 1, step: 0.05 }
+  });
+  game.settings.register(MODULE_ID, 'audioNaturalProsody', {
+    name: 'Suavizar prosódia da voz local',
+    hint: 'Reduz variações artificiais de tom, encurta pausas e prioriza vozes naturais instaladas no navegador.',
+    scope: 'client',
+    config: true,
+    type: Boolean,
+    default: true
   });
   game.settings.register(MODULE_ID, 'voiceInputEnabled', {
     name: 'Ativar entrada por voz',
@@ -386,11 +394,20 @@ function selectSpeechVoice(language = 'pt-BR') {
   }
 
   const normalizedLanguage = String(language || 'pt-BR').toLowerCase();
-  return voices.find((voice) => String(voice.lang ?? '').toLowerCase() === normalizedLanguage)
-    ?? voices.find((voice) => String(voice.lang ?? '').toLowerCase().startsWith('pt-br'))
-    ?? voices.find((voice) => String(voice.lang ?? '').toLowerCase().startsWith('pt'))
-    ?? voices.find((voice) => voice.default)
-    ?? null;
+  const score = (voice) => {
+    const voiceLanguage = String(voice.lang ?? '').toLowerCase();
+    const name = String(voice.name ?? '').toLowerCase();
+    let points = 0;
+    if (voiceLanguage === normalizedLanguage) points += 120;
+    else if (voiceLanguage.startsWith('pt-br')) points += 100;
+    else if (voiceLanguage.startsWith('pt')) points += 70;
+    if (voice.default) points += 8;
+    if (/(natural|neural|online|premium|enhanced)/i.test(name)) points += 35;
+    if (/(francisca|antonio|fernanda|maria|daniel)/i.test(name)) points += 12;
+    if (/(espeak|festival|compact)/i.test(name)) points -= 30;
+    return points;
+  };
+  return [...voices].sort((left, right) => score(right) - score(left))[0] ?? null;
 }
 
 function normalizeSpeechText(value) {
@@ -550,9 +567,10 @@ function speakBrowserDirectivePrepared(directive, { source = 'unknown' } = {}) {
     return false;
   }
   const segments = parseCinematicSpeechScript(directive.text, {
-    rate: Number(audioSetting('audioRate', directive.rate ?? 0.9)),
-    pitch: Number(audioSetting('audioPitch', directive.pitch ?? 0.85)),
-    volume: Number(audioSetting('audioVolume', directive.volume ?? 1))
+    rate: Number(audioSetting('audioRate', directive.rate ?? 0.96)),
+    pitch: Number(audioSetting('audioPitch', directive.pitch ?? 1)),
+    volume: Number(audioSetting('audioVolume', directive.volume ?? 1)),
+    naturalProsody: Boolean(audioSetting('audioNaturalProsody', true))
   });
   if (!segments.some((segment) => segment.type === 'speech')) return false;
   debugLog('[Mestre Orc][Audio] roteiro expressivo preparado', {
@@ -661,8 +679,8 @@ function buildAudioDirective(audio, fallbackText, sceneId = null, publicationKey
     synthesisPath: source.synthesisPath ?? '/v1/audio/synthesize',
     text: source.text ?? fallbackText ?? '',
     language: source.language ?? 'pt-BR',
-    rate: source.rate ?? 0.9,
-    pitch: source.pitch ?? 0.85,
+    rate: source.rate ?? 0.96,
+    pitch: source.pitch ?? 1,
     volume: source.volume ?? 1,
     sceneId: source.sceneId ?? sceneId ?? null,
     sessionId: source.sessionId ?? null,
@@ -2485,7 +2503,7 @@ async function openCampaignMemoryPanel() {
 }
 
 function narrationHtml(text) {
-  return String(text ?? '')
+  return stripCinematicMarkers(String(text ?? ''))
     .split(/\n{2,}/)
     .map((paragraph) => `<p>${foundry.utils.escapeHTML(paragraph).replace(/\n/g, '<br>')}</p>`)
     .join('');

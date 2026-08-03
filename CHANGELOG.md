@@ -4,7 +4,24 @@ Este projeto segue o formato do [Keep a Changelog](https://keepachangelog.com/pt
 
 ## [Não publicado]
 
-Nenhuma alteração registrada após o hotfix RC.2.
+Nenhuma alteração registrada após o RC.3.
+
+## [1.0.0-rc.3] - 2026-08-03
+
+### Melhorado
+
+- Narrações de rodada e combate passam por até três tentativas de polimento antes da publicação.
+- O Engine bloqueia linguagem de bastidor, números mecânicos não confirmados, perguntas genéricas e fórmulas repetitivas como “o resultado é claro”.
+- Ações com teste pendente permanecem narrativamente suspensas sem inventar sucesso, falha, descoberta ou ausência.
+- Marcações expressivas foram reduzidas para uma a três por narração e só podem aparecer entre frases completas.
+- Marcações de voz deixam de aparecer no chat, permanecendo disponíveis apenas para o mecanismo de áudio.
+- O TTS local prioriza vozes em português com indicação de voz natural, neural, online ou aprimorada.
+- A prosódia local recebeu pausas menores, variações mais sutis de tom e velocidade padrão mais próxima da fala humana.
+
+### Corrigido
+
+- Ausência de rolagem ou dano não é mais convertida em `total 0` ou `dano 0` autoritativo.
+- Valores zero continuam válidos quando vierem explicitamente de uma rolagem real do Foundry.
 
 ## [1.0.0-rc.2] - 2026-08-03
 

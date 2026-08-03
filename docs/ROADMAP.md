@@ -150,6 +150,10 @@
 - [x] painel exclusivo para GM.
 
 ## Marco 13 — Estabilização real no Foundry ⏸ adiado
+- [x] instalação física inicial do RC.2 no Foundry VTT 13;
+- [x] compatibilidade entre módulo e Engine confirmada pelo diagnóstico;
+- [x] Groq, microfone, armazenamento e Central Mestre Orc confirmados no ambiente real;
+- [x] primeiro ciclo de polimento narrativo e prosódia local entregue no RC.3;
 - [ ] validação com múltiplos clientes em Foundry VTT 13;
 - [ ] matriz manual de voz, salas, combate e permissões;
 - [ ] revisão visual dos painéis no ambiente real;
@@ -219,6 +223,15 @@
 - [x] fallback para a rota legada de leitura do diagnóstico;
 - [x] exportação local do diagnóstico quando o endpoint remoto não estiver disponível;
 - [x] teste automatizado da incompatibilidade encontrada no Foundry real.
+
+## Polimento narrativo e prosódia do Marco 13 ✅ — 1.0.0-rc.3
+- [x] bloqueio de `total 0` e `dano 0` quando não existe rolagem real;
+- [x] retentativa automática de narrações com linguagem mecânica ou encerramento genérico;
+- [x] tratamento específico para investigações e verificações ainda pendentes;
+- [x] redução e reposicionamento das marcações expressivas;
+- [x] remoção das marcações do texto publicado no chat;
+- [x] seleção preferencial de vozes naturais em português no navegador;
+- [x] pausas, velocidade e tom do TTS local suavizados.
 
 ## Próximo marco obrigatório antes da versão estável
 - Marco 13 — estabilização e validação real no Foundry VTT 13 e Windows.
