@@ -8,6 +8,7 @@ import { createNeuralVoiceServiceFromEnv } from '../../../packages/neural-voice-
 import { createVoiceProfileServiceFromEnv } from '../../../packages/voice-profile-service/src/index.js';
 import { createCampaignMemoryFromEnv } from '../../../packages/memory/src/index.js';
 import { createAdventureLibraryFromEnv, AdventureImportModes } from '../../../packages/adventure-library/src/index.js';
+import { createGeneratorServiceFromEnv, GeneratorArtifactTypes, GeneratorArtifactStatuses } from '../../../packages/generator-service/src/index.js';
 import { createConfig, isOriginAllowed, loadEnvFile } from '../../../packages/config/src/index.js';
 
 
@@ -23,7 +24,8 @@ const neuralVoiceService = createNeuralVoiceServiceFromEnv({ logger: app.log });
 const voiceProfileService = createVoiceProfileServiceFromEnv({ logger: app.log });
 const campaignMemory = createCampaignMemoryFromEnv({ logger: app.log });
 const adventureLibrary = createAdventureLibraryFromEnv({ logger: app.log });
-const runtime = createSessionRuntime({ narrator, narrationMemory, audioNarrationService, campaignMemory, adventureLibrary, logger: app.log });
+const generatorService = createGeneratorServiceFromEnv({ narrator, campaignMemory, adventureLibrary, logger: app.log });
+const runtime = createSessionRuntime({ narrator, narrationMemory, audioNarrationService, campaignMemory, adventureLibrary, generatorService, logger: app.log });
 
 app.addHook('onRequest', async (request, reply) => {
   const origin = request.headers.origin;
@@ -45,6 +47,8 @@ app.get('/health', { logLevel: 'silent' }, async () => ({
   narrativeMemory: 'persistent-file',
   campaignMemory: 'persistent-file',
   adventureLibrary: 'persistent-file',
+  generatedContent: 'persistent-file',
+  generatorTypes: GeneratorArtifactTypes,
   documentFormats: ['txt', 'md', 'html', 'docx', 'pdf'],
   audio: audioNarrationService.enabled ? audioNarrationService.mode : 'disabled',
   neuralVoice: neuralVoiceService.getStatus(),
@@ -426,6 +430,135 @@ app.delete('/v1/adventure-library/:campaignId/:documentId', {
   catch (error) { return reply.code(400).send({ code: 'ADVENTURE_DELETE_FAILED', message: error.message }); }
 });
 
+
+app.get('/v1/generators/:campaignId', {
+  schema: {
+    params: {
+      type: 'object', required: ['campaignId'], additionalProperties: false,
+      properties: { campaignId: { type: 'string', minLength: 1, maxLength: 200 } }
+    },
+    querystring: {
+      type: 'object', additionalProperties: false,
+      properties: {
+        type: { type: 'string', enum: GeneratorArtifactTypes },
+        status: { type: 'string', enum: GeneratorArtifactStatuses }
+      }
+    }
+  }
+}, async (request, reply) => {
+  try { return await runtime.listGeneratedArtifacts(request.params.campaignId, request.query ?? {}); }
+  catch (error) { return reply.code(Number(error.statusCode) || 400).send({ code: error.code || 'GENERATOR_ARCHIVE_READ_FAILED', message: error.message }); }
+});
+
+app.get('/v1/generators/:campaignId/:artifactId', {
+  schema: {
+    params: {
+      type: 'object', required: ['campaignId', 'artifactId'], additionalProperties: false,
+      properties: {
+        campaignId: { type: 'string', minLength: 1, maxLength: 200 },
+        artifactId: { type: 'string', minLength: 1, maxLength: 200 }
+      }
+    }
+  }
+}, async (request, reply) => {
+  try {
+    const artifact = await runtime.getGeneratedArtifact(request.params.campaignId, request.params.artifactId);
+    if (!artifact) return reply.code(404).send({ code: 'GENERATED_ARTIFACT_NOT_FOUND', message: 'Conteúdo gerado não encontrado.' });
+    return { artifact };
+  } catch (error) {
+    return reply.code(Number(error.statusCode) || 400).send({ code: error.code || 'GENERATED_ARTIFACT_READ_FAILED', message: error.message });
+  }
+});
+
+app.post('/v1/generators/:campaignId/generate', {
+  schema: {
+    params: {
+      type: 'object', required: ['campaignId'], additionalProperties: false,
+      properties: { campaignId: { type: 'string', minLength: 1, maxLength: 200 } }
+    },
+    body: {
+      type: 'object', required: ['type', 'brief'], additionalProperties: false,
+      properties: {
+        type: { type: 'string', enum: GeneratorArtifactTypes },
+        brief: { type: 'string', minLength: 10, maxLength: 5000 },
+        system: { type: 'string', maxLength: 120 },
+        tone: { type: 'string', maxLength: 200 },
+        levelRange: { anyOf: [{ type: 'string', maxLength: 80 }, { type: 'null' }] },
+        playerCount: { anyOf: [{ type: 'integer', minimum: 1, maximum: 20 }, { type: 'null' }] },
+        length: { type: 'string', enum: ['SHORT', 'MEDIUM', 'LONG'] },
+        includeSecrets: { type: 'boolean' },
+        constraints: { anyOf: [{ type: 'string', maxLength: 3000 }, { type: 'null' }] }
+      }
+    }
+  }
+}, async (request, reply) => {
+  try { return await runtime.generateArtifact(request.params.campaignId, request.body ?? {}); }
+  catch (error) {
+    const status = Number(error.statusCode) || (error.code === 'GENERATOR_REPETITION_BLOCKED' ? 409 : 400);
+    return reply.code(status).send({
+      code: error.code || 'CONTENT_GENERATION_FAILED',
+      message: error.message,
+      closestArtifactId: error.closestArtifactId ?? null,
+      similarity: error.similarity ?? null,
+      retryAfter: error.retryAfter ?? null
+    });
+  }
+});
+
+app.post('/v1/generators/:campaignId/:artifactId/activate', {
+  schema: {
+    params: {
+      type: 'object', required: ['campaignId', 'artifactId'], additionalProperties: false,
+      properties: {
+        campaignId: { type: 'string', minLength: 1, maxLength: 200 },
+        artifactId: { type: 'string', minLength: 1, maxLength: 200 }
+      }
+    }
+  }
+}, async (request, reply) => {
+  try {
+    const result = await runtime.activateGeneratedArtifact(request.params.campaignId, request.params.artifactId);
+    if (!result) return reply.code(404).send({ code: 'GENERATED_ARTIFACT_NOT_FOUND', message: 'Conteúdo gerado não encontrado.' });
+    return result;
+  } catch (error) {
+    return reply.code(Number(error.statusCode) || 400).send({ code: error.code || 'GENERATED_ARTIFACT_ACTIVATION_FAILED', message: error.message });
+  }
+});
+
+app.post('/v1/generators/:campaignId/:artifactId/archive', {
+  schema: {
+    params: {
+      type: 'object', required: ['campaignId', 'artifactId'], additionalProperties: false,
+      properties: {
+        campaignId: { type: 'string', minLength: 1, maxLength: 200 },
+        artifactId: { type: 'string', minLength: 1, maxLength: 200 }
+      }
+    }
+  }
+}, async (request, reply) => {
+  try {
+    const result = await runtime.archiveGeneratedArtifact(request.params.campaignId, request.params.artifactId);
+    if (!result) return reply.code(404).send({ code: 'GENERATED_ARTIFACT_NOT_FOUND', message: 'Conteúdo gerado não encontrado.' });
+    return result;
+  } catch (error) {
+    return reply.code(Number(error.statusCode) || 400).send({ code: error.code || 'GENERATED_ARTIFACT_ARCHIVE_FAILED', message: error.message });
+  }
+});
+
+app.delete('/v1/generators/:campaignId/:artifactId', {
+  schema: {
+    params: {
+      type: 'object', required: ['campaignId', 'artifactId'], additionalProperties: false,
+      properties: {
+        campaignId: { type: 'string', minLength: 1, maxLength: 200 },
+        artifactId: { type: 'string', minLength: 1, maxLength: 200 }
+      }
+    }
+  }
+}, async (request, reply) => {
+  try { return await runtime.removeGeneratedArtifact(request.params.campaignId, request.params.artifactId); }
+  catch (error) { return reply.code(Number(error.statusCode) || 400).send({ code: error.code || 'GENERATED_ARTIFACT_DELETE_FAILED', message: error.message }); }
+});
 
 
 app.get('/v1/voice/providers', async () => neuralVoiceService.getStatus());

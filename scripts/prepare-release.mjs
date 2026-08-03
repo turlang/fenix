@@ -55,6 +55,7 @@ const forbiddenPaths = [
   'data/campaign-memory.json',
   'data/adventure-library.json',
   'data/voice-profiles.json',
+  'data/generated-content.json',
   'dist'
 ];
 

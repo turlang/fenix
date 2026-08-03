@@ -12,6 +12,7 @@ import { WorldStateService } from '../../world-state/src/index.js';
 import { InMemoryCampaignMemory } from '../../memory/src/index.js';
 import { CombatService } from '../../combat-service/src/index.js';
 import { InMemoryAdventureLibrary } from '../../adventure-library/src/index.js';
+import { InMemoryGeneratorService } from '../../generator-service/src/index.js';
 
 function createInputApi(initial = {}) {
   let snapshot = initial;
@@ -37,12 +38,19 @@ export function createSessionRuntime({
   audioOptions,
   campaignMemory,
   adventureLibrary,
+  generatorService,
   logger = console
 } = {}) {
   const inputApi = foundryApi ?? createInputApi();
   const adapter = new FoundryAdapter(inputApi);
   const persistentMemory = campaignMemory ?? new InMemoryCampaignMemory({ logger });
   const persistentAdventureLibrary = adventureLibrary ?? new InMemoryAdventureLibrary({ logger });
+  const persistentGeneratorService = generatorService ?? new InMemoryGeneratorService({
+    narrator,
+    campaignMemory: persistentMemory,
+    adventureLibrary: persistentAdventureLibrary,
+    logger
+  });
   const director = new SessionDirector({
     foundryAdapter: adapter,
     contextBuilder: createNarrationContextBuilder({ logger }),
@@ -107,6 +115,12 @@ export function createSessionRuntime({
     importAdventureDocument: (campaignId, input) => persistentAdventureLibrary.importDocument(campaignId, input),
     searchAdventureDocuments: (campaignId, query, options) => persistentAdventureLibrary.search(campaignId, query, options),
     updateAdventureDocumentMode: (campaignId, documentId, mode) => persistentAdventureLibrary.updateMode(campaignId, documentId, mode),
-    removeAdventureDocument: (campaignId, documentId) => persistentAdventureLibrary.remove(campaignId, documentId)
+    removeAdventureDocument: (campaignId, documentId) => persistentAdventureLibrary.remove(campaignId, documentId),
+    listGeneratedArtifacts: (campaignId, options) => persistentGeneratorService.list(campaignId, options),
+    getGeneratedArtifact: (campaignId, artifactId) => persistentGeneratorService.get(campaignId, artifactId),
+    generateArtifact: (campaignId, input) => persistentGeneratorService.generate(campaignId, input),
+    activateGeneratedArtifact: (campaignId, artifactId) => persistentGeneratorService.activate(campaignId, artifactId),
+    archiveGeneratedArtifact: (campaignId, artifactId) => persistentGeneratorService.archive(campaignId, artifactId),
+    removeGeneratedArtifact: (campaignId, artifactId) => persistentGeneratorService.remove(campaignId, artifactId)
   };
 }

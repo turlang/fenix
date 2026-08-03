@@ -17,6 +17,34 @@ Este projeto segue o formato do [Keep a Changelog](https://keepachangelog.com/pt
 - Comando `npm run release:prepare` para gerar uma pasta de distribuição higienizada em `dist/`.
 - Comando `npm run check:offline` para validar estrutura e testes quando a auditoria remota do npm estiver indisponível.
 
+
+## [0.1.0-alpha.44] - 2026-08-02
+
+### Adicionado
+
+- `GeneratorService` persistente para aventuras, NPCs e dungeons, isolado por `worldId`.
+- Painel **Forja de conteúdo** no chat e nos controles da cena do Foundry.
+- Arquivo automático de cada geração com título, resumo, tags, metadados, conteúdo Markdown, assinatura e número sequencial.
+- Comparação local por SHA-256 e similaridade lexical contra todo o histórico do mesmo tipo.
+- Novas tentativas automáticas quando a IA devolve conteúdo semelhante ao arquivo.
+- Ativação separada para integrar aventuras e dungeons à Biblioteca e NPCs à memória persistente.
+- Endpoints para gerar, listar, consultar, ativar, arquivar e remover artefatos.
+- Fallback e circuit breaker dos provedores de IA aplicados também aos geradores.
+
+### Alterado
+
+- Aventuras e dungeons ativadas entram na Biblioteca em `REFERENCE_ONLY`.
+- NPCs ativados entram na memória como registros secretos e estado `GENERATED`.
+- O `/health` passa a informar persistência e tipos disponíveis na Forja.
+- Prompts de geração exigem conteúdo original e JSON estruturado, sem copiar material publicado.
+
+### Segurança e confiabilidade
+
+- Nenhum resultado repetitivo é salvo quando todas as tentativas excedem o limite de similaridade.
+- Geração e ativação são operações distintas para impedir que conteúdo não revisado altere a campanha.
+- `data/generated-content.json` permanece fora do Git e das entregas limpas.
+- Exclusão na Forja não remove automaticamente integrações já ativadas, evitando perda acidental de memória ou documentos.
+
 ## [0.1.0-alpha.43] - 2026-08-02
 
 ### Adicionado

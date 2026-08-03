@@ -826,3 +826,177 @@
   .mestre-orc-voice-summary, .mestre-orc-voice-form { grid-template-columns: 1fr; }
   .mestre-orc-voice-wide { grid-column: auto; }
 }
+
+/* Alpha.44 — Forja persistente de aventuras, NPCs e dungeons */
+.mestre-orc-generator-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 11000;
+  display: grid;
+  place-items: center;
+  padding: 22px;
+  background: rgba(2, 5, 9, 0.82);
+  backdrop-filter: blur(7px);
+}
+
+.mestre-orc-generator-panel {
+  position: relative;
+  width: min(1180px, 96vw);
+  max-height: 94vh;
+  overflow: auto;
+  border: 1px solid rgba(236, 174, 76, 0.34);
+  border-radius: 14px;
+  background: linear-gradient(145deg, rgba(28, 20, 13, 0.98), rgba(9, 14, 22, 0.98));
+  color: #f6ead7;
+  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.62);
+}
+
+.mestre-orc-generator-header {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 19px 22px;
+  border-bottom: 1px solid rgba(236, 174, 76, 0.26);
+  background: rgba(24, 17, 12, 0.96);
+  backdrop-filter: blur(10px);
+}
+.mestre-orc-generator-header span { color: #e8b765; font-size: .74rem; font-weight: 800; letter-spacing: .13em; text-transform: uppercase; }
+.mestre-orc-generator-header h2 { margin: 3px 0 5px; font-size: 1.55rem; }
+.mestre-orc-generator-header p { margin: 0; color: #c9bba8; }
+.mestre-orc-generator-header > button,
+.mestre-orc-generator-detail > header button {
+  width: 36px;
+  height: 36px;
+  border: 1px solid rgba(236, 174, 76, .32);
+  border-radius: 8px;
+  background: rgba(255,255,255,.04);
+  color: #f7e7cf;
+  cursor: pointer;
+}
+
+.mestre-orc-generator-stats {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+  padding: 16px 22px 8px;
+}
+.mestre-orc-generator-stats article {
+  padding: 12px;
+  border: 1px solid rgba(236, 174, 76, .2);
+  border-radius: 9px;
+  background: rgba(236, 174, 76, .06);
+  text-align: center;
+}
+.mestre-orc-generator-stats strong { display: block; color: #ffd88d; font-size: 1.25rem; }
+.mestre-orc-generator-stats span { color: #bcae9c; font-size: .78rem; }
+
+.mestre-orc-generator-form {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 10px 22px 20px;
+  padding: 17px;
+  border: 1px solid rgba(236, 174, 76, .23);
+  border-radius: 12px;
+  background: rgba(4, 8, 14, .48);
+}
+.mestre-orc-generator-form h3,
+.mestre-orc-generator-archive > h3 { grid-column: 1 / -1; margin: 0 0 2px; color: #f2cf91; }
+.mestre-orc-generator-form label { display: grid; gap: 5px; color: #d3c5b3; font-size: .78rem; font-weight: 700; }
+.mestre-orc-generator-form input,
+.mestre-orc-generator-form select,
+.mestre-orc-generator-form textarea {
+  width: 100%;
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid rgba(236, 174, 76, .28);
+  border-radius: 7px;
+  background: rgba(2, 6, 11, .82);
+  color: #fff4e2;
+}
+.mestre-orc-generator-form textarea { resize: vertical; }
+.mestre-orc-generator-wide { grid-column: 1 / -1; }
+.mestre-orc-generator-form .checkbox { display: flex; align-items: center; gap: 8px; }
+.mestre-orc-generator-form .checkbox input { width: auto; }
+.mestre-orc-generator-form > p { grid-column: 1 / -1; margin: 0; color: #c9bca8; font-size: .8rem; }
+.mestre-orc-generator-form > button {
+  min-height: 40px;
+  border: 1px solid #d39b42;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #855922, #4c2f16);
+  color: #fff4df;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.mestre-orc-generator-archive { padding: 0 22px 24px; }
+.mestre-orc-generator-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 10px; }
+.mestre-orc-generator-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 15px;
+  border: 1px solid rgba(236, 174, 76, .2);
+  border-radius: 11px;
+  background: rgba(12, 16, 23, .76);
+}
+.mestre-orc-generator-card > header { display: flex; justify-content: space-between; gap: 12px; }
+.mestre-orc-generator-card > header div span { display: block; color: #d7a553; font-size: .7rem; font-weight: 800; text-transform: uppercase; letter-spacing: .1em; }
+.mestre-orc-generator-card > header strong { display: block; margin-top: 3px; color: #fff0d7; font-size: 1.02rem; }
+.mestre-orc-generator-card > header em { align-self: flex-start; padding: 4px 8px; border-radius: 999px; font-size: .7rem; font-style: normal; }
+.mestre-orc-generator-card > header em.active { background: rgba(86, 196, 126, .14); color: #92e7ae; }
+.mestre-orc-generator-card > header em.archived { background: rgba(155, 165, 181, .13); color: #c4cad4; }
+.mestre-orc-generator-card > p { flex: 1; color: #c9bfaf; line-height: 1.48; }
+.mestre-orc-generator-card > small { color: #8f8b85; margin-top: 9px; }
+.mestre-orc-generator-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.mestre-orc-generator-tags span { padding: 3px 7px; border: 1px solid rgba(236,174,76,.2); border-radius: 999px; color: #d8bd91; font-size: .7rem; }
+.mestre-orc-generator-card footer { display: flex; gap: 7px; margin-top: 12px; }
+.mestre-orc-generator-card footer button {
+  min-height: 34px;
+  padding: 7px 10px;
+  border: 1px solid rgba(236, 174, 76, .32);
+  border-radius: 7px;
+  background: rgba(99, 67, 31, .54);
+  color: #f8e8cf;
+  cursor: pointer;
+}
+.mestre-orc-generator-card footer button.danger { margin-left: auto; border-color: rgba(218, 95, 95, .36); background: rgba(104, 32, 32, .45); }
+.mestre-orc-generator-empty { grid-column: 1 / -1; padding: 25px; text-align: center; color: #aa9f91; }
+
+.mestre-orc-generator-detail {
+  position: fixed;
+  inset: 5vh 6vw;
+  z-index: 7;
+  overflow: auto;
+  padding: 20px;
+  border: 1px solid rgba(236,174,76,.42);
+  border-radius: 14px;
+  background: rgba(8, 11, 17, .98);
+  box-shadow: 0 25px 80px rgba(0,0,0,.72);
+}
+.mestre-orc-generator-detail > header { position: sticky; top: -20px; display: flex; justify-content: space-between; gap: 20px; padding: 12px 0; background: rgba(8,11,17,.97); }
+.mestre-orc-generator-detail > header span { color: #d8a958; font-size: .75rem; text-transform: uppercase; }
+.mestre-orc-generator-detail h3 { margin: 4px 0 0; font-size: 1.5rem; }
+.mestre-orc-generator-detail .summary { color: #d4c7b6; font-size: 1rem; }
+.mestre-orc-generator-detail dl { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 8px; margin: 16px 0; }
+.mestre-orc-generator-detail dl div { padding: 9px; border: 1px solid rgba(236,174,76,.16); border-radius: 7px; }
+.mestre-orc-generator-detail dt { color: #9f8c72; font-size: .68rem; text-transform: uppercase; }
+.mestre-orc-generator-detail dd { margin: 3px 0 0; color: #eadac4; overflow-wrap: anywhere; }
+.mestre-orc-generator-detail pre { white-space: pre-wrap; font-family: inherit; line-height: 1.55; color: #eee2d1; background: rgba(255,255,255,.025); padding: 16px; border-radius: 9px; }
+
+@media (max-width: 900px) {
+  .mestre-orc-generator-stats { grid-template-columns: repeat(3, minmax(0,1fr)); }
+  .mestre-orc-generator-form { grid-template-columns: repeat(2, minmax(0,1fr)); }
+  .mestre-orc-generator-grid { grid-template-columns: 1fr; }
+  .mestre-orc-generator-detail dl { grid-template-columns: repeat(2, minmax(0,1fr)); }
+}
+@media (max-width: 560px) {
+  .mestre-orc-generator-overlay { padding: 6px; }
+  .mestre-orc-generator-stats, .mestre-orc-generator-form { grid-template-columns: 1fr; }
+  .mestre-orc-generator-wide { grid-column: auto; }
+  .mestre-orc-generator-detail { inset: 2vh 2vw; }
+  .mestre-orc-generator-detail dl { grid-template-columns: 1fr; }
+}

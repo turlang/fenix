@@ -28,3 +28,12 @@ Enquanto o projeto estiver em fase alfa, somente a versão mais recente recebe c
 - O projeto não cria, treina nem clona vozes e não aceita upload de amostras biométricas de voz.
 - Use somente voice IDs e serviços para os quais você tenha autorização. A interface identifica a saída neural como voz gerada por inteligência artificial.
 - `data/voice-profiles.json` pode conter nomes e instruções narrativas da campanha; mantenha esse arquivo fora do Git e das entregas públicas.
+
+## Conteúdo gerado
+
+- Resultados da Forja são arquivados antes de qualquer integração com a campanha.
+- Revise aventuras, NPCs e dungeons antes de ativá-los; a IA pode produzir inconsistências mesmo quando o formato é válido.
+- Aventuras e dungeons são ativadas como `REFERENCE_ONLY`, e NPCs como memória `secret`, reduzindo risco de spoilers.
+- O bloqueio de repetição combina histórico enviado ao provedor, assinatura SHA-256 e similaridade lexical local.
+- Não use a Forja para copiar aventuras comerciais, personagens protegidos ou material sem autorização.
+- `data/generated-content.json` pode conter segredos completos da campanha e deve permanecer fora do Git, backups públicos e logs.

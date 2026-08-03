@@ -88,6 +88,20 @@
 - [x] painel do mestre no Foundry e prévia de voz;
 - [x] credenciais restritas à API e aviso de voz gerada por IA.
 
+## Marco 8 — Geradores persistentes ✅ — alpha.44
+- [x] gerador de aventuras completas em Markdown;
+- [x] gerador de NPCs com personalidade, segredos, vínculos e direção vocal;
+- [x] gerador de dungeons com áreas numeradas, fluxo, encontros, pistas e armadilhas;
+- [x] arquivo persistente e isolado por campanha;
+- [x] assinatura SHA-256 e comparação lexical contra todo o histórico;
+- [x] novas tentativas automáticas quando a IA repete conteúdo;
+- [x] serialização de gerações simultâneas para impedir duplicação por corrida;
+- [x] ativação separada e segura pelo mestre;
+- [x] aventuras e dungeons integradas à Biblioteca como `REFERENCE_ONLY`;
+- [x] NPCs integrados à memória como registros `secret`;
+- [x] painel Forja de conteúdo no chat e nos controles da cena;
+- [x] fallback e circuit breaker aplicados às operações de geração.
+
 ## Próximos marcos liberados
-- Marco 8 — geradores persistentes de aventuras, NPCs e dungeons;
-- Marco 9 — mapas automáticos e integração com cenas do Foundry.
+- Marco 9 — mapas automáticos e integração com cenas do Foundry;
+- Marco 10 — tutor de ficha e tutor de mestre.

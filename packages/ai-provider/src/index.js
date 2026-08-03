@@ -27,6 +27,10 @@ export class NarrativeProvider {
   async narrateCombatRound(payload) {
     return this.generateText({ purpose: 'COMBAT_ROUND_SUMMARY', responseMode: 'text', ...payload });
   }
+
+  async generateArtifact(payload) {
+    return this.generateText({ purpose: 'CONTENT_GENERATOR', responseMode: 'json', ...payload });
+  }
 }
 
 function compactText(value, limit = 9000) {
@@ -261,6 +265,60 @@ function roomEntryPrompt(context) {
   ].join('\n');
 }
 
+
+function generatorSchemaInstructions(type) {
+  if (type === 'NPC') {
+    return [
+      'metadata deve conter: name, role, ancestry, occupation, motivation, secret e voiceDirection.',
+      'content deve ser Markdown com: identidade, aparência, personalidade, objetivos, medo, segredo do mestre, forma de falar, vínculos, três ganchos de interação e bloco consultivo sem inventar regras oficiais.'
+    ];
+  }
+  if (type === 'DUNGEON') {
+    return [
+      'metadata deve conter: theme, roomCount, levels, objective e entrance.',
+      'content deve ser Markdown com visão geral, fluxo textual, áreas numeradas, texto para ler aos jogadores claramente marcado, segredos do mestre, encontros, pistas, armadilhas com solução, recompensas e conexões entre salas.'
+    ];
+  }
+  return [
+    'metadata deve conter: hook, estimatedSessions e structure.',
+    'content deve ser Markdown com premissa, contexto, gancho inicial, atos ou capítulos, NPCs centrais, locais, conflitos, pistas, encontros, possíveis desfechos e sementes de continuação.'
+  ];
+}
+
+function generatorPrompt({ type, brief, options = {}, generationNumber = 1, attempt = 1, history = [], rejection = null } = {}) {
+  const previous = history.length
+    ? history.map((entry, index) => `${index + 1}. ${entry.title} — ${entry.summary} — tags: ${(entry.tags ?? []).join(', ') || 'nenhuma'} — assinatura ${entry.signature}`).join('\n')
+    : 'Nenhum conteúdo anterior deste tipo.';
+  const rejectionLines = rejection
+    ? [`A tentativa anterior ficou semelhante a “${rejection.title}” (${Math.round(Number(rejection.similarity || 0) * 100)}%).`, rejection.instruction]
+    : ['Nenhuma tentativa desta geração foi rejeitada.'];
+  return [
+    `Gere um artefato ORIGINAL do tipo ${type} para uma campanha de RPG.`,
+    `Esta é a geração ${generationNumber}, tentativa ${attempt}.`,
+    'Responda SOMENTE com um objeto JSON válido, sem bloco de código, comentários ou texto antes/depois.',
+    'Formato obrigatório: {"title":"...","summary":"...","tags":["..."],"metadata":{...},"content":"Markdown completo"}.',
+    ...generatorSchemaInstructions(type),
+    'Não copie aventuras publicadas, personagens conhecidos, mapas comerciais ou texto protegido. Crie conteúdo novo.',
+    'Não reutilize a mesma premissa, antagonista, objetivo, estrutura, segredo central, sequência de salas ou nomes do histórico abaixo.',
+    'Não inclua resultados de dados como fatos consumados. Regras e CDs devem ser sugestões ajustáveis pelo mestre.',
+    `Sistema: ${options.system || 'D&D 5e'}.`,
+    `Tom: ${options.tone || 'medieval sombrio e cinematográfico'}.`,
+    `Faixa de nível: ${options.levelRange || 'não especificada'}.`,
+    `Quantidade de jogadores: ${options.playerCount || 'não especificada'}.`,
+    `Extensão: ${options.length || 'MEDIUM'}.`,
+    `Incluir segredos do mestre: ${options.includeSecrets === false ? 'não' : 'sim'}.`,
+    options.constraints ? `Restrições adicionais: ${options.constraints}` : 'Sem restrições adicionais.',
+    '',
+    `PEDIDO DO MESTRE: ${brief}`,
+    '',
+    'CONTEÚDOS JÁ ARQUIVADOS — EVITE REPETIR:',
+    previous,
+    '',
+    'CORREÇÃO DE REPETIÇÃO:',
+    ...rejectionLines
+  ].join('\n');
+}
+
 export class PromptNarrativeProvider {
   constructor({ requestText, providerId = 'unknown', model = null, logger = console } = {}) {
     if (typeof requestText !== 'function') throw new TypeError('requestText é obrigatório.');
@@ -442,12 +500,20 @@ export class PromptNarrativeProvider {
     return this.requestText(prompt, { maxTokens: 500, temperature: 0.65, topP: 0.9 });
   }
 
+  async generateArtifact(payload = {}) {
+    return this.requestText(generatorPrompt(payload), {
+      maxTokens: payload?.options?.length === 'LONG' ? 3000 : payload?.options?.length === 'SHORT' ? 1200 : 2200,
+      temperature: Math.min(1, 0.82 + Math.max(0, Number(payload.attempt) - 1) * 0.05),
+      topP: 0.96
+    });
+  }
+
   async requestText(prompt, options) {
     return this._requestText({ prompt, ...options });
   }
 }
 
-const SYSTEM_INSTRUCTION = 'Você produz narração oral de RPG com voz humana, fluida, evocativa e cinematográfica. Use marcações expressivas entre colchetes quando solicitado, crie emoção pela cadência sem inventar fatos e nunca responda em JSON.';
+const SYSTEM_INSTRUCTION = 'Você produz conteúdo original para RPG sem copiar obras publicadas. Para narração, use voz humana, fluida, evocativa e cinematográfica, com marcações expressivas quando solicitado. Para o gerador de conteúdo, siga rigorosamente o JSON solicitado pelo prompt. Nunca invente resultados mecânicos confirmados.';
 
 function cleanBaseUrl(value, fallback = '') {
   return String(value || fallback).trim().replace(/\/$/, '');
@@ -853,6 +919,7 @@ export class ResilientNarrativeProvider {
   narrateRound(payload) { return this.invoke('narrateRound', payload); }
   narrateCombatTurn(payload) { return this.invoke('narrateCombatTurn', payload); }
   narrateCombatRound(payload) { return this.invoke('narrateCombatRound', payload); }
+  generateArtifact(payload) { return this.invoke('generateArtifact', payload); }
 
   getStatus() {
     return {
@@ -957,5 +1024,7 @@ export const aiProviderInternals = {
   classifyNarrationEnvironment,
   expressiveScriptInstructions,
   openingPrompt,
-  roomEntryPrompt
+  roomEntryPrompt,
+  generatorPrompt,
+  generatorSchemaInstructions
 };

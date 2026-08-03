@@ -45,9 +45,14 @@ import {
   injectVoiceProfileButton,
   openVoiceProfilePanel
 } from './voice-profile-panel.js';
+import {
+  GENERATOR_BUTTON_ID,
+  injectGeneratorButton,
+  openGeneratorPanel
+} from './generator-panel.js';
 
 const MODULE_ID = 'mestre-orc';
-const MODULE_BUILD = '0.1.0-alpha.43';
+const MODULE_BUILD = '0.1.0-alpha.44';
 const BUTTON_ID = 'mestre-orc-start';
 const ROUND_BUTTON_ID = 'mestre-orc-resolve-round';
 const AUDIO_BUTTON_ID = 'mestre-orc-audio-toggle';
@@ -2822,7 +2827,7 @@ function installDelegatedStartHandler() {
 
   document.addEventListener('click', (event) => {
     const target = event.target instanceof Element
-      ? event.target.closest('[data-mestre-orc-action="start-session"], [data-mestre-orc-action="resolve-round"], [data-mestre-orc-action="resolve-combat-turn"], [data-mestre-orc-action="summarize-combat-round"], [data-mestre-orc-action="open-memory"], [data-mestre-orc-action="open-adventure-library"], [data-mestre-orc-action="open-ai-providers"], [data-mestre-orc-action="open-voice-profiles"], #mestre-orc-start, #mestre-orc-resolve-round, #mestre-orc-combat-turn, #mestre-orc-combat-round, #mestre-orc-memory, #mestre-orc-adventure-library, #mestre-orc-ai-providers, #mestre-orc-voice-profiles')
+      ? event.target.closest('[data-mestre-orc-action="start-session"], [data-mestre-orc-action="resolve-round"], [data-mestre-orc-action="resolve-combat-turn"], [data-mestre-orc-action="summarize-combat-round"], [data-mestre-orc-action="open-memory"], [data-mestre-orc-action="open-adventure-library"], [data-mestre-orc-action="open-ai-providers"], [data-mestre-orc-action="open-voice-profiles"], [data-mestre-orc-action="open-generators"], #mestre-orc-start, #mestre-orc-resolve-round, #mestre-orc-combat-turn, #mestre-orc-combat-round, #mestre-orc-memory, #mestre-orc-adventure-library, #mestre-orc-ai-providers, #mestre-orc-voice-profiles, #mestre-orc-generators')
       : null;
     if (!target) return;
 
@@ -2836,6 +2841,7 @@ function installDelegatedStartHandler() {
     else if (target.dataset.mestreOrcAction === 'open-adventure-library' || target.id === ADVENTURE_BUTTON_ID) void openAdventureLibraryPanel({ request });
     else if (target.dataset.mestreOrcAction === 'open-ai-providers' || target.id === AI_PROVIDER_BUTTON_ID) void openAiProviderPanel({ request });
     else if (target.dataset.mestreOrcAction === 'open-voice-profiles' || target.id === VOICE_PROFILE_BUTTON_ID) void openVoiceProfilePanel({ request });
+    else if (target.dataset.mestreOrcAction === 'open-generators' || target.id === GENERATOR_BUTTON_ID) void openGeneratorPanel({ request });
     else void startSession(target);
   }, true);
 }
@@ -2847,6 +2853,7 @@ function scheduleInjection(root) {
     injectCombatButtons(root);
     injectMemoryButton(root);
     injectAdventureLibraryButton({ root, request, findChatContainer });
+    injectGeneratorButton({ root, request, findChatContainer });
     injectAiProviderButton({ root, request, findChatContainer });
     injectVoiceProfileButton({ root, request, findChatContainer });
     injectAudioToggleButton(root);
@@ -2857,6 +2864,7 @@ function scheduleInjection(root) {
       injectCombatButtons(document);
       injectMemoryButton(document);
       injectAdventureLibraryButton({ root: document, request, findChatContainer });
+      injectGeneratorButton({ root: document, request, findChatContainer });
       injectAiProviderButton({ root: document, request, findChatContainer });
       injectVoiceProfileButton({ root: document, request, findChatContainer });
       injectAudioToggleButton(document);
@@ -2868,6 +2876,7 @@ function scheduleInjection(root) {
       injectCombatButtons(document);
       injectMemoryButton(document);
       injectAdventureLibraryButton({ root: document, request, findChatContainer });
+      injectGeneratorButton({ root: document, request, findChatContainer });
       injectAiProviderButton({ root: document, request, findChatContainer });
       injectVoiceProfileButton({ root: document, request, findChatContainer });
       injectAudioToggleButton(document);
@@ -2957,6 +2966,19 @@ Hooks.on('getSceneControlButtons', (controls) => {
       onChange: () => {
         console.log('[Mestre Orc] biblioteca da aventura aberta pelos controles da cena');
         void openAdventureLibraryPanel({ request });
+      }
+    };
+
+    tokenControls.tools.mestreOrcGenerators = {
+      name: 'mestreOrcGenerators',
+      title: 'Mestre Orc — Forja de conteúdo',
+      icon: 'fa-solid fa-wand-magic-sparkles',
+      order: Object.keys(tokenControls.tools).length,
+      button: true,
+      visible: true,
+      onChange: () => {
+        console.log('[Mestre Orc] geradores abertos pelos controles da cena');
+        void openGeneratorPanel({ request });
       }
     };
 

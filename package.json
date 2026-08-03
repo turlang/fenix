@@ -1,7 +1,7 @@
 {
   "name": "mestre-orc-engine",
-  "version": "0.1.0-alpha.43",
-  "description": "Motor modular de narração cinematográfica, voz neural, perfis de NPC, memória persistente, biblioteca semântica e provedores resilientes.",
+  "version": "0.1.0-alpha.44",
+  "description": "Motor modular de narração cinematográfica, geradores persistentes, memória, biblioteca semântica, combate, voz neural e provedores resilientes.",
   "private": true,
   "type": "module",
   "workspaces": [

@@ -1,8 +1,8 @@
 # Mestre Orc Engine
 
-Versão `0.1.0-alpha.43` — Node.js 20–24 e Foundry VTT 13.
+Versão `0.1.0-alpha.44` — Node.js 20–24 e Foundry VTT 13.
 
-O fluxo atual localiza a Scene ativa, procura o Journal correspondente no diretório do Foundry e extrai exclusivamente uma caixa read-aloud reconhecida. São aceitos os formatos antigo e atual do Plutonium/5eTools, `blockquote` HTML e citação Markdown; blocos secretos ou exclusivos do GM são ignorados. A âncora canônica é interpretada pelo primeiro provedor de IA saudável da ordem configurada, validada e publicada no chat com áudio. Groq, OpenAI, Anthropic e endpoints OpenAI-compatible podem operar com fallback automático. A saída pode usar o TTS do navegador ou voz neural externa com perfis persistentes para narrador e NPCs.
+O fluxo atual localiza a Scene ativa, procura o Journal correspondente no diretório do Foundry e extrai exclusivamente uma caixa read-aloud reconhecida. São aceitos os formatos antigo e atual do Plutonium/5eTools, `blockquote` HTML e citação Markdown; blocos secretos ou exclusivos do GM são ignorados. A âncora canônica é interpretada pelo primeiro provedor de IA saudável da ordem configurada, validada e publicada no chat com áudio. Groq, OpenAI, Anthropic e endpoints OpenAI-compatible podem operar com fallback automático. A saída pode usar o TTS do navegador ou voz neural externa com perfis persistentes para narrador e NPCs. O mestre também pode gerar e arquivar aventuras, NPCs e dungeons originais com bloqueio de repetição.
 
 ## Engine
 
@@ -37,6 +37,9 @@ AI_COMPATIBLE_BASE_URL=
 MESTRE_ORC_NARRATION_MEMORY_FILE=./data/narration-history.json
 MESTRE_ORC_CAMPAIGN_MEMORY_FILE=./data/campaign-memory.json
 ADVENTURE_LIBRARY_FILE=./data/adventure-library.json
+GENERATOR_ARCHIVE_FILE=./data/generated-content.json
+GENERATOR_SIMILARITY_THRESHOLD=0.62
+GENERATOR_MAX_ATTEMPTS=3
 PDFTOTEXT_COMMAND=pdftotext
 MESTRE_ORC_AUDIO_ENABLED=true
 MESTRE_ORC_AUDIO_MODE=browser-tts
@@ -54,7 +57,7 @@ ELEVENLABS_TTS_VOICE_ID=
 COMPATIBLE_TTS_BASE_URL=
 ```
 
-Abra `http://localhost:3001/health`. Os campos esperados incluem `"ai":"configured"`, `"aiProviders"`, `"audio"`, `"neuralVoice"`, `"voiceProfiles":"persistent-file"`, `"campaignMemory":"persistent-file"` e `"adventureLibrary":"persistent-file"`.
+Abra `http://localhost:3001/health`. Os campos esperados incluem `"ai":"configured"`, `"aiProviders"`, `"audio"`, `"neuralVoice"`, `"voiceProfiles":"persistent-file"`, `"campaignMemory":"persistent-file"`, `"adventureLibrary":"persistent-file"` e `"generatedContent":"persistent-file"`.
 
 ## Comandos
 
@@ -65,6 +68,43 @@ Abra `http://localhost:3001/health`. Os campos esperados incluem `"ai":"configur
 - `npm run check:offline`: executa validação e testes quando o endpoint de auditoria do registro npm estiver indisponível.
 - `npm run check`: executa estrutura, auditoria de segurança e testes antes de cada entrega.
 - `npm run release:prepare`: gera em `dist/` uma cópia limpa, sem `.git`, `.env`, dependências ou histórico local.
+
+
+## Forja persistente de aventuras, NPCs e dungeons
+
+A alpha.44 adiciona a **Forja de conteúdo**, disponível no chat e nos controles da cena do Foundry. O mestre pode solicitar:
+
+- aventuras completas, com premissa, estrutura, NPCs, locais, conflitos, pistas e desfechos;
+- NPCs com identidade, objetivos, segredos, vínculos, direção vocal e ganchos de interação;
+- dungeons com fluxo textual, áreas numeradas, textos para jogadores, segredos, encontros, armadilhas, pistas e recompensas.
+
+Cada resultado é salvo primeiro como `ARCHIVED` em `data/generated-content.json`. A geração recebe o histórico dos conteúdos do mesmo tipo, e o Engine ainda executa uma comparação local por assinatura e similaridade lexical. Se o resultado repetir título, premissa, estrutura ou vocabulário central, ele é descartado e uma nova tentativa é solicitada. Quando todas as tentativas continuam repetitivas, nada é salvo e a API retorna `GENERATOR_REPETITION_BLOCKED`.
+
+A ativação é deliberadamente separada da geração:
+
+- aventuras e dungeons são importadas na Biblioteca da aventura como `REFERENCE_ONLY`;
+- NPCs são adicionados à memória persistente como registros `secret` e estado `GENERATED`;
+- arquivar novamente não apaga documentos ou memórias que já tenham sido ativados;
+- excluir remove apenas o registro da Forja, evitando apagar conteúdo de campanha por acidente.
+
+Configurações:
+
+```env
+GENERATOR_ARCHIVE_FILE=./data/generated-content.json
+GENERATOR_SIMILARITY_THRESHOLD=0.62
+GENERATOR_MAX_ATTEMPTS=3
+```
+
+Endpoints:
+
+- `GET /v1/generators/:campaignId`
+- `GET /v1/generators/:campaignId/:artifactId`
+- `POST /v1/generators/:campaignId/generate`
+- `POST /v1/generators/:campaignId/:artifactId/activate`
+- `POST /v1/generators/:campaignId/:artifactId/archive`
+- `DELETE /v1/generators/:campaignId/:artifactId`
+
+A Forja usa o mesmo orquestrador de IA resiliente da narração. Portanto, fallback e circuit breaker também se aplicam às gerações. O prompt proíbe copiar aventuras publicadas, personagens conhecidos ou texto protegido e trata sugestões mecânicas como material ajustável pelo mestre.
 
 
 ## Voz neural e perfis avançados de NPC
