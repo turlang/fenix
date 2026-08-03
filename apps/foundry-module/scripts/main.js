@@ -84,7 +84,7 @@ import {
 } from './central-panel.js';
 
 const MODULE_ID = 'mestre-orc';
-const MODULE_BUILD = '1.0.0-rc.1';
+const MODULE_BUILD = '1.0.0-rc.2';
 const BUTTON_ID = 'mestre-orc-start';
 const ROUND_BUTTON_ID = 'mestre-orc-resolve-round';
 const AUDIO_BUTTON_ID = 'mestre-orc-audio-toggle';
@@ -2216,6 +2216,27 @@ async function request(path, options = {}) {
   return payload;
 }
 
+async function verifyEngineModuleCompatibility() {
+  if (!game.user?.isGM) return null;
+  try {
+    const health = await request('/health');
+    const engineVersion = String(health?.version ?? 'desconhecida');
+    if (!engineVersion || engineVersion === 'desconhecida' || engineVersion === MODULE_BUILD) return { compatible: true, engineVersion };
+    const warningKey = `mestre-orc-version-warning:${MODULE_BUILD}:${engineVersion}`;
+    if (!sessionStorage.getItem(warningKey)) {
+      sessionStorage.setItem(warningKey, '1');
+      ui.notifications?.warn?.(
+        `Mestre Orc: módulo ${MODULE_BUILD} conectado ao Engine ${engineVersion}. Atualize também o Engine e reinicie a API antes de usar diagnóstico e recursos novos.`,
+        { permanent: true }
+      );
+    }
+    return { compatible: false, engineVersion };
+  } catch (error) {
+    debugLog('[Mestre Orc] verificação de compatibilidade com o Engine indisponível', { code: error?.code, status: error?.status });
+    return { compatible: null, error };
+  }
+}
+
 
 
 function memoryEscape(value) {
@@ -3076,6 +3097,7 @@ Hooks.once('ready', () => {
     installedVersion: game.modules?.get?.(MODULE_ID)?.version ?? null
   });
   ui.notifications?.info?.(`Mestre Orc ${MODULE_BUILD} carregado.`);
+  void verifyEngineModuleCompatibility();
   installAudioSocket();
   scheduleInjection(document);
   if (game.user?.isGM) {

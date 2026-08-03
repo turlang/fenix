@@ -24,6 +24,15 @@ test('painel executa diagnóstico completo e exporta relatório sanitizado', () 
   assert.match(panel, /Chaves, tokens, cookies, senhas e credenciais/);
 });
 
+test('painel trata Engine desatualizado sem exibir erro bruto de rota', () => {
+  assert.match(panel, /isMissingRouteError/);
+  assert.match(panel, /LEGACY_GET/);
+  assert.match(panel, /ENGINE_MODULE_VERSION_MISMATCH/);
+  assert.match(panel, /Atualize também o Engine/);
+  assert.match(panel, /diagnostic-report-client-fallback/);
+  assert.match(main, /verifyEngineModuleCompatibility/);
+});
+
 test('Central de Diagnóstico é exclusiva do GM e aparece no chat e controles da cena', () => {
   assert.match(panel, /somente o mestre pode abrir a Central de Diagnóstico/i);
   assert.match(main, /injectDiagnosticButton/);

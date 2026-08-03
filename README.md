@@ -1,6 +1,6 @@
 # Mestre Orc Engine
 
-**Versão:** `1.0.0-rc.1`
+**Versão:** `1.0.0-rc.2`
 **Compatibilidade:** Node.js 20–24 · Foundry VTT 13
 
 Mestre Orc é um Engine modular de apoio a sessões de RPG no Foundry VTT. Ele combina narração cinematográfica, entrada e saída por voz, rodadas fora de combate, Combat Tracker, memória persistente, biblioteca de aventuras, criação assistida, mapas, tutores, automações aprovadas, diagnóstico, backup e atualização segura.
@@ -27,7 +27,7 @@ Mestre Orc é um Engine modular de apoio a sessões de RPG no Foundry VTT. Ele c
 
 ### Windows
 
-1. Baixe e extraia `mestre-orc-windows-bundle-1.0.0-rc.1.zip`.
+1. Baixe e extraia `mestre-orc-windows-bundle-1.0.0-rc.2.zip`.
 2. Abra o PowerShell na pasta `windows`.
 3. Execute:
 

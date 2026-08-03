@@ -116,6 +116,20 @@ export class DiagnosticService {
     checks.push(check('microphone-support', 'Microfone e reconhecimento de voz', !mic.supported ? 'WARN' : mic.permission === 'denied' ? 'FAIL' : mic.permission === 'granted' ? 'PASS' : 'WARN', !mic.supported ? 'O navegador não oferece a API de reconhecimento usada pelo módulo.' : mic.permission === 'denied' ? 'A permissão do microfone está bloqueada.' : mic.permission === 'granted' ? 'Microfone autorizado.' : 'A permissão ainda não foi concedida ou precisa ser testada.', mic, 'CLIENT'));
     checks.push(check('secure-context', 'Contexto seguro do navegador', client.browser?.secureContext === false ? 'WARN' : 'PASS', client.browser?.secureContext === false ? 'O navegador pode bloquear microfone fora de HTTPS ou localhost.' : 'Contexto compatível com recursos protegidos do navegador.', client.browser, 'CLIENT'));
     checks.push(check('foundry-version', 'Foundry VTT', String(client.foundry?.version || '').startsWith('13') ? 'PASS' : client.foundry?.version ? 'WARN' : 'INFO', client.foundry?.version ? `Foundry ${client.foundry.version} detectado.` : 'Versão do Foundry não informada.', client.foundry, 'CLIENT'));
+    const moduleVersion = cleanText(client.foundry?.moduleVersion, 100);
+    if (moduleVersion) {
+      const versionsMatch = moduleVersion === this.engineVersion;
+      checks.push(check(
+        'engine-module-version',
+        'Compatibilidade Engine e módulo',
+        versionsMatch ? 'PASS' : 'WARN',
+        versionsMatch
+          ? `Engine e módulo usam a versão ${this.engineVersion}.`
+          : `O módulo Foundry ${moduleVersion} está conectado ao Engine ${this.engineVersion}. Atualize os dois componentes e reinicie a API.`,
+        { engineVersion: this.engineVersion, moduleVersion },
+        'COMPATIBILITY'
+      ));
+    }
     const latency = Number(client.apiLatencyMs);
     if (Number.isFinite(latency)) checks.push(check('api-latency', 'Latência entre Foundry e API', latency < 500 ? 'PASS' : latency < 2000 ? 'WARN' : 'FAIL', `${Math.round(latency)} ms na última medição.`, { latencyMs: Math.round(latency) }, 'NETWORK'));
     checks.push(...await this.storageChecks());

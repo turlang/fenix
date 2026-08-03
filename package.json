@@ -1,6 +1,6 @@
 {
   "name": "mestre-orc-engine",
-  "version": "1.0.0-rc.1",
+  "version": "1.0.0-rc.2",
   "description": "Release Candidate do Mestre Orc Engine: narração, voz, combate, memória, criação assistida, segurança, diagnóstico, backup, migrações e distribuição para Foundry VTT 13.",
   "private": true,
   "type": "module",

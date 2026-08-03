@@ -4,7 +4,21 @@ Este projeto segue o formato do [Keep a Changelog](https://keepachangelog.com/pt
 
 ## [Não publicado]
 
-Nenhuma alteração registrada após o Release Candidate.
+Nenhuma alteração registrada após o hotfix RC.2.
+
+## [1.0.0-rc.2] - 2026-08-03
+
+### Corrigido
+
+- A Central de Diagnóstico não exibe mais o erro bruto `Route POST ... not found` quando o módulo está conectado a um Engine antigo.
+- O painel tenta automaticamente a rota de diagnóstico compatível por `GET` antes de interromper a operação.
+- A exportação do relatório possui fallback local quando o endpoint de exportação ainda não existe no Engine conectado.
+- O módulo verifica a versão do Engine ao iniciar e alerta o mestre quando Engine e módulo estão desencontrados.
+- O relatório de diagnóstico passou a incluir uma verificação explícita de compatibilidade entre as versões.
+
+### Observação de instalação
+
+- Engine e módulo Foundry devem ser atualizados juntos. Depois da atualização, o processo antigo da API precisa ser encerrado e iniciado novamente.
 
 ## [1.0.0-rc.1] - 2026-08-03
 

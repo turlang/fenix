@@ -213,6 +213,13 @@
 - [x] documentação de arquitetura, privacidade, troubleshooting e limitações;
 - [x] checklist explícito do que bloqueia a versão estável.
 
+## Hotfix de compatibilidade do Marco 13 ✅ — 1.0.0-rc.2
+- [x] identificação automática de versões divergentes entre módulo e Engine;
+- [x] mensagem orientada em lugar do erro bruto de rota inexistente;
+- [x] fallback para a rota legada de leitura do diagnóstico;
+- [x] exportação local do diagnóstico quando o endpoint remoto não estiver disponível;
+- [x] teste automatizado da incompatibilidade encontrada no Foundry real.
+
 ## Próximo marco obrigatório antes da versão estável
 - Marco 13 — estabilização e validação real no Foundry VTT 13 e Windows.
-- Após o Marco 13: correções encontradas, `1.0.0-rc.2` se necessário e então `1.0.0` estável.
+- Após o Marco 13: correções restantes, novo RC somente se necessário e então `1.0.0` estável.

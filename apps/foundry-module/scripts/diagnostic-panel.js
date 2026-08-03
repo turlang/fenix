@@ -8,9 +8,51 @@ function escapeHtml(value) {
 }
 function campaignId() { return String(game.world?.id ?? 'default'); }
 function requester() { return { id: String(game.user?.id ?? ''), name: String(game.user?.name ?? 'Mestre'), isGM: Boolean(game.user?.isGM) }; }
+function moduleVersion() { return String(game.modules?.get?.('mestre-orc')?.version ?? 'desconhecida'); }
 function formatDate(value) { const date = new Date(value); return Number.isNaN(date.getTime()) ? '—' : date.toLocaleString('pt-BR'); }
 function formatBytes(value) { const bytes = Number(value) || 0; if (bytes < 1024) return `${bytes} B`; if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`; return `${(bytes / 1024 ** 2).toFixed(1)} MB`; }
 function levelIcon(level) { return level === 'PASS' ? 'fa-circle-check' : level === 'FAIL' ? 'fa-circle-xmark' : level === 'WARN' ? 'fa-triangle-exclamation' : 'fa-circle-info'; }
+function isMissingRouteError(error) { return Number(error?.status) === 404 || /route\s+(?:get|post):.*not found/i.test(String(error?.message ?? '')); }
+
+function compatibilityMessage(client = {}) {
+  const engineVersion = String(client.clientHealthVersion ?? 'desconhecida');
+  return `O módulo Foundry ${moduleVersion()} está conectado ao Engine ${engineVersion}, mas a rota de diagnóstico não existe nessa API. Atualize também o Engine, encerre o processo antigo e inicie novamente a API.`;
+}
+
+function addCompatibilityWarning(report, client, mode = 'LEGACY_GET') {
+  const engineVersion = String(client?.clientHealthVersion ?? report?.engine?.version ?? 'desconhecida');
+  const foundryVersion = moduleVersion();
+  const mismatch = engineVersion !== 'desconhecida' && foundryVersion !== 'desconhecida' && engineVersion !== foundryVersion;
+  const warning = {
+    id: 'engine-module-compatibility',
+    label: 'Compatibilidade Engine e módulo',
+    level: mismatch || mode === 'LEGACY_GET' ? 'WARN' : 'PASS',
+    message: mismatch
+      ? `Módulo ${foundryVersion} e Engine ${engineVersion} estão em versões diferentes. Atualize os dois pacotes e reinicie a API.`
+      : mode === 'LEGACY_GET'
+        ? 'O diagnóstico foi aberto em modo de compatibilidade porque a rota completa não estava disponível.'
+        : 'Engine e módulo usam a mesma versão.',
+    group: 'COMPATIBILITY',
+    details: { moduleVersion: foundryVersion, engineVersion, mode },
+    checkedAt: new Date().toISOString()
+  };
+  const sourceChecks = Array.isArray(report?.checks) ? report.checks.filter((entry) => entry?.id !== warning.id) : [];
+  const serverAlreadyChecked = sourceChecks.some((entry) => entry?.id === 'engine-module-version');
+  const checks = mode === 'FULL_POST' && serverAlreadyChecked ? sourceChecks : [warning, ...sourceChecks];
+  const summary = {
+    pass: checks.filter((entry) => entry.level === 'PASS').length,
+    warn: checks.filter((entry) => entry.level === 'WARN').length,
+    fail: checks.filter((entry) => entry.level === 'FAIL').length,
+    info: checks.filter((entry) => entry.level === 'INFO').length
+  };
+  return {
+    ...report,
+    checks,
+    summary,
+    overall: summary.fail ? 'FAIL' : summary.warn ? 'WARN' : 'PASS',
+    compatibility: { moduleVersion: foundryVersion, engineVersion, mode, mismatch }
+  };
+}
 
 async function microphonePermission() {
   try {
@@ -78,7 +120,41 @@ function downloadBase64(contentBase64, fileName) {
 }
 async function runReport(request) {
   const client = await collectDiagnosticClientContext({ request });
-  return request(`/v1/diagnostics/${encodeURIComponent(campaignId())}/run`, { method: 'POST', body: JSON.stringify({ requester: requester(), client }) });
+  try {
+    const report = await request(`/v1/diagnostics/${encodeURIComponent(campaignId())}/run`, { method: 'POST', body: JSON.stringify({ requester: requester(), client }) });
+    return addCompatibilityWarning(report, client, 'FULL_POST');
+  } catch (error) {
+    if (!isMissingRouteError(error)) throw error;
+    const user = requester();
+    const query = new URLSearchParams({ requesterId: user.id, requesterName: user.name, isGM: String(user.isGM) });
+    try {
+      const report = await request(`/v1/diagnostics/${encodeURIComponent(campaignId())}?${query.toString()}`);
+      return addCompatibilityWarning(report, client, 'LEGACY_GET');
+    } catch (fallbackError) {
+      if (!isMissingRouteError(fallbackError)) throw fallbackError;
+      const compatibilityError = new Error(compatibilityMessage(client));
+      compatibilityError.code = 'ENGINE_MODULE_VERSION_MISMATCH';
+      compatibilityError.status = 409;
+      throw compatibilityError;
+    }
+  }
+}
+
+function downloadJson(content, fileName) {
+  const url = URL.createObjectURL(new Blob([content], { type: 'application/json' }));
+  const anchor = document.createElement('a'); anchor.href = url; anchor.download = fileName; document.body.append(anchor); anchor.click(); anchor.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+async function exportDiagnosticReport(request) {
+  const client = await collectDiagnosticClientContext({ request });
+  try {
+    return await request(`/v1/diagnostics/${encodeURIComponent(campaignId())}/export`, { method: 'POST', body: JSON.stringify({ requester: requester(), client }) });
+  } catch (error) {
+    if (!isMissingRouteError(error)) throw error;
+    const report = await runReport(request);
+    const content = JSON.stringify({ format: 'mestre-orc-diagnostic-report-client-fallback', formatVersion: 1, generatedAt: new Date().toISOString(), report }, null, 2);
+    return { localFallback: true, fileName: `mestre-orc-diagnostico-${campaignId()}-${new Date().toISOString().replace(/[:.]/g, '-')}.json`, content };
+  }
 }
 function bindPanel({ request }) {
   const panel = document.getElementById(DIAGNOSTIC_PANEL_ID); if (!panel) return;
@@ -90,9 +166,10 @@ function bindPanel({ request }) {
     try {
       if (action === 'run') return await openDiagnosticPanel({ request });
       if (action === 'export') {
-        const client = await collectDiagnosticClientContext({ request });
-        const result = await request(`/v1/diagnostics/${encodeURIComponent(campaignId())}/export`, { method: 'POST', body: JSON.stringify({ requester: requester(), client }) });
-        downloadBase64(result.contentBase64, result.fileName); ui.notifications?.info?.('Mestre Orc: relatório de diagnóstico exportado.');
+        const result = await exportDiagnosticReport(request);
+        if (result.localFallback) downloadJson(result.content, result.fileName);
+        else downloadBase64(result.contentBase64, result.fileName);
+        ui.notifications?.info?.(result.localFallback ? 'Mestre Orc: relatório exportado em modo de compatibilidade.' : 'Mestre Orc: relatório de diagnóstico exportado.');
       }
     } catch (error) { ui.notifications?.error?.(`Mestre Orc: ${error.message}`); }
     finally { button.disabled = false; }

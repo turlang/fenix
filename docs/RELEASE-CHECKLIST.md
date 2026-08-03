@@ -27,4 +27,4 @@
 - [ ] Validação visual no Foundry VTT 13.
 - [ ] Sessão real com GM e pelo menos dois jogadores.
 
-Os três itens pendentes pertencem ao Marco 13 e bloqueiam a versão estável `1.0.0`, mas não a publicação de `1.0.0-rc.1`.
+Os três itens pendentes pertencem ao Marco 13 e bloqueiam a versão estável `1.0.0`, mas não a publicação de `1.0.0-rc.2`.

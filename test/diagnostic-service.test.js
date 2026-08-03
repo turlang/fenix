@@ -44,6 +44,23 @@ test('worldId divergente e microfone negado produzem falha', async () => {
   assert.ok(report.checks.some((entry) => entry.id === 'microphone-support' && entry.level === 'FAIL'));
 });
 
+test('diagnóstico alerta quando Engine e módulo Foundry usam versões diferentes', async () => {
+  const report = await service({ engineVersion: '1.0.0-rc.2' }).run('world-1', {
+    requester: gm(),
+    client: {
+      apiLatencyMs: 10,
+      microphone: { supported: true, permission: 'granted' },
+      browser: { secureContext: true },
+      foundry: { version: '13.351', moduleVersion: '1.0.0-rc.1' },
+      scene: { id: 'scene-1' }
+    }
+  });
+  const compatibility = report.checks.find((entry) => entry.id === 'engine-module-version');
+  assert.equal(compatibility.level, 'WARN');
+  assert.match(compatibility.message, /1\.0\.0-rc\.1/);
+  assert.match(compatibility.message, /1\.0\.0-rc\.2/);
+});
+
 test('telemetria limita eventos, registra latência e sanitiza erros', () => {
   const diagnostic = service({ maxEvents: 50 });
   for (let index = 0; index < 70; index += 1) diagnostic.recordRequest({ method: 'GET', route: `/route/${index}`, statusCode: index === 69 ? 500 : 200, latencyMs: index === 68 ? 2500 : 10, error: index === 69 ? Object.assign(new Error('falha segura'), { code: 'BROKEN' }) : null });
