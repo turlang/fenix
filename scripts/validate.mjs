@@ -37,6 +37,7 @@ const required = [
   'packages/automation-service/src/index.js',
   'packages/backup-service/src/index.js',
   'packages/diagnostic-service/src/index.js',
+  'packages/session-simulator/src/index.js',
   'packages/audio-narration-service/src/index.js',
   'packages/neural-voice-service/src/index.js',
   'packages/voice-profile-service/src/index.js',
@@ -50,6 +51,9 @@ const required = [
   'packages/foundry-publisher/src/index.js',
   'scripts/prepare-release.mjs',
   'scripts/run-tests.mjs',
+  'scripts/run-integration-tests.mjs',
+  'scripts/run-session-simulation.mjs',
+  'scripts/run-load-tests.mjs',
   '.env.example',
   'data/.gitkeep',
   '.gitignore',
@@ -75,7 +79,7 @@ if (packageJson.version !== packageLock.version || packageJson.version !== packa
   throw new Error('package.json e package-lock.json possuem versões divergentes.');
 }
 
-for (const scriptName of ['test', 'validate', 'check', 'check:offline', 'release:prepare']) {
+for (const scriptName of ['test', 'test:integration', 'test:session', 'test:load', 'test:all', 'validate', 'check', 'check:offline', 'release:prepare']) {
   if (!packageJson.scripts?.[scriptName]) throw new Error(`Script obrigatório ausente: ${scriptName}`);
 }
 
@@ -84,7 +88,7 @@ for (const entry of [...(moduleJson.esmodules ?? []), ...(moduleJson.styles ?? [
 }
 
 const gitignore = await readFile(new URL('.gitignore', root), 'utf8');
-for (const expectedRule of ['node_modules/', '.env', 'data/*.json', 'data/backups/', 'dist/']) {
+for (const expectedRule of ['node_modules/', '.env', 'data/*.json', 'data/backups/', 'dist/', 'reports/']) {
   if (!gitignore.split(/\r?\n/).includes(expectedRule)) {
     throw new Error(`Regra obrigatória ausente no .gitignore: ${expectedRule}`);
   }

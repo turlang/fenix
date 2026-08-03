@@ -91,3 +91,7 @@ Enquanto o projeto estiver em fase alfa, somente a versão mais recente recebe c
 - Eventos do cliente enviam somente categoria, mensagem limitada e contexto mínimo. Stacks completas não são coletadas.
 - A telemetria fica em memória, possui retenção limitada e desaparece ao reiniciar o Engine.
 - Revise o JSON antes de compartilhá-lo, pois nomes de campanha, Scene, sistema e usuário GM podem aparecer no relatório.
+
+## Relatórios de simulação
+
+O simulador do Marco 16 usa campanhas, atores, mensagens e rolagens sintéticas. Relatórios de sessão e carga não devem receber snapshots reais do Foundry, credenciais ou conteúdo importado da campanha. A pasta `reports/` é excluída do Git e da preparação de releases.

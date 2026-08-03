@@ -19,6 +19,23 @@ Este projeto segue o formato do [Keep a Changelog](https://keepachangelog.com/pt
 
 
 
+
+## [0.1.0-alpha.51] - 2026-08-03
+
+### Adicionado
+
+- `SessionSimulator` determinístico para executar sessões completas sem depender de um cliente Foundry real.
+- Simulação de abertura, entrada em sala, rodadas simultâneas, combate, memória e automações aprovadas.
+- Testes separados de integração, recuperação de falha transitória e carga concorrente.
+- Métricas de p50, p95, p99, vazão, taxa de erro, crescimento de heap e duplicações bloqueadas.
+- Relatórios JSON opcionais com assinatura SHA-256.
+- Comandos `test:integration`, `test:session`, `test:load` e `test:all`.
+
+### Alterado
+
+- `check` e `check:offline` passam a executar a suíte unitária, integração, sessão automatizada e carga.
+- CI passa a preservar relatórios de sessão e carga como artefatos no Node.js 22.
+
 ## [0.1.0-alpha.50] - 2026-08-03
 
 ### Adicionado

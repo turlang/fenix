@@ -1,8 +1,8 @@
 # Mestre Orc Engine
 
-Versão `0.1.0-alpha.50` — Node.js 20–24 e Foundry VTT 13.
+Versão `0.1.0-alpha.51` — Node.js 20–24 e Foundry VTT 13.
 
-O fluxo atual localiza a Scene ativa, procura o Journal correspondente no diretório do Foundry e extrai exclusivamente uma caixa read-aloud reconhecida. São aceitos os formatos antigo e atual do Plutonium/5eTools, `blockquote` HTML e citação Markdown; blocos secretos ou exclusivos do GM são ignorados. A âncora canônica é interpretada pelo primeiro provedor de IA saudável da ordem configurada, validada e publicada no chat com áudio. Groq, OpenAI, Anthropic e endpoints OpenAI-compatible podem operar com fallback automático. A saída pode usar o TTS do navegador ou voz neural externa com perfis persistentes para narrador e NPCs. O mestre também pode gerar e arquivar aventuras, NPCs e dungeons originais com bloqueio de repetição, planejar mapas vetoriais e convertê-los em Scenes editáveis do Foundry. A alpha.50 acrescenta a Central Mestre Orc unificada, uma barra compacta no chat e um único controle na Scene. Sessão, narração, combate, memória, biblioteca, criação, tutores, automações, provedores, vozes, backups e diagnóstico permanecem acessíveis por navegação organizada e responsiva.
+O fluxo atual localiza a Scene ativa, procura o Journal correspondente no diretório do Foundry e extrai exclusivamente uma caixa read-aloud reconhecida. São aceitos os formatos antigo e atual do Plutonium/5eTools, `blockquote` HTML e citação Markdown; blocos secretos ou exclusivos do GM são ignorados. A âncora canônica é interpretada pelo primeiro provedor de IA saudável da ordem configurada, validada e publicada no chat com áudio. Groq, OpenAI, Anthropic e endpoints OpenAI-compatible podem operar com fallback automático. A saída pode usar o TTS do navegador ou voz neural externa com perfis persistentes para narrador e NPCs. O mestre também pode gerar e arquivar aventuras, NPCs e dungeons originais com bloqueio de repetição, planejar mapas vetoriais e convertê-los em Scenes editáveis do Foundry. A alpha.51 acrescenta um laboratório automatizado de sessões completas, recuperação de falhas e carga concorrente. A Central Mestre Orc unificada, a barra compacta no chat e o controle único na Scene permanecem preservados. Sessão, narração, combate, memória, biblioteca, criação, tutores, automações, provedores, vozes, backups e diagnóstico permanecem acessíveis por navegação organizada e responsiva.
 
 ## Engine
 
@@ -69,7 +69,11 @@ Abra `http://localhost:3001/health`. Os campos esperados incluem `"ai":"configur
 ## Comandos
 
 - `npm run dev`: inicia a API.
-- `npm test`: executa os testes automatizados.
+- `npm test`: executa os testes unitários e de componentes.
+- `npm run test:integration`: executa cenários completos e recuperação de falhas.
+- `npm run test:session`: simula uma sessão completa e imprime um relatório assinado.
+- `npm run test:load`: executa múltiplas campanhas e jogadores simultâneos.
+- `npm run test:all`: executa todas as camadas de validação.
 - `npm run audit`: verifica vulnerabilidades conhecidas nas dependências de produção.
 - `npm run validate`: valida estrutura, versões, arquivos do módulo e proteção contra dados locais.
 - `npm run check:offline`: executa validação e testes quando o endpoint de auditoria do registro npm estiver indisponível.
@@ -79,6 +83,50 @@ Abra `http://localhost:3001/health`. Os campos esperados incluem `"ai":"configur
 
 
 
+
+
+## Laboratório de sessões e carga
+
+A alpha.51 inclui um simulador determinístico que não substitui a validação real do Marco 13, mas detecta regressões antes da instalação no Foundry. A sessão automatizada percorre:
+
+1. abertura da Scene;
+2. entrada idempotente em sala;
+3. declarações simultâneas de vários personagens;
+4. resolução consolidada da rodada;
+5. três turnos do Combat Tracker;
+6. resumo da rodada de combate;
+7. atualização da memória;
+8. criação, aprovação e conclusão de uma automação.
+
+Comandos principais:
+
+```powershell
+npm run test:integration
+npm run test:session
+npm run test:load
+```
+
+Para salvar relatórios JSON:
+
+```powershell
+$env:SIMULATION_REPORT_FILE = "reports/session-report.json"
+npm run test:session
+
+$env:LOAD_REPORT_FILE = "reports/load-report.json"
+$env:LOAD_SESSIONS = "6"
+$env:LOAD_PLAYERS = "8"
+$env:LOAD_ROUNDS = "3"
+npm run test:load
+```
+
+Limites opcionais do teste de carga:
+
+- `LOAD_MAX_ERROR_RATE` — padrão `0`;
+- `LOAD_MAX_P95_MS` — padrão `500`;
+- `LOAD_MAX_HEAP_GROWTH_MB` — padrão `96`;
+- `LOAD_AI_LATENCY_MS` — latência sintética do provedor, padrão `1`.
+
+Os relatórios contêm somente dados sintéticos, métricas agregadas e assinatura SHA-256. A pasta `reports/` permanece fora do Git e das entregas públicas.
 
 ## Central Mestre Orc unificada
 

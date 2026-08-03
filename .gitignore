@@ -12,3 +12,5 @@ data/*.json
 
 
 data/backups/
+
+reports/

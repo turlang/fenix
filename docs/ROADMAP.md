@@ -179,5 +179,17 @@
 - [x] responsividade, foco por teclado e redução de movimento;
 - [x] preservação de todas as ferramentas dos marcos anteriores.
 
+## Marco 16 — Testes de integração, carga e sessões automatizadas ✅ — alpha.51
+- [x] simulador determinístico de sessão completa;
+- [x] abertura, sala, rodada, combate, memória e automação no mesmo cenário;
+- [x] múltiplos jogadores com ações concorrentes;
+- [x] reconexão lógica e idempotência por eventos duplicados;
+- [x] falha transitória de IA com preservação da fila e nova tentativa;
+- [x] múltiplas campanhas simultâneas;
+- [x] métricas de latência, vazão, erros e heap;
+- [x] limites configuráveis para reprovar regressões de carga;
+- [x] relatórios JSON assinados com SHA-256;
+- [x] execução integrada ao `check`, `check:offline` e CI.
+
 ## Próximo marco liberado
-- Marco 16 — testes de integração, carga e sessões completas automatizadas.
+- Marco 17 — instalação, atualização, migrações e distribuição simplificada.
