@@ -12,6 +12,7 @@ import { createGeneratorServiceFromEnv, GeneratorArtifactTypes, GeneratorArtifac
 import { createMapServiceFromEnv, MapStatuses, MapStyles } from '../../../packages/map-service/src/index.js';
 import { createTutorServiceFromEnv, TutorModes } from '../../../packages/tutor-service/src/index.js';
 import { createAutomationServiceFromEnv, AutomationActionTypes, AutomationStatuses } from '../../../packages/automation-service/src/index.js';
+import { createBackupServiceFromEnv, BackupModes } from '../../../packages/backup-service/src/index.js';
 import { createConfig, isOriginAllowed, loadEnvFile } from '../../../packages/config/src/index.js';
 
 
@@ -31,6 +32,10 @@ const generatorService = createGeneratorServiceFromEnv({ narrator, campaignMemor
 const mapService = createMapServiceFromEnv({ narrator, generatorService, logger: app.log });
 const tutorService = createTutorServiceFromEnv({ narrator, campaignMemory, adventureLibrary, logger: app.log });
 const automationService = createAutomationServiceFromEnv({ narrator, logger: app.log });
+const backupService = createBackupServiceFromEnv({
+  engineVersion: packageMetadata.version, logger: app.log,
+  services: { campaignMemory, adventureLibrary, generatorService, mapService, voiceProfileService, tutorService, automationService, narrationMemory }
+});
 const runtime = createSessionRuntime({ narrator, narrationMemory, audioNarrationService, campaignMemory, adventureLibrary, generatorService, mapService, tutorService, automationService, logger: app.log });
 
 app.addHook('onRequest', async (request, reply) => {
@@ -59,6 +64,7 @@ app.get('/health', { logLevel: 'silent' }, async () => ({
   mapStyles: MapStyles,
   tutors: { modes: TutorModes, history: 'persistent-file', automaticChanges: false },
   automations: { proposals: 'persistent-file', actionTypes: AutomationActionTypes, statuses: AutomationStatuses, approvalRequired: true, automaticExecution: false },
+  backups: { storage: 'persistent-file', modes: BackupModes, integrity: 'sha256', encryption: 'optional-aes-256-gcm', automaticPreRestoreSnapshot: true },
   documentFormats: ['txt', 'md', 'html', 'docx', 'pdf'],
   audio: audioNarrationService.enabled ? audioNarrationService.mode : 'disabled',
   neuralVoice: neuralVoiceService.getStatus(),
@@ -900,6 +906,118 @@ app.post('/v1/automations/:campaignId/:proposalId/rollback/result', {
     if (!result) return reply.code(404).send({ code: 'AUTOMATION_NOT_FOUND', message: 'Proposta de automação não encontrada.' });
     return result;
   } catch (error) { return reply.code(Number(error.statusCode) || 400).send({ code: error.code || 'AUTOMATION_ROLLBACK_RESULT_FAILED', message: error.message }); }
+});
+
+
+const backupCampaignParamsSchema = {
+  type: 'object', required: ['campaignId'], additionalProperties: false,
+  properties: { campaignId: { type: 'string', minLength: 1, maxLength: 200 } }
+};
+const backupItemParamsSchema = {
+  type: 'object', required: ['campaignId', 'backupId'], additionalProperties: false,
+  properties: {
+    campaignId: { type: 'string', minLength: 1, maxLength: 200 },
+    backupId: { type: 'string', minLength: 1, maxLength: 240 }
+  }
+};
+const backupRequesterSchema = {
+  type: 'object', required: ['id', 'isGM'], additionalProperties: false,
+  properties: {
+    id: { type: 'string', minLength: 1, maxLength: 200 },
+    name: { type: 'string', maxLength: 300 },
+    isGM: { type: 'boolean' }
+  }
+};
+
+app.get('/v1/backups/:campaignId', {
+  schema: {
+    params: backupCampaignParamsSchema,
+    querystring: {
+      type: 'object', required: ['requesterId'], additionalProperties: false,
+      properties: {
+        requesterId: { type: 'string', minLength: 1, maxLength: 200 },
+        requesterName: { type: 'string', maxLength: 300 },
+        isGM: { type: 'string', enum: ['true', 'false'] }
+      }
+    }
+  }
+}, async (request, reply) => {
+  try {
+    return await backupService.list(request.params.campaignId, { requester: { id: request.query.requesterId, name: request.query.requesterName, isGM: request.query.isGM === 'true' } });
+  } catch (error) { return reply.code(Number(error.statusCode) || 400).send({ code: error.code || 'BACKUP_LIST_FAILED', message: error.message }); }
+});
+
+app.post('/v1/backups/:campaignId', {
+  schema: {
+    params: backupCampaignParamsSchema,
+    body: {
+      type: 'object', required: ['requester'], additionalProperties: false,
+      properties: {
+        requester: backupRequesterSchema,
+        label: { type: 'string', maxLength: 200 },
+        passphrase: { type: 'string', maxLength: 500 }
+      }
+    }
+  }
+}, async (request, reply) => {
+  try { return await backupService.create(request.params.campaignId, request.body ?? {}); }
+  catch (error) { return reply.code(Number(error.statusCode) || 400).send({ code: error.code || 'BACKUP_CREATE_FAILED', message: error.message }); }
+});
+
+app.post('/v1/backups/:campaignId/:backupId/export', {
+  schema: {
+    params: backupItemParamsSchema,
+    body: { type: 'object', required: ['requester'], additionalProperties: false, properties: { requester: backupRequesterSchema } }
+  }
+}, async (request, reply) => {
+  try { return await backupService.exportStored(request.params.campaignId, request.params.backupId, request.body ?? {}); }
+  catch (error) { return reply.code(Number(error.statusCode) || 400).send({ code: error.code || 'BACKUP_EXPORT_FAILED', message: error.message }); }
+});
+
+app.post('/v1/backups/:campaignId/inspect', {
+  bodyLimit: 32 * 1024 * 1024,
+  schema: {
+    params: backupCampaignParamsSchema,
+    body: {
+      type: 'object', required: ['requester', 'contentBase64'], additionalProperties: false,
+      properties: {
+        requester: backupRequesterSchema,
+        contentBase64: { type: 'string', minLength: 1 },
+        passphrase: { type: 'string', maxLength: 500 },
+        allowCampaignRemap: { type: 'boolean' }
+      }
+    }
+  }
+}, async (request, reply) => {
+  try { return await backupService.inspect(request.params.campaignId, request.body ?? {}); }
+  catch (error) { return reply.code(Number(error.statusCode) || 400).send({ code: error.code || 'BACKUP_INSPECTION_FAILED', message: error.message, sourceCampaignId: error.sourceCampaignId, targetCampaignId: error.targetCampaignId }); }
+});
+
+app.post('/v1/backups/:campaignId/restore', {
+  schema: {
+    params: backupCampaignParamsSchema,
+    body: {
+      type: 'object', required: ['requester', 'restoreToken', 'mode'], additionalProperties: false,
+      properties: {
+        requester: backupRequesterSchema,
+        restoreToken: { type: 'string', minLength: 1, maxLength: 200 },
+        mode: { type: 'string', enum: BackupModes }
+      }
+    }
+  }
+}, async (request, reply) => {
+  try { return await backupService.restore(request.params.campaignId, request.body ?? {}); }
+  catch (error) { return reply.code(Number(error.statusCode) || 400).send({ code: error.code || 'BACKUP_RESTORE_FAILED', message: error.message }); }
+});
+
+app.delete('/v1/backups/:campaignId/:backupId', {
+  schema: {
+    params: backupItemParamsSchema,
+    body: { type: 'object', required: ['requester'], additionalProperties: false, properties: { requester: backupRequesterSchema } }
+  }
+}, async (request, reply) => {
+  try { return await backupService.remove(request.params.campaignId, request.params.backupId, request.body ?? {}); }
+  catch (error) { return reply.code(Number(error.statusCode) || 400).send({ code: error.code || 'BACKUP_DELETE_FAILED', message: error.message }); }
 });
 
 app.get('/v1/voice/providers', async () => neuralVoiceService.getStatus());

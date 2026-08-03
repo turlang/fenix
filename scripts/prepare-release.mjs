@@ -9,7 +9,7 @@ const releaseName = `mestre-orc-engine-${packageJson.version}`;
 const distDirectory = join(projectRoot, 'dist');
 const releaseDirectory = join(distDirectory, releaseName);
 
-const excludedDirectoryNames = new Set(['.git', 'node_modules', 'dist', 'coverage']);
+const excludedDirectoryNames = new Set(['.git', 'node_modules', 'dist', 'coverage', 'backups']);
 const excludedFileNames = new Set(['.env', '.DS_Store', 'Thumbs.db', 'narration-history.json']);
 
 function normalizePath(path) {
@@ -57,6 +57,9 @@ const forbiddenPaths = [
   'data/voice-profiles.json',
   'data/generated-content.json',
   'data/map-blueprints.json',
+  'data/tutor-history.json',
+  'data/automation-proposals.json',
+  'data/backups',
   'dist'
 ];
 

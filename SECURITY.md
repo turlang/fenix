@@ -71,3 +71,13 @@ Enquanto o projeto estiver em fase alfa, somente a versão mais recente recebe c
 - Mensagens públicas propostas pela IA devem ser revisadas para impedir spoilers; segredos devem permanecer em Journals privados.
 - `data/automation-proposals.json` pode conter decisões, mensagens, IDs e valores anteriores da campanha. Mantenha-o fora do Git, logs e backups públicos.
 - A API local não autentica usuários de rede por conta própria. Não a exponha diretamente à internet; use TLS, proxy autenticado e controle de origem.
+
+## Backups e restauração
+
+- Backups são isolados por `worldId` e somente usuários GM podem criar, exportar, inspecionar, restaurar ou excluir arquivos.
+- Chaves de API, tokens, senhas, cabeçalhos de autorização e campos equivalentes são removidos antes da exportação.
+- A integridade do conteúdo compactado é validada por SHA-256 antes da descompressão.
+- Backups protegidos usam AES-256-GCM com `scrypt`; a senha não é armazenada pelo Engine.
+- A inspeção não grava dados. A restauração exige um token temporário, vinculado ao GM e à campanha, e de uso único.
+- Restaurações criam snapshot automático e usam rollback transacional quando uma fonte falha.
+- `data/backups/` deve permanecer fora do Git, de imagens públicas e de entregas compartilhadas.

@@ -10,3 +10,5 @@ Thumbs.db
 data/*.json
 !data/.gitkeep
 
+
+data/backups/

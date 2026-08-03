@@ -13,6 +13,7 @@ const required = [
   'apps/foundry-module/scripts/map-panel.js',
   'apps/foundry-module/scripts/tutor-panel.js',
   'apps/foundry-module/scripts/automation-panel.js',
+  'apps/foundry-module/scripts/backup-panel.js',
   'apps/foundry-module/scripts/ai-provider-panel.js',
   'apps/foundry-module/scripts/voice-profile-panel.js',
   'apps/foundry-module/scripts/voice-input.js',
@@ -32,6 +33,7 @@ const required = [
   'packages/map-service/src/index.js',
   'packages/tutor-service/src/index.js',
   'packages/automation-service/src/index.js',
+  'packages/backup-service/src/index.js',
   'packages/audio-narration-service/src/index.js',
   'packages/neural-voice-service/src/index.js',
   'packages/voice-profile-service/src/index.js',
@@ -79,7 +81,7 @@ for (const entry of [...(moduleJson.esmodules ?? []), ...(moduleJson.styles ?? [
 }
 
 const gitignore = await readFile(new URL('.gitignore', root), 'utf8');
-for (const expectedRule of ['node_modules/', '.env', 'data/*.json', 'dist/']) {
+for (const expectedRule of ['node_modules/', '.env', 'data/*.json', 'data/backups/', 'dist/']) {
   if (!gitignore.split(/\r?\n/).includes(expectedRule)) {
     throw new Error(`Regra obrigatória ausente no .gitignore: ${expectedRule}`);
   }
@@ -115,7 +117,7 @@ try {
   console.warn('Aviso: validação de arquivos rastreados pelo Git não pôde ser executada.');
 }
 
-const forbiddenLocal = ['.env', 'node_modules', 'data/narration-history.json', 'data/campaign-memory.json', 'data/adventure-library.json', 'data/voice-profiles.json', 'data/generated-content.json', 'data/map-blueprints.json', 'data/tutor-history.json', 'data/automation-proposals.json'];
+const forbiddenLocal = ['.env', 'node_modules', 'data/narration-history.json', 'data/campaign-memory.json', 'data/adventure-library.json', 'data/voice-profiles.json', 'data/generated-content.json', 'data/map-blueprints.json', 'data/tutor-history.json', 'data/automation-proposals.json', 'data/backups'];
 for (const path of forbiddenLocal) {
   try {
     await access(new URL(path, root));

@@ -16,6 +16,21 @@ export class InMemoryNarrationMemory {
     this.records.push(clone(record));
     return clone(record);
   }
+
+  async exportCampaign(campaignId) {
+    const id = String(campaignId ?? 'default');
+    return clone(this.records.filter((record) => String(record.campaignId ?? 'default') === id));
+  }
+
+  async importCampaign(campaignId, records = [], { mode = 'REPLACE' } = {}) {
+    const id = String(campaignId ?? 'default');
+    const incoming = (Array.isArray(records) ? records : []).map((record) => ({ ...clone(record), campaignId: id }));
+    const retained = this.records.filter((record) => String(record.campaignId ?? 'default') !== id);
+    const current = mode === 'MERGE' ? this.records.filter((record) => String(record.campaignId ?? 'default') === id) : [];
+    const byId = new Map([...current, ...incoming].map((record) => [String(record.id ?? JSON.stringify(record)), record]));
+    this.records = [...retained, ...byId.values()];
+    return this.exportCampaign(id);
+  }
 }
 
 export class FileNarrationMemory {
@@ -54,6 +69,26 @@ export class FileNarrationMemory {
     this.writeQueue = this.writeQueue.then(() => this.#persist());
     await this.writeQueue;
     return clone(record);
+  }
+
+  async exportCampaign(campaignId) {
+    await this.#load();
+    const id = String(campaignId ?? 'default');
+    return clone(this.records.filter((record) => String(record.campaignId ?? 'default') === id));
+  }
+
+  async importCampaign(campaignId, records = [], { mode = 'REPLACE' } = {}) {
+    await this.#load();
+    const id = String(campaignId ?? 'default');
+    const incoming = (Array.isArray(records) ? records : []).map((record) => ({ ...clone(record), campaignId: id }));
+    const retained = this.records.filter((record) => String(record.campaignId ?? 'default') !== id);
+    const current = mode === 'MERGE' ? this.records.filter((record) => String(record.campaignId ?? 'default') === id) : [];
+    const byId = new Map([...current, ...incoming].map((record) => [String(record.id ?? JSON.stringify(record)), record]));
+    this.records = [...retained, ...byId.values()];
+    if (this.records.length > this.maxRecords) this.records = this.records.slice(-this.maxRecords);
+    this.writeQueue = this.writeQueue.then(() => this.#persist());
+    await this.writeQueue;
+    return this.exportCampaign(id);
   }
 
   async #persist() {

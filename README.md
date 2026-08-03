@@ -1,8 +1,8 @@
 # Mestre Orc Engine
 
-Versão `0.1.0-alpha.47` — Node.js 20–24 e Foundry VTT 13.
+Versão `0.1.0-alpha.48` — Node.js 20–24 e Foundry VTT 13.
 
-O fluxo atual localiza a Scene ativa, procura o Journal correspondente no diretório do Foundry e extrai exclusivamente uma caixa read-aloud reconhecida. São aceitos os formatos antigo e atual do Plutonium/5eTools, `blockquote` HTML e citação Markdown; blocos secretos ou exclusivos do GM são ignorados. A âncora canônica é interpretada pelo primeiro provedor de IA saudável da ordem configurada, validada e publicada no chat com áudio. Groq, OpenAI, Anthropic e endpoints OpenAI-compatible podem operar com fallback automático. A saída pode usar o TTS do navegador ou voz neural externa com perfis persistentes para narrador e NPCs. O mestre também pode gerar e arquivar aventuras, NPCs e dungeons originais com bloqueio de repetição, planejar mapas vetoriais e convertê-los em Scenes editáveis do Foundry. A alpha.47 acrescenta automações assistidas com fila persistente, aprovação explícita do mestre, execução local allowlisted, auditoria e reversão segura.
+O fluxo atual localiza a Scene ativa, procura o Journal correspondente no diretório do Foundry e extrai exclusivamente uma caixa read-aloud reconhecida. São aceitos os formatos antigo e atual do Plutonium/5eTools, `blockquote` HTML e citação Markdown; blocos secretos ou exclusivos do GM são ignorados. A âncora canônica é interpretada pelo primeiro provedor de IA saudável da ordem configurada, validada e publicada no chat com áudio. Groq, OpenAI, Anthropic e endpoints OpenAI-compatible podem operar com fallback automático. A saída pode usar o TTS do navegador ou voz neural externa com perfis persistentes para narrador e NPCs. O mestre também pode gerar e arquivar aventuras, NPCs e dungeons originais com bloqueio de repetição, planejar mapas vetoriais e convertê-los em Scenes editáveis do Foundry. A alpha.48 acrescenta backups isolados por campanha, exportação criptografada opcional, inspeção de integridade, restauração por mesclagem ou substituição e snapshot automático pré-restauração.
 
 ## Engine
 
@@ -44,6 +44,8 @@ MAP_BLUEPRINT_FILE=./data/map-blueprints.json
 MAP_GENERATION_MAX_ATTEMPTS=2
 TUTOR_HISTORY_FILE=./data/tutor-history.json
 AUTOMATION_PROPOSALS_FILE=./data/automation-proposals.json
+BACKUP_DIRECTORY=./data/backups
+BACKUP_RETENTION_PER_CAMPAIGN=20
 PDFTOTEXT_COMMAND=pdftotext
 MESTRE_ORC_AUDIO_ENABLED=true
 MESTRE_ORC_AUDIO_MODE=browser-tts
@@ -61,7 +63,7 @@ ELEVENLABS_TTS_VOICE_ID=
 COMPATIBLE_TTS_BASE_URL=
 ```
 
-Abra `http://localhost:3001/health`. Os campos esperados incluem `"ai":"configured"`, `"aiProviders"`, `"audio"`, `"neuralVoice"`, `"voiceProfiles":"persistent-file"`, `"campaignMemory":"persistent-file"`, `"adventureLibrary":"persistent-file"`, `"generatedContent":"persistent-file"` , `"mapBlueprints":"persistent-file"`, `"tutors"` com modos `SHEET` e `GM` e `"automations"` com aprovação obrigatória.
+Abra `http://localhost:3001/health`. Os campos esperados incluem `"ai":"configured"`, `"aiProviders"`, `"audio"`, `"neuralVoice"`, `"voiceProfiles":"persistent-file"`, `"campaignMemory":"persistent-file"`, `"adventureLibrary":"persistent-file"`, `"generatedContent":"persistent-file"` , `"mapBlueprints":"persistent-file"`, `"tutors"` com modos `SHEET` e `GM` e `"automations"` com aprovação obrigatória e `"backups"` com integridade SHA-256, criptografia opcional e snapshot pré-restauração.
 
 ## Comandos
 
@@ -74,6 +76,47 @@ Abra `http://localhost:3001/health`. Os campos esperados incluem `"ai":"configur
 - `npm run release:prepare`: gera em `dist/` uma cópia limpa, sem `.git`, `.env`, dependências ou histórico local.
 
 
+
+
+## Backup, exportação e restauração segura
+
+A alpha.48 adiciona o painel **Backup da campanha**, exclusivo para usuários GM no chat e nos controles da cena. Cada backup reúne somente os dados persistentes pertencentes ao `worldId` ativo:
+
+- memória da campanha;
+- Biblioteca da aventura;
+- aventuras, NPCs e dungeons gerados;
+- plantas de mapas e vínculos com Scenes;
+- perfis de voz;
+- histórico dos tutores;
+- propostas e auditoria das automações;
+- histórico narrativo associado à campanha.
+
+Chaves de API, tokens, senhas e campos com aparência de credencial são removidos antes da compactação. O arquivo `.mobackup` usa Gzip e SHA-256; quando o mestre informa uma senha, o conteúdo também é protegido com AES-256-GCM e chave derivada por `scrypt`. A senha nunca é armazenada.
+
+A restauração possui duas fases. Primeiro, o arquivo é inspecionado e recebe um token temporário de uso único. Depois, o GM escolhe:
+
+- `MERGE`: preserva registros atuais e combina o conteúdo do backup;
+- `REPLACE`: substitui os dados persistentes da campanha pelo snapshot validado.
+
+Antes de qualquer restauração, o Engine cria automaticamente um snapshot local. Se uma das fontes falhar durante a gravação, os fragmentos anteriores são reaplicados. Backups de outro `worldId` exigem remapeação explicitamente marcada pelo mestre.
+
+Endpoints:
+
+- `GET /v1/backups/:campaignId`
+- `POST /v1/backups/:campaignId`
+- `POST /v1/backups/:campaignId/:backupId/export`
+- `POST /v1/backups/:campaignId/inspect`
+- `POST /v1/backups/:campaignId/restore`
+- `DELETE /v1/backups/:campaignId/:backupId`
+
+Configuração:
+
+```env
+BACKUP_DIRECTORY=./data/backups
+BACKUP_RETENTION_PER_CAMPAIGN=20
+```
+
+Os arquivos de backup e snapshots automáticos permanecem fora do Git e das entregas públicas.
 
 ## Automações assistidas e aprovadas pelo mestre
 

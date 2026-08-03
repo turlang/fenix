@@ -19,6 +19,24 @@ Este projeto segue o formato do [Keep a Changelog](https://keepachangelog.com/pt
 
 
 
+## [0.1.0-alpha.48] - 2026-08-03
+
+### Adicionado
+
+- Serviço de backup isolado por `worldId`, cobrindo memória, biblioteca, geradores, mapas, perfis de voz, tutores, automações e histórico narrativo.
+- Arquivos `.mobackup` compactados com Gzip e verificados por SHA-256.
+- Criptografia opcional AES-256-GCM com chave derivada por `scrypt`, sem persistir a senha.
+- Inspeção obrigatória antes da restauração, com token temporário de uso único e prévia das fontes.
+- Modos `MERGE` e `REPLACE`, remapeação explícita entre campanhas e rollback transacional em caso de falha.
+- Snapshot automático pré-restauração e retenção configurável por campanha.
+- Painel **Backup da campanha** no chat e nos controles da cena do Foundry.
+
+### Segurança
+
+- Operações restritas a GM.
+- Campos com aparência de chave, token, senha ou credencial são removidos da exportação.
+- Arquivos adulterados, Base64 inválido, senha incorreta e backups de outra campanha são bloqueados antes de qualquer gravação.
+
 ## [0.1.0-alpha.47] - 2026-08-03
 
 ### Adicionado
