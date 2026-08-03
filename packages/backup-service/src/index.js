@@ -424,7 +424,7 @@ export function createBackupServiceFromEnv({ services, engineVersion = 'unknown'
   ];
   return new BackupService({
     sources,
-    backupDirectory: env.BACKUP_DIRECTORY || resolve(process.cwd(), 'data/backups'),
+    backupDirectory: env.BACKUP_DIRECTORY || resolve(process.cwd(), env.MESTRE_ORC_DATA_DIRECTORY || 'data', 'backups'),
     engineVersion,
     maxBackups: Number(env.BACKUP_RETENTION_PER_CAMPAIGN) || DEFAULT_MAX_BACKUPS,
     logger

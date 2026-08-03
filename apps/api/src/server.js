@@ -14,12 +14,19 @@ import { createTutorServiceFromEnv, TutorModes } from '../../../packages/tutor-s
 import { createAutomationServiceFromEnv, AutomationActionTypes, AutomationStatuses } from '../../../packages/automation-service/src/index.js';
 import { createBackupServiceFromEnv, BackupModes } from '../../../packages/backup-service/src/index.js';
 import { createDiagnosticService } from '../../../packages/diagnostic-service/src/index.js';
+import { createMigrationServiceFromEnv } from '../../../packages/migration-service/src/index.js';
 import { createConfig, isOriginAllowed, loadEnvFile } from '../../../packages/config/src/index.js';
 
 
 loadEnvFile();
 const config = createConfig();
 const packageMetadata = JSON.parse(readFileSync(new URL('../../../package.json', import.meta.url), 'utf8'));
+
+const migrationService = createMigrationServiceFromEnv({ engineVersion: packageMetadata.version });
+const automaticMigrationsEnabled = String(process.env.AUTO_MIGRATE_DATA ?? 'true').toLowerCase() !== 'false';
+const migrationStartup = automaticMigrationsEnabled
+  ? await migrationService.migrate({ createSnapshot: true, reason: 'startup' })
+  : { changed: false, skipped: true, inspection: await migrationService.inspect() };
 
 const app = Fastify({ logger: true, bodyLimit: config.bodyLimit, trustProxy: config.trustProxy });
 const narrator = createNarrativeProviderFromEnv({ logger: app.log });
@@ -42,14 +49,14 @@ const diagnosticService = createDiagnosticService({
   engineVersion: packageMetadata.version, runtime, narrator, neuralVoiceService, audioNarrationService, logger: app.log,
   maxEvents: Number(process.env.DIAGNOSTIC_MAX_EVENTS) || 300,
   storagePaths: {
-    narration: process.env.MESTRE_ORC_NARRATION_MEMORY_FILE || './data/narration-history.json',
-    campaignMemory: process.env.MESTRE_ORC_CAMPAIGN_MEMORY_FILE || './data/campaign-memory.json',
-    adventureLibrary: process.env.ADVENTURE_LIBRARY_FILE || './data/adventure-library.json',
-    generatedContent: process.env.GENERATOR_ARCHIVE_FILE || './data/generated-content.json',
-    maps: process.env.MAP_BLUEPRINT_FILE || './data/map-blueprints.json',
-    voiceProfiles: process.env.VOICE_PROFILE_FILE || './data/voice-profiles.json',
-    tutors: process.env.TUTOR_HISTORY_FILE || './data/tutor-history.json',
-    automations: process.env.AUTOMATION_PROPOSALS_FILE || './data/automation-proposals.json'
+    narration: process.env.MESTRE_ORC_NARRATION_MEMORY_FILE || `${process.env.MESTRE_ORC_DATA_DIRECTORY || './data'}/narration-history.json`,
+    campaignMemory: process.env.MESTRE_ORC_CAMPAIGN_MEMORY_FILE || `${process.env.MESTRE_ORC_DATA_DIRECTORY || './data'}/campaign-memory.json`,
+    adventureLibrary: process.env.ADVENTURE_LIBRARY_FILE || `${process.env.MESTRE_ORC_DATA_DIRECTORY || './data'}/adventure-library.json`,
+    generatedContent: process.env.GENERATOR_ARCHIVE_FILE || `${process.env.MESTRE_ORC_DATA_DIRECTORY || './data'}/generated-content.json`,
+    maps: process.env.MAP_BLUEPRINT_FILE || `${process.env.MESTRE_ORC_DATA_DIRECTORY || './data'}/map-blueprints.json`,
+    voiceProfiles: process.env.VOICE_PROFILE_FILE || `${process.env.MESTRE_ORC_DATA_DIRECTORY || './data'}/voice-profiles.json`,
+    tutors: process.env.TUTOR_HISTORY_FILE || `${process.env.MESTRE_ORC_DATA_DIRECTORY || './data'}/tutor-history.json`,
+    automations: process.env.AUTOMATION_PROPOSALS_FILE || `${process.env.MESTRE_ORC_DATA_DIRECTORY || './data'}/automation-proposals.json`
   }
 });
 
@@ -95,6 +102,12 @@ app.get('/health', { logLevel: 'silent' }, async () => ({
   automations: { proposals: 'persistent-file', actionTypes: AutomationActionTypes, statuses: AutomationStatuses, approvalRequired: true, automaticExecution: false },
   backups: { storage: 'persistent-file', modes: BackupModes, integrity: 'sha256', encryption: 'optional-aes-256-gcm', automaticPreRestoreSnapshot: true },
   diagnostics: { enabled: true, sanitizedLogs: true, clientChecks: true, maxEvents: Number(process.env.DIAGNOSTIC_MAX_EVENTS) || 300 },
+  migrations: {
+    automatic: automaticMigrationsEnabled,
+    schemaVersion: migrationStartup.inspection?.targetSchemaVersion ?? migrationStartup.inspection?.schemaVersion ?? null,
+    changedAtStartup: Boolean(migrationStartup.changed),
+    snapshotId: migrationStartup.snapshot?.snapshotId ?? null
+  },
   documentFormats: ['txt', 'md', 'html', 'docx', 'pdf'],
   audio: audioNarrationService.enabled ? audioNarrationService.mode : 'disabled',
   neuralVoice: neuralVoiceService.getStatus(),

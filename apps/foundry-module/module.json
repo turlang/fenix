@@ -1,8 +1,8 @@
 {
   "id": "mestre-orc",
   "title": "Mestre Orc",
-  "description": "Central Mestre Orc unificada com simulação automatizada de sessões, testes de carga, narração, combate, diagnóstico, backups, tutores, mapas, voz neural e IA resiliente.",
-  "version": "0.1.0-alpha.51",
+  "description": "Central Mestre Orc com instalação e atualização seguras, migrações persistentes, simulação de sessões, diagnóstico, backups, tutores, mapas, voz neural e IA resiliente.",
+  "version": "0.1.0-alpha.52",
   "compatibility": {
     "minimum": "13",
     "verified": "13"

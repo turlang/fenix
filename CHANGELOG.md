@@ -20,6 +20,26 @@ Este projeto segue o formato do [Keep a Changelog](https://keepachangelog.com/pt
 
 
 
+
+## [0.1.0-alpha.52] - 2026-08-03
+
+### Adicionado
+
+- Serviço de migração versionada para todas as fontes persistentes do Engine.
+- Inspeção, dry-run, aplicação, snapshots e rollback por linha de comando.
+- Migração automática segura durante a inicialização da API.
+- Instalador, atualizador e rollback em PowerShell para Windows.
+- Verificador de instalação para Node.js, versões, módulo e diretório de dados.
+- Empacotador ZIP puro em Node.js e artefatos separados para Engine, Foundry e bundle Windows.
+- Manifesto de release, checksums SHA-256 e workflow de GitHub Release.
+
+### Segurança
+
+- Atualizações são preparadas fora da instalação ativa e preservam `.env` e `data/`.
+- JSON persistente inválido interrompe a migração sem sobrescrever o arquivo.
+- Toda migração com dados existentes cria snapshot anterior.
+- Migrações, estado de schema e artefatos locais permanecem fora do Git e das entregas.
+
 ## [0.1.0-alpha.51] - 2026-08-03
 
 ### Adicionado

@@ -1,7 +1,7 @@
 {
   "name": "mestre-orc-engine",
-  "version": "0.1.0-alpha.51",
-  "description": "Motor modular de narração cinematográfica com simulação automatizada de sessões, testes de carga, Central Mestre Orc, diagnóstico, backups, automações, tutores, mapas, memória, combate, voz neural e IA resiliente.",
+  "version": "0.1.0-alpha.52",
+  "description": "Motor modular de narração cinematográfica com instalação, atualização, migrações, distribuição, testes automatizados, Central Mestre Orc, diagnóstico, backups, tutores, mapas, voz neural e IA resiliente.",
   "private": true,
   "type": "module",
   "workspaces": [
@@ -20,7 +20,11 @@
     "test:integration": "node scripts/run-integration-tests.mjs",
     "test:session": "node scripts/run-session-simulation.mjs",
     "test:load": "node scripts/run-load-tests.mjs",
-    "test:all": "npm test && npm run test:integration && npm run test:session && npm run test:load"
+    "test:all": "npm test && npm run test:integration && npm run test:session && npm run test:load",
+    "migrate:inspect": "node scripts/migrate-data.mjs inspect",
+    "migrate:apply": "node scripts/migrate-data.mjs apply",
+    "install:verify": "node scripts/verify-installation.mjs",
+    "release:build": "node scripts/build-distribution.mjs"
   },
   "engines": {
     "node": ">=20 <25"

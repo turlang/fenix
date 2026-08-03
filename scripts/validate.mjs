@@ -37,6 +37,7 @@ const required = [
   'packages/automation-service/src/index.js',
   'packages/backup-service/src/index.js',
   'packages/diagnostic-service/src/index.js',
+  'packages/migration-service/src/index.js',
   'packages/session-simulator/src/index.js',
   'packages/audio-narration-service/src/index.js',
   'packages/neural-voice-service/src/index.js',
@@ -54,6 +55,18 @@ const required = [
   'scripts/run-integration-tests.mjs',
   'scripts/run-session-simulation.mjs',
   'scripts/run-load-tests.mjs',
+  'scripts/migrate-data.mjs',
+  'scripts/verify-installation.mjs',
+  'scripts/build-distribution.mjs',
+  'scripts/lib/zip.mjs',
+  'distribution/windows/install-mestre-orc.ps1',
+  'distribution/windows/update-mestre-orc.ps1',
+  'distribution/windows/rollback-mestre-orc.ps1',
+  'docs/INSTALLATION.md',
+  'docs/UPDATING.md',
+  'docs/MIGRATIONS.md',
+  'docs/DISTRIBUTION.md',
+  '.github/workflows/release.yml',
   '.env.example',
   'data/.gitkeep',
   '.gitignore',
@@ -79,7 +92,7 @@ if (packageJson.version !== packageLock.version || packageJson.version !== packa
   throw new Error('package.json e package-lock.json possuem versões divergentes.');
 }
 
-for (const scriptName of ['test', 'test:integration', 'test:session', 'test:load', 'test:all', 'validate', 'check', 'check:offline', 'release:prepare']) {
+for (const scriptName of ['test', 'test:integration', 'test:session', 'test:load', 'test:all', 'validate', 'check', 'check:offline', 'release:prepare', 'release:build', 'migrate:inspect', 'migrate:apply', 'install:verify']) {
   if (!packageJson.scripts?.[scriptName]) throw new Error(`Script obrigatório ausente: ${scriptName}`);
 }
 
@@ -88,7 +101,7 @@ for (const entry of [...(moduleJson.esmodules ?? []), ...(moduleJson.styles ?? [
 }
 
 const gitignore = await readFile(new URL('.gitignore', root), 'utf8');
-for (const expectedRule of ['node_modules/', '.env', 'data/*.json', 'data/backups/', 'dist/', 'reports/']) {
+for (const expectedRule of ['node_modules/', '.env', 'data/*.json', 'data/backups/', 'data/migrations/', 'data/migration-state.json', 'dist/', 'reports/']) {
   if (!gitignore.split(/\r?\n/).includes(expectedRule)) {
     throw new Error(`Regra obrigatória ausente no .gitignore: ${expectedRule}`);
   }
@@ -114,6 +127,7 @@ try {
     path === '.env' ||
     path.startsWith('node_modules/') ||
     path.startsWith('data/') && path.endsWith('.json') ||
+    path.startsWith('data/migrations/') ||
     path.startsWith('dist/')
   );
   if (forbiddenTracked.length) {
@@ -124,7 +138,7 @@ try {
   console.warn('Aviso: validação de arquivos rastreados pelo Git não pôde ser executada.');
 }
 
-const forbiddenLocal = ['.env', 'node_modules', 'data/narration-history.json', 'data/campaign-memory.json', 'data/adventure-library.json', 'data/voice-profiles.json', 'data/generated-content.json', 'data/map-blueprints.json', 'data/tutor-history.json', 'data/automation-proposals.json', 'data/backups'];
+const forbiddenLocal = ['.env', 'node_modules', 'data/narration-history.json', 'data/campaign-memory.json', 'data/adventure-library.json', 'data/voice-profiles.json', 'data/generated-content.json', 'data/map-blueprints.json', 'data/tutor-history.json', 'data/automation-proposals.json', 'data/backups', 'data/migrations', 'data/migration-state.json'];
 for (const path of forbiddenLocal) {
   try {
     await access(new URL(path, root));

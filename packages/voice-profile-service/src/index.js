@@ -194,8 +194,8 @@ export class FileVoiceProfileService extends InMemoryVoiceProfileService {
   }
 }
 
-export function createVoiceProfileServiceFromEnv({ logger = console } = {}) {
-  return new FileVoiceProfileService({ filePath: process.env.VOICE_PROFILE_FILE || DEFAULT_FILE, logger });
+export function createVoiceProfileServiceFromEnv({ logger = console, env = process.env } = {}) {
+  return new FileVoiceProfileService({ filePath: env.VOICE_PROFILE_FILE || resolve(process.cwd(), env.MESTRE_ORC_DATA_DIRECTORY || 'data', 'voice-profiles.json'), logger });
 }
 
 export const voiceProfileInternals = {

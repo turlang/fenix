@@ -337,7 +337,8 @@ export class FileTutorService extends InMemoryTutorService {
 }
 
 export function createTutorServiceFromEnv(options = {}) {
-  return new FileTutorService({ filePath: process.env.TUTOR_HISTORY_FILE || resolve(process.cwd(), 'data/tutor-history.json'), ...options });
+  const env = options.env || process.env;
+  return new FileTutorService({ filePath: env.TUTOR_HISTORY_FILE || resolve(process.cwd(), env.MESTRE_ORC_DATA_DIRECTORY || 'data', 'tutor-history.json'), ...options });
 }
 
 export const tutorInternals = {

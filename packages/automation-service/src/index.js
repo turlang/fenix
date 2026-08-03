@@ -564,8 +564,9 @@ export class FileAutomationService extends InMemoryAutomationService {
 }
 
 export function createAutomationServiceFromEnv(options = {}) {
+  const env = options.env || process.env;
   return new FileAutomationService({
-    filePath: process.env.AUTOMATION_PROPOSALS_FILE || resolve(process.cwd(), 'data/automation-proposals.json'),
+    filePath: env.AUTOMATION_PROPOSALS_FILE || resolve(process.cwd(), env.MESTRE_ORC_DATA_DIRECTORY || 'data', 'automation-proposals.json'),
     ...options
   });
 }

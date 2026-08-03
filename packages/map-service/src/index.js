@@ -749,7 +749,7 @@ export function createMapServiceFromEnv({ narrator, generatorService, logger = c
     narrator,
     generatorService,
     logger,
-    filePath: env.MAP_BLUEPRINT_FILE || DEFAULT_FILE,
+    filePath: env.MAP_BLUEPRINT_FILE || resolve(process.cwd(), env.MESTRE_ORC_DATA_DIRECTORY || 'data', 'map-blueprints.json'),
     maxAttempts: Number(env.MAP_GENERATION_MAX_ATTEMPTS) || 2
   });
 }

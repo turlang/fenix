@@ -523,7 +523,7 @@ export function createGeneratorServiceFromEnv({ narrator, campaignMemory, advent
     campaignMemory,
     adventureLibrary,
     logger,
-    filePath: env.GENERATOR_ARCHIVE_FILE || DEFAULT_FILE,
+    filePath: env.GENERATOR_ARCHIVE_FILE || resolve(process.cwd(), env.MESTRE_ORC_DATA_DIRECTORY || 'data', 'generated-content.json'),
     similarityThreshold: Number(env.GENERATOR_SIMILARITY_THRESHOLD) || DEFAULT_SIMILARITY_THRESHOLD,
     maxAttempts: Number(env.GENERATOR_MAX_ATTEMPTS) || DEFAULT_MAX_ATTEMPTS
   });

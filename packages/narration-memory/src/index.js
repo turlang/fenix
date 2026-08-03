@@ -101,6 +101,6 @@ export class FileNarrationMemory {
 
 export function createNarrationMemoryFromEnv({ logger = console } = {}) {
   const filePath = process.env.MESTRE_ORC_NARRATION_MEMORY_FILE?.trim()
-    || path.resolve(process.cwd(), 'data', 'narration-history.json');
+    || path.resolve(process.cwd(), process.env.MESTRE_ORC_DATA_DIRECTORY || 'data', 'narration-history.json');
   return new FileNarrationMemory({ filePath, logger });
 }

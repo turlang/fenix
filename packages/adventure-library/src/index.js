@@ -519,7 +519,7 @@ export class FileAdventureLibrary extends InMemoryAdventureLibrary {
 
 export function createAdventureLibraryFromEnv({ logger = console } = {}) {
   return new FileAdventureLibrary({
-    filePath: process.env.ADVENTURE_LIBRARY_FILE || DEFAULT_FILE,
+    filePath: process.env.ADVENTURE_LIBRARY_FILE || resolve(process.cwd(), process.env.MESTRE_ORC_DATA_DIRECTORY || 'data', 'adventure-library.json'),
     pdfTextCommand: process.env.PDFTOTEXT_COMMAND || 'pdftotext',
     logger
   });

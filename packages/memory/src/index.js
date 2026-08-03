@@ -679,7 +679,7 @@ export class FileCampaignMemory extends CampaignMemoryBase {
 
 export function createCampaignMemoryFromEnv({ env = process.env, logger = console } = {}) {
   return new FileCampaignMemory({
-    filePath: env.MESTRE_ORC_CAMPAIGN_MEMORY_FILE || './data/campaign-memory.json',
+    filePath: env.MESTRE_ORC_CAMPAIGN_MEMORY_FILE || resolve(process.cwd(), env.MESTRE_ORC_DATA_DIRECTORY || 'data', 'campaign-memory.json'),
     logger
   });
 }

@@ -191,5 +191,17 @@
 - [x] relatórios JSON assinados com SHA-256;
 - [x] execução integrada ao `check`, `check:offline` e CI.
 
+## Marco 17 — Instalação, atualização, migrações e distribuição ✅ — alpha.52
+- [x] instalador PowerShell para Engine e módulo Foundry;
+- [x] atualização preparada em área temporária;
+- [x] preservação de `.env` e dados persistentes;
+- [x] migrações versionadas com inspeção e dry-run;
+- [x] snapshot pré-migração e rollback;
+- [x] verificador de instalação;
+- [x] ZIP independente do Engine e do módulo Foundry;
+- [x] bundle Windows completo;
+- [x] SHA-256 e manifesto de release;
+- [x] workflow de publicação por tags no GitHub.
+
 ## Próximo marco liberado
-- Marco 17 — instalação, atualização, migrações e distribuição simplificada.
+- Marco 18 — Release Candidate, auditoria final e consolidação documental.

@@ -1,8 +1,8 @@
 # Mestre Orc Engine
 
-Versão `0.1.0-alpha.51` — Node.js 20–24 e Foundry VTT 13.
+Versão `0.1.0-alpha.52` — Node.js 20–24 e Foundry VTT 13.
 
-O fluxo atual localiza a Scene ativa, procura o Journal correspondente no diretório do Foundry e extrai exclusivamente uma caixa read-aloud reconhecida. São aceitos os formatos antigo e atual do Plutonium/5eTools, `blockquote` HTML e citação Markdown; blocos secretos ou exclusivos do GM são ignorados. A âncora canônica é interpretada pelo primeiro provedor de IA saudável da ordem configurada, validada e publicada no chat com áudio. Groq, OpenAI, Anthropic e endpoints OpenAI-compatible podem operar com fallback automático. A saída pode usar o TTS do navegador ou voz neural externa com perfis persistentes para narrador e NPCs. O mestre também pode gerar e arquivar aventuras, NPCs e dungeons originais com bloqueio de repetição, planejar mapas vetoriais e convertê-los em Scenes editáveis do Foundry. A alpha.51 acrescenta um laboratório automatizado de sessões completas, recuperação de falhas e carga concorrente. A Central Mestre Orc unificada, a barra compacta no chat e o controle único na Scene permanecem preservados. Sessão, narração, combate, memória, biblioteca, criação, tutores, automações, provedores, vozes, backups e diagnóstico permanecem acessíveis por navegação organizada e responsiva.
+O fluxo atual localiza a Scene ativa, procura o Journal correspondente no diretório do Foundry e extrai exclusivamente uma caixa read-aloud reconhecida. São aceitos os formatos antigo e atual do Plutonium/5eTools, `blockquote` HTML e citação Markdown; blocos secretos ou exclusivos do GM são ignorados. A âncora canônica é interpretada pelo primeiro provedor de IA saudável da ordem configurada, validada e publicada no chat com áudio. Groq, OpenAI, Anthropic e endpoints OpenAI-compatible podem operar com fallback automático. A saída pode usar o TTS do navegador ou voz neural externa com perfis persistentes para narrador e NPCs. O mestre também pode gerar e arquivar aventuras, NPCs e dungeons originais com bloqueio de repetição, planejar mapas vetoriais e convertê-los em Scenes editáveis do Foundry. A alpha.52 acrescenta instalação e atualização seguras, migrações versionadas, rollback e artefatos de distribuição para Engine, Foundry e Windows. A Central Mestre Orc unificada, a barra compacta no chat e o controle único na Scene permanecem preservados. Sessão, narração, combate, memória, biblioteca, criação, tutores, automações, provedores, vozes, backups e diagnóstico permanecem acessíveis por navegação organizada e responsiva.
 
 ## Engine
 
@@ -47,6 +47,8 @@ AUTOMATION_PROPOSALS_FILE=./data/automation-proposals.json
 BACKUP_DIRECTORY=./data/backups
 BACKUP_RETENTION_PER_CAMPAIGN=20
 DIAGNOSTIC_MAX_EVENTS=300
+MESTRE_ORC_DATA_DIRECTORY=./data
+AUTO_MIGRATE_DATA=true
 PDFTOTEXT_COMMAND=pdftotext
 MESTRE_ORC_AUDIO_ENABLED=true
 MESTRE_ORC_AUDIO_MODE=browser-tts
@@ -78,6 +80,10 @@ Abra `http://localhost:3001/health`. Os campos esperados incluem `"ai":"configur
 - `npm run validate`: valida estrutura, versões, arquivos do módulo e proteção contra dados locais.
 - `npm run check:offline`: executa validação e testes quando o endpoint de auditoria do registro npm estiver indisponível.
 - `npm run check`: executa estrutura, auditoria de segurança e testes antes de cada entrega.
+- `npm run migrate:inspect`: inspeciona o schema dos arquivos persistentes.
+- `npm run migrate:apply`: cria snapshot e aplica migrações pendentes.
+- `npm run install:verify`: valida Node.js, versões, módulo e gravação dos dados.
+- `npm run release:build`: gera os ZIPs do Engine, módulo Foundry e bundle Windows com checksums.
 - `npm run release:prepare`: gera em `dist/` uma cópia limpa, sem `.git`, `.env`, dependências ou histórico local.
 
 
@@ -456,6 +462,12 @@ Endpoints do combate:
 - `POST /v1/session/combat/end`
 
 Turnos narrados e resumos de rodada são gravados na memória da campanha com deduplicação por evento. A aplicação de dano, condições ou consumo de recursos continua sob responsabilidade do sistema e do mestre; o Mestre Orc narra os resultados confirmados, mas não altera fichas automaticamente.
+
+## Instalação, atualização e distribuição
+
+A alpha.52 inclui um bundle Windows com `install-mestre-orc.ps1`, `update-mestre-orc.ps1` e `rollback-mestre-orc.ps1`. O atualizador preserva `.env` e `data/`, migra uma cópia em área temporária e só substitui a instalação ativa depois das validações. Consulte `docs/INSTALLATION.md`, `docs/UPDATING.md`, `docs/MIGRATIONS.md` e `docs/DISTRIBUTION.md`.
+
+`npm run release:build` produz artefatos separados para o Engine, o módulo Foundry e o instalador Windows, acompanhados de `release-manifest.json` e `checksums.sha256`.
 
 ## Segurança e operação
 

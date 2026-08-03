@@ -95,3 +95,13 @@ Enquanto o projeto estiver em fase alfa, somente a versão mais recente recebe c
 ## Relatórios de simulação
 
 O simulador do Marco 16 usa campanhas, atores, mensagens e rolagens sintéticas. Relatórios de sessão e carga não devem receber snapshots reais do Foundry, credenciais ou conteúdo importado da campanha. A pasta `reports/` é excluída do Git e da preparação de releases.
+
+## Instalação, atualização e migrações
+
+- Interrompa o Engine e feche o Foundry antes de atualizar arquivos.
+- O atualizador prepara a nova versão em pasta temporária e somente troca a instalação depois de validar dependências, schema e módulo.
+- `.env` e `data/` são preservados. Não copie esses arquivos para repositórios, relatórios públicos ou bundles de distribuição.
+- Migrações criam snapshots em `data/migrations/`; esses snapshots podem conter todo o conteúdo privado da campanha.
+- JSON inválido bloqueia a migração. Não force a atualização nem apague o arquivo sem criar uma cópia para análise.
+- Verifique `checksums.sha256` antes de instalar uma release baixada.
+- O rollback restaura a versão anterior, mas não substitui uma política externa de backups periódicos.
