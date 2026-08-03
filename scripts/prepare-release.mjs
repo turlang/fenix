@@ -53,6 +53,7 @@ const forbiddenPaths = [
   '.env',
   'data/narration-history.json',
   'data/campaign-memory.json',
+  'data/adventure-library.json',
   'dist'
 ];
 

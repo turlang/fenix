@@ -53,9 +53,20 @@
 - [x] resolução automática ao avançar a iniciativa, com controles manuais do mestre;
 - [x] registro dos turnos e resumos na memória persistente.
 
-## Fora de escopo até os marcos anteriores funcionarem
-- importação semântica de PDF/DOCX;
-- mapas automáticos;
-- múltiplos provedores com fallback;
-- geradores de aventuras/NPCs/dungeons;
-- voz neural externa e perfis avançados de NPC.
+## Marco 5 — Biblioteca semântica de aventuras ✅ — alpha.41
+- [x] importação de TXT, Markdown, HTML, DOCX e PDF;
+- [x] extração DOCX sem dependência externa;
+- [x] `pdftotext` com fallback para PDFs textuais;
+- [x] persistência e isolamento por campanha;
+- [x] deduplicação por SHA-256;
+- [x] divisão por seções e busca por relevância;
+- [x] modos `REFERENCE_ONLY`, `READ_ALOUD_ONLY` e `PLAYER_SAFE`;
+- [x] bloqueio conservador de segredos, armadilhas, soluções e estatísticas;
+- [x] painel de importação e consulta no Foundry;
+- [x] recuperação segura em rodadas, salas e combate.
+
+## Próximos marcos liberados
+- Marco 6 — múltiplos provedores de IA com fallback e circuit breaker;
+- Marco 7 — voz neural externa e perfis avançados de NPC;
+- Marco 8 — geradores persistentes de aventuras, NPCs e dungeons;
+- Marco 9 — mapas automáticos e integração com cenas do Foundry.

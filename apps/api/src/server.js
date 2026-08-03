@@ -5,6 +5,7 @@ import { createNarrativeProviderFromEnv } from '../../../packages/ai-provider/sr
 import { createNarrationMemoryFromEnv } from '../../../packages/narration-memory/src/index.js';
 import { createAudioNarrationServiceFromEnv } from '../../../packages/audio-narration-service/src/index.js';
 import { createCampaignMemoryFromEnv } from '../../../packages/memory/src/index.js';
+import { createAdventureLibraryFromEnv, AdventureImportModes } from '../../../packages/adventure-library/src/index.js';
 import { createConfig, isOriginAllowed, loadEnvFile } from '../../../packages/config/src/index.js';
 
 
@@ -17,7 +18,8 @@ const narrator = createNarrativeProviderFromEnv({ logger: app.log });
 const narrationMemory = createNarrationMemoryFromEnv({ logger: app.log });
 const audioNarrationService = createAudioNarrationServiceFromEnv({ logger: app.log });
 const campaignMemory = createCampaignMemoryFromEnv({ logger: app.log });
-const runtime = createSessionRuntime({ narrator, narrationMemory, audioNarrationService, campaignMemory, logger: app.log });
+const adventureLibrary = createAdventureLibraryFromEnv({ logger: app.log });
+const runtime = createSessionRuntime({ narrator, narrationMemory, audioNarrationService, campaignMemory, adventureLibrary, logger: app.log });
 
 app.addHook('onRequest', async (request, reply) => {
   const origin = request.headers.origin;
@@ -37,6 +39,8 @@ app.get('/health', { logLevel: 'silent' }, async () => ({
   ai: narrator ? 'groq' : 'not-configured',
   narrativeMemory: 'persistent-file',
   campaignMemory: 'persistent-file',
+  adventureLibrary: 'persistent-file',
+  documentFormats: ['txt', 'md', 'html', 'docx', 'pdf'],
   audio: audioNarrationService.enabled ? audioNarrationService.mode : 'disabled',
   runtime: runtime.getStatus()
 }));
@@ -285,6 +289,109 @@ app.delete('/v1/campaign-memory/:campaignId/:collection/:recordId', {
   } catch (error) {
     return reply.code(400).send({ code: 'CAMPAIGN_MEMORY_DELETE_FAILED', message: error.message });
   }
+});
+
+
+app.get('/v1/adventure-library/:campaignId', {
+  schema: {
+    params: {
+      type: 'object', required: ['campaignId'],
+      properties: { campaignId: { type: 'string', minLength: 1, maxLength: 200 } }
+    }
+  }
+}, async (request, reply) => {
+  try { return await runtime.listAdventureDocuments(request.params.campaignId); }
+  catch (error) { return reply.code(400).send({ code: 'ADVENTURE_LIBRARY_READ_FAILED', message: error.message }); }
+});
+
+app.post('/v1/adventure-library/:campaignId/import', {
+  bodyLimit: 18 * 1024 * 1024,
+  schema: {
+    params: {
+      type: 'object', required: ['campaignId'],
+      properties: { campaignId: { type: 'string', minLength: 1, maxLength: 200 } }
+    },
+    body: {
+      type: 'object', required: ['fileName', 'contentBase64'], additionalProperties: false,
+      properties: {
+        fileName: { type: 'string', minLength: 1, maxLength: 300 },
+        title: { type: 'string', maxLength: 300 },
+        mimeType: { type: 'string', maxLength: 120 },
+        contentBase64: { type: 'string', minLength: 1 },
+        mode: { type: 'string', enum: AdventureImportModes }
+      }
+    }
+  }
+}, async (request, reply) => {
+  try { return await runtime.importAdventureDocument(request.params.campaignId, request.body ?? {}); }
+  catch (error) {
+    return reply.code(400).send({ code: 'ADVENTURE_IMPORT_FAILED', message: error.message });
+  }
+});
+
+app.get('/v1/adventure-library/:campaignId/search', {
+  schema: {
+    params: {
+      type: 'object', required: ['campaignId'],
+      properties: { campaignId: { type: 'string', minLength: 1, maxLength: 200 } }
+    },
+    querystring: {
+      type: 'object', required: ['q'], additionalProperties: false,
+      properties: {
+        q: { type: 'string', minLength: 1, maxLength: 500 },
+        limit: { type: 'integer', minimum: 1, maximum: 30 },
+        safeOnly: { type: 'boolean' },
+        documentId: { type: 'string', maxLength: 200 }
+      }
+    }
+  }
+}, async (request, reply) => {
+  try {
+    return {
+      query: request.query.q,
+      results: await runtime.searchAdventureDocuments(request.params.campaignId, request.query.q, {
+        limit: request.query.limit,
+        narrationSafeOnly: Boolean(request.query.safeOnly),
+        documentId: request.query.documentId || null
+      })
+    };
+  } catch (error) {
+    return reply.code(400).send({ code: 'ADVENTURE_SEARCH_FAILED', message: error.message });
+  }
+});
+
+app.post('/v1/adventure-library/:campaignId/:documentId/mode', {
+  schema: {
+    params: {
+      type: 'object', required: ['campaignId', 'documentId'],
+      properties: {
+        campaignId: { type: 'string', minLength: 1, maxLength: 200 },
+        documentId: { type: 'string', minLength: 1, maxLength: 200 }
+      }
+    },
+    body: {
+      type: 'object', required: ['mode'], additionalProperties: false,
+      properties: { mode: { type: 'string', enum: AdventureImportModes } }
+    }
+  }
+}, async (request, reply) => {
+  try { return await runtime.updateAdventureDocumentMode(request.params.campaignId, request.params.documentId, request.body.mode); }
+  catch (error) { return reply.code(400).send({ code: 'ADVENTURE_MODE_UPDATE_FAILED', message: error.message }); }
+});
+
+app.delete('/v1/adventure-library/:campaignId/:documentId', {
+  schema: {
+    params: {
+      type: 'object', required: ['campaignId', 'documentId'],
+      properties: {
+        campaignId: { type: 'string', minLength: 1, maxLength: 200 },
+        documentId: { type: 'string', minLength: 1, maxLength: 200 }
+      }
+    }
+  }
+}, async (request, reply) => {
+  try { return await runtime.removeAdventureDocument(request.params.campaignId, request.params.documentId); }
+  catch (error) { return reply.code(400).send({ code: 'ADVENTURE_DELETE_FAILED', message: error.message }); }
 });
 
 

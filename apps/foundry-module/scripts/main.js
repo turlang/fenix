@@ -30,9 +30,14 @@ import {
   combatSnapshotFromDocument,
   combatSnapshotKey
 } from './combat-tracker.js';
+import {
+  ADVENTURE_BUTTON_ID,
+  injectAdventureLibraryButton,
+  openAdventureLibraryPanel
+} from './adventure-library-panel.js';
 
 const MODULE_ID = 'mestre-orc';
-const MODULE_BUILD = '0.1.0-alpha.40';
+const MODULE_BUILD = '0.1.0-alpha.41';
 const BUTTON_ID = 'mestre-orc-start';
 const ROUND_BUTTON_ID = 'mestre-orc-resolve-round';
 const AUDIO_BUTTON_ID = 'mestre-orc-audio-toggle';
@@ -2711,7 +2716,7 @@ function installDelegatedStartHandler() {
 
   document.addEventListener('click', (event) => {
     const target = event.target instanceof Element
-      ? event.target.closest('[data-mestre-orc-action="start-session"], [data-mestre-orc-action="resolve-round"], [data-mestre-orc-action="resolve-combat-turn"], [data-mestre-orc-action="summarize-combat-round"], [data-mestre-orc-action="open-memory"], #mestre-orc-start, #mestre-orc-resolve-round, #mestre-orc-combat-turn, #mestre-orc-combat-round, #mestre-orc-memory')
+      ? event.target.closest('[data-mestre-orc-action="start-session"], [data-mestre-orc-action="resolve-round"], [data-mestre-orc-action="resolve-combat-turn"], [data-mestre-orc-action="summarize-combat-round"], [data-mestre-orc-action="open-memory"], [data-mestre-orc-action="open-adventure-library"], #mestre-orc-start, #mestre-orc-resolve-round, #mestre-orc-combat-turn, #mestre-orc-combat-round, #mestre-orc-memory, #mestre-orc-adventure-library')
       : null;
     if (!target) return;
 
@@ -2722,6 +2727,7 @@ function installDelegatedStartHandler() {
     else if (target.dataset.mestreOrcAction === 'resolve-combat-turn' || target.id === COMBAT_TURN_BUTTON_ID) void resolveCombatTurn(null, { automatic: false });
     else if (target.dataset.mestreOrcAction === 'summarize-combat-round' || target.id === COMBAT_ROUND_BUTTON_ID) void summarizeCombatRound(null, null, { automatic: false });
     else if (target.dataset.mestreOrcAction === 'open-memory' || target.id === MEMORY_BUTTON_ID) void openCampaignMemoryPanel();
+    else if (target.dataset.mestreOrcAction === 'open-adventure-library' || target.id === ADVENTURE_BUTTON_ID) void openAdventureLibraryPanel({ request });
     else void startSession(target);
   }, true);
 }
@@ -2732,6 +2738,7 @@ function scheduleInjection(root) {
     injectResolveRoundButton(root);
     injectCombatButtons(root);
     injectMemoryButton(root);
+    injectAdventureLibraryButton({ root, request, findChatContainer });
     injectAudioToggleButton(root);
     injectVoiceInputButton(root);
     setTimeout(() => {
@@ -2739,6 +2746,7 @@ function scheduleInjection(root) {
       injectResolveRoundButton(document);
       injectCombatButtons(document);
       injectMemoryButton(document);
+      injectAdventureLibraryButton({ root: document, request, findChatContainer });
       injectAudioToggleButton(document);
       injectVoiceInputButton(document);
     }, 250);
@@ -2747,6 +2755,7 @@ function scheduleInjection(root) {
       injectResolveRoundButton(document);
       injectCombatButtons(document);
       injectMemoryButton(document);
+      injectAdventureLibraryButton({ root: document, request, findChatContainer });
       injectAudioToggleButton(document);
       injectVoiceInputButton(document);
     }, 1000);
@@ -2821,6 +2830,19 @@ Hooks.on('getSceneControlButtons', (controls) => {
       onChange: () => {
         console.log('[Mestre Orc] memória da campanha aberta pelos controles da cena');
         void openCampaignMemoryPanel();
+      }
+    };
+
+    tokenControls.tools.mestreOrcAdventureLibrary = {
+      name: 'mestreOrcAdventureLibrary',
+      title: 'Mestre Orc — Biblioteca da aventura',
+      icon: 'fa-solid fa-book-open-reader',
+      order: Object.keys(tokenControls.tools).length,
+      button: true,
+      visible: true,
+      onChange: () => {
+        console.log('[Mestre Orc] biblioteca da aventura aberta pelos controles da cena');
+        void openAdventureLibraryPanel({ request });
       }
     };
 

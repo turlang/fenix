@@ -92,6 +92,15 @@ export function classifyNarrationEnvironment(context = {}) {
   return { id: 'GENERAL', ...ENVIRONMENT_PROFILES.GENERAL };
 }
 
+
+function adventureReferenceLines(context, limit = 4) {
+  const references = (context?.adventure?.references ?? []).slice(0, limit);
+  if (!references.length) return ['- Nenhuma referência importada segura relevante.'];
+  return references.map((entry, index) =>
+    `- Referência segura ${index + 1} — ${entry.documentTitle ?? 'documento'} / ${entry.heading ?? 'seção'}: ${compactText(entry.text, 900)}`
+  );
+}
+
 function expressiveScriptInstructions(context) {
   const environment = classifyNarrationEnvironment(context);
   return [
@@ -243,6 +252,10 @@ function roomEntryPrompt(context) {
     `Atores comprovadamente visíveis pelo token: ${perception.visionAvailable && actors.length ? actors.join(', ') : 'nenhum'}`,
     `Modo de percepção: ${perception.mode ?? 'CANONICAL_ONLY'}`,
     '',
+    'REFERÊNCIAS IMPORTADAS LIBERADAS PARA NARRAÇÃO:',
+    ...adventureReferenceLines(context, 4),
+    'Use essas referências somente quando forem compatíveis com a sala atual. Não cite documento, seção ou material-fonte.',
+    '',
     previous || 'Nenhuma descrição anterior registrada para esta sala.',
     rejected || 'Nenhuma correção pendente de tentativas anteriores.'
   ].join('\n');
@@ -337,7 +350,11 @@ export class GroqNarrativeProvider {
       ...(memoryFacts.length || memoryNpcs.length || memoryRelations.length || memoryQuests.length || memoryItems.length
         ? [...memoryFacts, ...memoryNpcs, ...memoryRelations, ...memoryQuests, ...memoryItems]
         : ['- Nenhum fato persistente relevante registrado.']),
-      'Use esta memória apenas para manter continuidade. Não revele fatos secretos, não trate lembranças como sucesso automático e não contradiga a cena atual.'
+      'Use esta memória apenas para manter continuidade. Não revele fatos secretos, não trate lembranças como sucesso automático e não contradiga a cena atual.',
+      '',
+      'REFERÊNCIAS IMPORTADAS LIBERADAS PARA NARRAÇÃO:',
+      ...adventureReferenceLines(context, 4),
+      'Esses trechos já passaram pelo filtro PLAYER_SAFE. Use apenas detalhes coerentes com a cena e nunca mencione a origem documental.'
     ].join('\n');
     return this.#requestText(prompt, { maxTokens: 850, temperature: 0.68, topP: 0.92 });
   }
@@ -370,7 +387,11 @@ export class GroqNarrativeProvider {
       `Combate: ${combat.combatId ?? combat.id ?? 'sem id'}; turno ${turn.turn ?? combat.turn ?? 0}.`,
       '',
       'EVENTOS CONFIRMADOS DO TURNO:',
-      ...actionLines
+      ...actionLines,
+      '',
+      'REFERÊNCIAS IMPORTADAS LIBERADAS PARA NARRAÇÃO:',
+      ...adventureReferenceLines(context, 3),
+      'Não use referência importada para inventar um resultado mecânico ou revelar informação fora do campo de batalha.'
     ].join('\n');
     return this.#requestText(prompt, { maxTokens: 480, temperature: 0.58, topP: 0.9 });
   }
@@ -389,7 +410,11 @@ export class GroqNarrativeProvider {
       `Cena: ${context?.scene?.name ?? 'sem nome'}.`,
       '',
       'TURNOS RESOLVIDOS:',
-      ...turnLines
+      ...turnLines,
+      '',
+      'REFERÊNCIAS IMPORTADAS LIBERADAS PARA NARRAÇÃO:',
+      ...adventureReferenceLines(context, 3),
+      'Use somente para continuidade ambiental; os turnos confirmados continuam sendo a fonte de verdade.'
     ].join('\n');
     return this.#requestText(prompt, { maxTokens: 650, temperature: 0.62, topP: 0.91 });
   }
@@ -411,7 +436,10 @@ export class GroqNarrativeProvider {
       `Alvo: ${intent?.target ?? 'não identificado'}`,
       `Atores presentes: ${actors.length ? actors.join(', ') : 'nenhum identificado'}`,
       npcInfo,
-      `Resultado de regras: ${rules?.result?.effect ?? 'sem regra aplicada'}`
+      `Resultado de regras: ${rules?.result?.effect ?? 'sem regra aplicada'}`,
+      '',
+      'REFERÊNCIAS IMPORTADAS LIBERADAS PARA NARRAÇÃO:',
+      ...adventureReferenceLines(context, 3)
     ].join('\n');
     return this.#requestText(prompt, { maxTokens: 500, temperature: 0.65, topP: 0.9 });
   }

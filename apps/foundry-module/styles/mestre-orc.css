@@ -426,3 +426,162 @@
   .mestre-orc-memory-grid { grid-template-columns: 1fr; }
   .mestre-orc-memory-form [data-memory-fields] { grid-template-columns: 1fr; }
 }
+
+/* Alpha.41 — Biblioteca semântica da aventura */
+.mestre-orc-adventure-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(4, 4, 7, 0.82);
+  backdrop-filter: blur(6px);
+}
+
+.mestre-orc-adventure-panel {
+  width: min(1040px, 96vw);
+  max-height: 92vh;
+  overflow: auto;
+  border: 1px solid rgba(104, 197, 225, 0.34);
+  border-radius: 14px;
+  background: linear-gradient(155deg, rgba(23, 25, 34, 0.98), rgba(10, 11, 16, 0.99));
+  color: #f3f6f8;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.62);
+}
+
+.mestre-orc-adventure-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+.mestre-orc-adventure-header span { color: #72c7df; font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; }
+.mestre-orc-adventure-header h2 { margin: 4px 0; color: #f7fbfd; }
+.mestre-orc-adventure-header p { margin: 0; color: #a8b7bf; }
+.mestre-orc-adventure-header > button {
+  width: 34px;
+  height: 34px;
+  border: 1px solid rgba(255,255,255,.14);
+  border-radius: 8px;
+  background: rgba(255,255,255,.05);
+  color: #eef7fa;
+  cursor: pointer;
+}
+
+.mestre-orc-adventure-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  padding: 16px 20px 0;
+}
+.mestre-orc-adventure-stats article {
+  padding: 12px;
+  border: 1px solid rgba(114, 199, 223, 0.18);
+  border-radius: 9px;
+  background: rgba(18, 42, 50, 0.34);
+}
+.mestre-orc-adventure-stats strong { display: block; color: #9fe5f7; font-size: 1.35rem; }
+.mestre-orc-adventure-stats span { color: #a5b7bf; font-size: .72rem; }
+
+.mestre-orc-adventure-import,
+.mestre-orc-adventure-search,
+.mestre-orc-adventure-documents,
+.mestre-orc-adventure-results {
+  margin: 16px 20px;
+  padding: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 10px;
+  background: rgba(7, 9, 13, 0.52);
+}
+.mestre-orc-adventure-import { display: grid; grid-template-columns: 1.5fr 1fr 1fr auto; gap: 10px; align-items: end; }
+.mestre-orc-adventure-import h3,
+.mestre-orc-adventure-import p { grid-column: 1 / -1; }
+.mestre-orc-adventure-import h3,
+.mestre-orc-adventure-documents h3 { margin: 0 0 2px; }
+.mestre-orc-adventure-import p { margin: 0; color: #98a9b1; font-size: .74rem; }
+.mestre-orc-adventure-import label,
+.mestre-orc-adventure-search label,
+.mestre-orc-adventure-document label { display: grid; gap: 5px; color: #cbd6db; font-size: .74rem; font-weight: 700; }
+.mestre-orc-adventure-import input,
+.mestre-orc-adventure-import select,
+.mestre-orc-adventure-search input,
+.mestre-orc-adventure-document select {
+  width: 100%;
+  min-height: 34px;
+  padding: 7px 8px;
+  border: 1px solid rgba(255,255,255,.14);
+  border-radius: 6px;
+  background: rgba(4, 7, 10, .78);
+  color: #f0f6f8;
+}
+.mestre-orc-adventure-import button,
+.mestre-orc-adventure-search button {
+  min-height: 36px;
+  padding: 7px 12px;
+  border: 1px solid rgba(114,199,223,.42);
+  border-radius: 7px;
+  background: rgba(31, 101, 121, .72);
+  color: #ecfbff;
+  cursor: pointer;
+}
+
+.mestre-orc-adventure-document {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 250px 34px;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 0;
+  border-bottom: 1px solid rgba(255,255,255,.07);
+}
+.mestre-orc-adventure-document:last-child { border-bottom: 0; }
+.mestre-orc-adventure-document-main { min-width: 0; }
+.mestre-orc-adventure-document strong { display: block; color: #f2f8fa; }
+.mestre-orc-adventure-document small,
+.mestre-orc-adventure-document em { display: block; margin-top: 3px; color: #91a4ad; font-size: .71rem; overflow-wrap: anywhere; }
+.mestre-orc-adventure-document em { color: #efc47d; }
+.mestre-orc-adventure-document > button {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid rgba(225, 95, 95, .28);
+  border-radius: 6px;
+  background: rgba(95, 24, 24, .28);
+  color: #f0a4a4;
+  cursor: pointer;
+}
+.mestre-orc-adventure-badges { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
+.mestre-orc-adventure-badges span,
+.mestre-orc-adventure-result header span {
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.08);
+  color: #b9c5ca;
+  font-size: .66rem;
+}
+.mestre-orc-adventure-badges .safe,
+.mestre-orc-adventure-result header .safe { background: rgba(47, 134, 86, .28); color: #99e0b7; }
+.mestre-orc-adventure-badges .secret,
+.mestre-orc-adventure-result header .secret { background: rgba(138, 82, 42, .3); color: #e6bd8e; }
+
+.mestre-orc-adventure-search { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 10px; align-items: end; }
+.mestre-orc-adventure-search .checkbox { display: flex; grid-auto-flow: column; align-items: center; gap: 7px; min-height: 34px; }
+.mestre-orc-adventure-search .checkbox input { width: auto; min-height: 0; }
+.mestre-orc-adventure-result { padding: 12px 0; border-bottom: 1px solid rgba(255,255,255,.07); }
+.mestre-orc-adventure-result:last-child { border-bottom: 0; }
+.mestre-orc-adventure-result header { display: flex; justify-content: space-between; gap: 10px; }
+.mestre-orc-adventure-result small { color: #86a5b1; }
+.mestre-orc-adventure-result p { margin: 7px 0 0; color: #d7e1e5; white-space: pre-wrap; }
+.mestre-orc-adventure-empty { margin: 0; color: #82949d; }
+
+@media (max-width: 850px) {
+  .mestre-orc-adventure-overlay { padding: 8px; }
+  .mestre-orc-adventure-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .mestre-orc-adventure-import { grid-template-columns: 1fr; }
+  .mestre-orc-adventure-import h3,
+  .mestre-orc-adventure-import p { grid-column: auto; }
+  .mestre-orc-adventure-document { grid-template-columns: 1fr 34px; }
+  .mestre-orc-adventure-document label { grid-column: 1 / -1; grid-row: 2; }
+  .mestre-orc-adventure-search { grid-template-columns: 1fr; }
+}

@@ -8,6 +8,7 @@ const required = [
   'apps/foundry-module/scripts/read-aloud.js',
   'apps/foundry-module/scripts/cinematic-speech.js',
   'apps/foundry-module/scripts/combat-tracker.js',
+  'apps/foundry-module/scripts/adventure-library-panel.js',
   'apps/foundry-module/scripts/voice-input.js',
   'apps/foundry-module/scripts/room-transition-state.js',
   'apps/foundry-module/scripts/token-vision.js',
@@ -20,6 +21,7 @@ const required = [
   'packages/narration-memory/src/index.js',
   'packages/memory/src/index.js',
   'packages/combat-service/src/index.js',
+  'packages/adventure-library/src/index.js',
   'packages/audio-narration-service/src/index.js',
   'packages/config/src/index.js',
   'packages/intent-interpreter/src/index.js',
@@ -101,7 +103,7 @@ try {
   console.warn('Aviso: validação de arquivos rastreados pelo Git não pôde ser executada.');
 }
 
-const forbiddenLocal = ['.env', 'node_modules', 'data/narration-history.json', 'data/campaign-memory.json'];
+const forbiddenLocal = ['.env', 'node_modules', 'data/narration-history.json', 'data/campaign-memory.json', 'data/adventure-library.json'];
 for (const path of forbiddenLocal) {
   try {
     await access(new URL(path, root));

@@ -68,6 +68,7 @@ export class SessionDirector {
     npcCoordinator = null,
     worldStateService = null,
     campaignMemory = null,
+    adventureLibrary = null,
     combatService = null,
     audioNarrationService = null,
     foundryPublisher,
@@ -79,11 +80,28 @@ export class SessionDirector {
     this.npcCoordinator = npcCoordinator ?? new NPCCoordinator({ logger });
     this.worldStateService = worldStateService ?? new WorldStateService({ logger });
     this.campaignMemory = campaignMemory ?? new InMemoryCampaignMemory({ logger });
+    this.adventureLibrary = adventureLibrary;
     this.combatService = combatService ?? new CombatService({ logger });
     this.audioNarrationService = audioNarrationService;
     this.logger = logger;
     this.state = SessionState.IDLE;
     this.session = null;
+  }
+
+  async withAdventureContext(context, query, { limit = 4 } = {}) {
+    if (!this.adventureLibrary?.contextForNarration) return context;
+    const campaignId = shortId(context?.campaign?.worldId ?? context?.campaign?.id ?? this.session?.campaignId) || 'default';
+    const searchQuery = cleanText(query, 1200);
+    if (!searchQuery) return { ...context, adventure: { query: '', references: [], characterCount: 0 } };
+    try {
+      const adventure = await this.adventureLibrary.contextForNarration(campaignId, searchQuery, { limit });
+      return { ...context, adventure };
+    } catch (error) {
+      this.logger.warn?.('[Mestre Orc][AdventureLibrary] contexto indisponível; seguindo sem referência importada', {
+        campaignId, message: error.message
+      });
+      return { ...context, adventure: { query: searchQuery, references: [], characterCount: 0, unavailable: true } };
+    }
   }
 
   roundStatus() {
@@ -126,7 +144,8 @@ export class SessionDirector {
         campaignId: memory.campaignId,
         counts: memory.counts,
         updatedAt: memory.updatedAt
-      } : null
+      } : null,
+      adventureLibrary: this.session?.adventureSummary ?? null
     };
   }
 
@@ -157,10 +176,20 @@ export class SessionDirector {
       const normalizedContext = this.contextBuilder.build(raw);
       const campaignId = shortId(normalizedContext.campaign?.worldId ?? normalizedContext.campaign?.id) || 'default';
       const restoredMemory = await this.campaignMemory.load(normalizedContext.campaign ?? campaignId);
-      const context = {
+      const baseContext = {
         ...normalizedContext,
         memory: this.campaignMemory.contextForNarration(restoredMemory)
       };
+      const adventureSummary = this.adventureLibrary?.list
+        ? await this.adventureLibrary.list(campaignId)
+        : null;
+      const openingQuery = [
+        baseContext.scene?.name,
+        baseContext.scene?.description,
+        baseContext.source?.areaName,
+        baseContext.source?.sceneSectionName
+      ].filter(Boolean).join(' ');
+      const context = await this.withAdventureContext(baseContext, openingQuery, { limit: 3 });
       this.state = SessionState.OPENING;
       const sessionId = crypto.randomUUID();
       const restoredWorldState = restoredMemory.worldState ?? null;
@@ -185,6 +214,7 @@ export class SessionDirector {
         memory,
         opening,
         audio,
+        adventureSummary,
         startedAt: new Date().toISOString(),
         round: createRound(nextRoundNumber),
         idempotency: {
@@ -206,7 +236,8 @@ export class SessionDirector {
         round: this.roundStatus(),
         combat: this.combatService.status(),
         worldState: this.worldStateService.snapshot(),
-        memory: this.campaignMemory.summary(memory)
+        memory: this.campaignMemory.summary(memory),
+        adventureLibrary: adventureSummary
       };
     } catch (error) {
       this.state = SessionState.IDLE;
@@ -260,10 +291,15 @@ export class SessionDirector {
             content: entry.content
           }))
         });
-        const context = {
+        const baseContext = {
           ...normalizedContext,
           memory: this.campaignMemory.contextForNarration(this.session.memory)
         };
+        const context = await this.withAdventureContext(
+          baseContext,
+          [baseContext.scene?.name, ...declarations.map((entry) => entry.content)].filter(Boolean).join(' '),
+          { limit: 4 }
+        );
         this.state = SessionState.RESOLVING;
         const resolutions = [];
         for (const declaration of declarations) {
@@ -384,11 +420,16 @@ export class SessionDirector {
           ...this.session.context,
           messages: actions.map((entry) => ({ id: entry.id, actorId: entry.actorId, content: entry.content }))
         });
-        const context = {
+        const combatContext = {
           ...normalizedContext,
           memory: this.campaignMemory.contextForNarration(this.session.memory),
           combat: this.combatService.status()
         };
+        const context = await this.withAdventureContext(
+          combatContext,
+          [combatContext.scene?.name, ...actions.map((entry) => entry.content), ...actions.map((entry) => entry.itemName)].filter(Boolean).join(' '),
+          { limit: 3 }
+        );
         this.state = SessionState.RESOLVING;
         const resolutions = [];
         for (const action of actions) {
@@ -460,11 +501,16 @@ export class SessionDirector {
       const roundStatus = this.combatService.roundStatus(roundNumber);
       if (roundStatus.summarized) throw new Error('Esta rodada de combate já foi resumida.');
       try {
-        const context = {
+        const combatRoundContext = {
           ...this.session.context,
           memory: this.campaignMemory.contextForNarration(this.session.memory),
           combat: status
         };
+        const context = await this.withAdventureContext(
+          combatRoundContext,
+          [combatRoundContext.scene?.name, ...turns.flatMap((turn) => (turn.actions ?? []).map((action) => action.content))].filter(Boolean).join(' '),
+          { limit: 3 }
+        );
         this.state = SessionState.NARRATING;
         const narration = await this.narrationService.narrateCombatRound({
           combat: status, roundNumber, turns, context
@@ -520,7 +566,7 @@ export class SessionDirector {
           normalized.visibleActors = [];
           perception.visibleActorCount = 0;
         }
-        const context = {
+        const roomBaseContext = {
           ...normalized,
           memory: this.campaignMemory.contextForNarration(this.session.memory),
           room: { id: roomContext.room?.id ?? null, name: String(roomContext.room?.name ?? '').trim() },
@@ -532,6 +578,11 @@ export class SessionDirector {
           },
           perception
         };
+        const context = await this.withAdventureContext(
+          roomBaseContext,
+          [roomBaseContext.scene?.name, roomBaseContext.room?.name, roomBaseContext.source?.text].filter(Boolean).join(' '),
+          { limit: 4 }
+        );
         const opening = await this.narrationService.describeRoom(context);
         const audio = this.audioNarrationService?.createDirective(opening, {
           sceneId: context.scene?.id ?? null,

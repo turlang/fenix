@@ -17,6 +17,34 @@ Este projeto segue o formato do [Keep a Changelog](https://keepachangelog.com/pt
 - Comando `npm run release:prepare` para gerar uma pasta de distribuição higienizada em `dist/`.
 - Comando `npm run check:offline` para validar estrutura e testes quando a auditoria remota do npm estiver indisponível.
 
+## [0.1.0-alpha.41] - 2026-08-02
+
+### Adicionado
+
+- `AdventureLibrary` persistente e isolada por `worldId` da campanha.
+- Importação de TXT, Markdown, HTML, DOCX e PDF com limite de 12 MB.
+- Extrator DOCX nativo e suporte a `pdftotext`, com fallback para PDFs textuais simples.
+- Divisão por seções, indexação local, busca por relevância e deduplicação por SHA-256.
+- Modos `REFERENCE_ONLY`, `READ_ALOUD_ONLY` e `PLAYER_SAFE`.
+- Painel **Biblioteca da aventura** no chat e nos controles da cena.
+- Endpoints de listagem, importação, busca, alteração de modo e remoção.
+- Recuperação de referências seguras para rodadas, turnos, resumos de combate e entradas de sala.
+
+### Alterado
+
+- Prompts narrativos podem receber um conjunto curto de referências importadas relevantes e liberadas.
+- O status da sessão informa o resumo da biblioteca carregada.
+- O `/health` informa formatos suportados e persistência da biblioteca.
+
+### Segurança e confiabilidade
+
+- O modo padrão nunca envia conteúdo importado à IA.
+- Seções identificadas como segredo, solução, armadilha, estatísticas, tesouro ou notas do mestre permanecem reservadas mesmo em documentos liberados.
+- Somente trechos `PLAYER_SAFE` entram no contexto narrativo, com limite de quantidade e caracteres.
+- A proteção contra cópia também compara a narração de sala com as referências importadas utilizadas.
+- Arquivos originais não são mantidos; apenas texto extraído, metadados e trechos indexados são persistidos.
+- A biblioteca local é removida automaticamente das entregas limpas.
+
 ## [0.1.0-alpha.40] - 2026-08-02
 
 ### Adicionado

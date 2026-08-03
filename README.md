@@ -1,6 +1,6 @@
 # Mestre Orc Engine
 
-Versão `0.1.0-alpha.40` — Node.js 20–24 e Foundry VTT 13.
+Versão `0.1.0-alpha.41` — Node.js 20–24 e Foundry VTT 13.
 
 O fluxo atual localiza a Scene ativa, procura o Journal correspondente no diretório do Foundry e extrai exclusivamente uma caixa read-aloud reconhecida. São aceitos os formatos antigo e atual do Plutonium/5eTools, `blockquote` HTML e citação Markdown; blocos secretos ou exclusivos do GM são ignorados. A âncora canônica é interpretada com Groq, validada e publicada no chat com áudio.
 
@@ -26,6 +26,8 @@ GROQ_API_KEY=sua_chave
 GROQ_MODEL=seu_modelo_disponivel
 MESTRE_ORC_NARRATION_MEMORY_FILE=./data/narration-history.json
 MESTRE_ORC_CAMPAIGN_MEMORY_FILE=./data/campaign-memory.json
+ADVENTURE_LIBRARY_FILE=./data/adventure-library.json
+PDFTOTEXT_COMMAND=pdftotext
 MESTRE_ORC_AUDIO_ENABLED=true
 MESTRE_ORC_AUDIO_MODE=browser-tts
 MESTRE_ORC_AUDIO_LANGUAGE=pt-BR
@@ -34,7 +36,7 @@ MESTRE_ORC_AUDIO_PITCH=0.85
 MESTRE_ORC_AUDIO_VOLUME=1.00
 ```
 
-Abra `http://localhost:3001/health`. Os campos esperados são `"ai":"groq"`, `"audio":"browser-tts"` e `"campaignMemory":"persistent-file"`.
+Abra `http://localhost:3001/health`. Os campos esperados são `"ai":"groq"`, `"audio":"browser-tts"`, `"campaignMemory":"persistent-file"` e `"adventureLibrary":"persistent-file"`.
 
 ## Comandos
 
@@ -61,6 +63,31 @@ O mestre pode abrir **Memória da campanha** no chat ou nos controles da cena pa
 
 As coleções válidas são `facts`, `npcs`, `relationships`, `quests` e `items`.
 
+
+
+## Biblioteca semântica da aventura
+
+A alpha.41 adiciona uma biblioteca persistente por campanha para importar material em **TXT, Markdown, HTML, DOCX e PDF**. O conteúdo é extraído, dividido por seções e indexado localmente em `data/adventure-library.json`. O arquivo permanece fora do Git e das entregas limpas.
+
+O mestre abre **Biblioteca da aventura** no chat ou nos controles da cena. O painel permite importar, pesquisar, alterar a proteção e remover documentos. Arquivos repetidos são detectados por SHA-256. O limite atual é 12 MB por arquivo.
+
+Cada documento possui um modo de segurança:
+
+- `REFERENCE_ONLY`: todo o conteúdo fica disponível apenas na busca do mestre e nunca é enviado à IA. É o padrão.
+- `READ_ALOUD_ONLY`: somente seções identificadas como “read aloud”, “texto para ler”, “descrição para jogadores” ou equivalentes entram no contexto narrativo.
+- `PLAYER_SAFE`: libera o documento para recuperação narrativa, mas seções com títulos como segredo, armadilha, solução, estatísticas, tesouro ou notas do mestre continuam bloqueadas.
+
+A busca usa relevância lexical por título, seção, frase e termos normalizados. Antes de cada rodada, turno, resumo de combate ou entrada de sala, o Engine recupera apenas alguns trechos `PLAYER_SAFE` relacionados ao contexto atual. O prompt proíbe citar o documento ou usar a referência para inventar resultados mecânicos.
+
+DOCX é extraído pelo próprio Engine, sem dependência externa. Para PDF, o Engine usa `pdftotext` quando disponível e possui um fallback para PDFs textuais simples. PDFs digitalizados exigem OCR ou conversão para TXT. No Windows, `PDFTOTEXT_COMMAND` pode apontar para o executável do Poppler.
+
+Endpoints:
+
+- `GET /v1/adventure-library/:campaignId`
+- `POST /v1/adventure-library/:campaignId/import`
+- `GET /v1/adventure-library/:campaignId/search?q=...`
+- `POST /v1/adventure-library/:campaignId/:documentId/mode`
+- `DELETE /v1/adventure-library/:campaignId/:documentId`
 
 
 ## Combate e Combat Tracker
@@ -99,7 +126,7 @@ Copie o conteúdo de `apps/foundry-module` para:
 FoundryVTT/Data/modules/mestre-orc/
 ```
 
-A pasta precisa conter diretamente `module.json`, `scripts/main.js`, `scripts/read-aloud.js`, `scripts/room-transition-state.js`, `scripts/chat-action-filter.js`, `scripts/audio-routing.js`, `scripts/token-vision.js`, `scripts/cinematic-speech.js`, `scripts/voice-input.js`, `scripts/combat-tracker.js` e `styles/mestre-orc.css`.
+A pasta precisa conter diretamente `module.json`, `scripts/main.js`, `scripts/read-aloud.js`, `scripts/room-transition-state.js`, `scripts/chat-action-filter.js`, `scripts/audio-routing.js`, `scripts/token-vision.js`, `scripts/cinematic-speech.js`, `scripts/voice-input.js`, `scripts/combat-tracker.js`, `scripts/adventure-library-panel.js` e `styles/mestre-orc.css`.
 
 O botão **Áudio ligado/desligado** aparece junto ao chat para cada usuário. Nas configurações do módulo é possível ajustar voz, velocidade, tom e volume. O mestre pode desativar a transmissão para os demais clientes.
 

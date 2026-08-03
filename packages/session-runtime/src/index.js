@@ -11,6 +11,7 @@ import { NPCCoordinator } from '../../npc-coordinator/src/index.js';
 import { WorldStateService } from '../../world-state/src/index.js';
 import { InMemoryCampaignMemory } from '../../memory/src/index.js';
 import { CombatService } from '../../combat-service/src/index.js';
+import { InMemoryAdventureLibrary } from '../../adventure-library/src/index.js';
 
 function createInputApi(initial = {}) {
   let snapshot = initial;
@@ -35,11 +36,13 @@ export function createSessionRuntime({
   audioNarrationService,
   audioOptions,
   campaignMemory,
+  adventureLibrary,
   logger = console
 } = {}) {
   const inputApi = foundryApi ?? createInputApi();
   const adapter = new FoundryAdapter(inputApi);
   const persistentMemory = campaignMemory ?? new InMemoryCampaignMemory({ logger });
+  const persistentAdventureLibrary = adventureLibrary ?? new InMemoryAdventureLibrary({ logger });
   const director = new SessionDirector({
     foundryAdapter: adapter,
     contextBuilder: createNarrationContextBuilder({ logger }),
@@ -50,6 +53,7 @@ export function createSessionRuntime({
     worldStateService: new WorldStateService({ logger }),
     combatService: new CombatService({ logger }),
     campaignMemory: persistentMemory,
+    adventureLibrary: persistentAdventureLibrary,
     narrationService: new NarrationService({
       provider: narrator,
       narrationMemory,
@@ -98,6 +102,11 @@ export function createSessionRuntime({
     removeCampaignMemory: async (campaignId, collection, recordId) => {
       const result = await persistentMemory.remove(campaignId, collection, recordId);
       return { removed: result.removed, memory: persistentMemory.summary(result.campaign) };
-    }
+    },
+    listAdventureDocuments: (campaignId) => persistentAdventureLibrary.list(campaignId),
+    importAdventureDocument: (campaignId, input) => persistentAdventureLibrary.importDocument(campaignId, input),
+    searchAdventureDocuments: (campaignId, query, options) => persistentAdventureLibrary.search(campaignId, query, options),
+    updateAdventureDocumentMode: (campaignId, documentId, mode) => persistentAdventureLibrary.updateMode(campaignId, documentId, mode),
+    removeAdventureDocument: (campaignId, documentId) => persistentAdventureLibrary.remove(campaignId, documentId)
   };
 }

@@ -161,6 +161,11 @@ export function evaluateOpeningSafety(candidate, sourceText) {
   return { safe: issues.length === 0, issues };
 }
 
+function narrationReferenceSource(context, sourceText) {
+  const imported = (context?.adventure?.references ?? []).map((entry) => entry?.text).filter(Boolean);
+  return [sourceText, ...imported].filter(Boolean).join('\n\n');
+}
+
 function evaluateSafetyWithActorExclusions(candidate, sourceText, actorNames) {
   const contentSafety = evaluateOpeningSafety(candidate, sourceText);
   const actorSafety = evaluateActorNameSafety(candidate, actorNames);
@@ -535,7 +540,11 @@ export class NarrationService {
           .trim()
           .replace(/(?:\s*O que vocês fazem\?\s*)+$/i, '')
           .trim();
-        const safety = evaluateSafetyWithActorExclusions(candidate, roomContext.source.text, forbiddenActorNames);
+        const safety = evaluateSafetyWithActorExclusions(
+          candidate,
+          narrationReferenceSource(roomContext, roomContext.source.text),
+          forbiddenActorNames
+        );
         if (!safety.safe) {
           attempts.push({ candidate, safety, styleDirection });
           continue;

@@ -1,7 +1,7 @@
 {
   "name": "mestre-orc-engine",
-  "version": "0.1.0-alpha.40",
-  "description": "Motor modular de narração cinematográfica, voz, memória persistente e integração com o Combat Tracker do Foundry VTT.",
+  "version": "0.1.0-alpha.41",
+  "description": "Motor modular de narração cinematográfica, voz, memória persistente, biblioteca semântica de aventuras e integração com o Foundry VTT.",
   "private": true,
   "type": "module",
   "workspaces": [
