@@ -8,9 +8,10 @@ const moduleManifest = JSON.parse(await readFile(new URL('../apps/foundry-module
 const main = await readFile(new URL('../apps/foundry-module/scripts/main.js', import.meta.url), 'utf8');
 const server = await readFile(new URL('../apps/api/src/server.js', import.meta.url), 'utf8');
 const build = await readFile(new URL('../scripts/build-distribution.mjs', import.meta.url), 'utf8');
+const checklist = await readFile(new URL('../docs/RELEASE-CHECKLIST.md', import.meta.url), 'utf8');
 
-test('Release Candidate usa versão sincronizada e lock reproduzível', () => {
-  assert.match(pkg.version, /^1\.0\.0-rc\.\d+$/);
+test('versão estável usa versão sincronizada e lock reproduzível', () => {
+  assert.equal(pkg.version, '1.0.0');
   assert.equal(lock.version, pkg.version);
   assert.equal(lock.packages[''].version, pkg.version);
   assert.equal(moduleManifest.version, pkg.version);
@@ -25,6 +26,9 @@ test('API aplica autenticação, rate limit, CORS e cabeçalhos defensivos', () 
   assert.match(server, /ORIGIN_NOT_ALLOWED/);
   assert.match(server, /buildSecurityHeaders/);
   assert.match(server, /release\/readiness/);
+  assert.match(server, /status:\s*'stable'/);
+  assert.match(server, /channel:\s*'stable'/);
+  assert.match(server, /realFoundryValidationCompleted:\s*true/);
 });
 
 test('módulo usa URL e token configuráveis e logs condicionais', () => {
@@ -36,12 +40,13 @@ test('módulo usa URL e token configuráveis e logs condicionais', () => {
   assert.doesNotMatch(main, /console\.log\s*\(/);
 });
 
-test('documentação histórica está consolidada e gate inclui auditoria e SBOM', async () => {
+test('documentação histórica está consolidada e release inclui auditoria e SBOM', async () => {
   const rootFiles = await readdir(new URL('../', import.meta.url));
   assert.equal(rootFiles.some((name) => /^README-ALPHA\d+\.md$/i.test(name)), false);
   for (const path of ['docs/ARCHITECTURE.md', 'docs/TROUBLESHOOTING.md', 'docs/PRIVACY.md', 'docs/KNOWN-LIMITATIONS.md', 'docs/RELEASE-CHECKLIST.md', 'docs/archive/ALPHA-HISTORY.md']) {
     await readFile(new URL(`../${path}`, import.meta.url), 'utf8');
   }
-  assert.match(build, /release-candidate-audit\.json/);
-  assert.match(build, /mestre-orc-sbom\.cdx\.json/);
+  assert.match(build, /mestre-orc-\$\{version\}-audit\.json/);
+  assert.match(build, /mestre-orc-\$\{version\}-sbom\.cdx\.json/);
+  assert.doesNotMatch(checklist, /^\s*- \[ \]/m);
 });

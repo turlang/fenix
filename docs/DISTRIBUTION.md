@@ -1,6 +1,6 @@
 # Distribuição e releases
 
-## Gate do Release Candidate
+## Gate da versão estável
 
 ```bash
 npm run check
@@ -14,6 +14,12 @@ Em ambiente sem acesso ao registro npm:
 npm run check:offline
 ```
 
+A promoção estável pode ser executada com:
+
+```bash
+npm run release:stable
+```
+
 ## Artefatos
 
 `npm run release:build` gera em `dist/distribution/`:
@@ -22,11 +28,11 @@ npm run check:offline
 - ZIP do módulo Foundry;
 - bundle Windows;
 - `module.json`;
-- `release-manifest.json`;
-- `checksums.sha256`;
-- `release-candidate-audit.json`;
-- `mestre-orc-sbom.cdx.json`.
+- `mestre-orc-<versão>-release-manifest.json`;
+- `mestre-orc-<versão>-checksums.sha256`;
+- `mestre-orc-<versão>-audit.json`;
+- `mestre-orc-<versão>-sbom.cdx.json`.
 
 Use `MESTRE_ORC_RELEASE_BASE_URL` para preencher `manifest` e `download`. Tags `v*` acionam a workflow de GitHub Release.
 
-A versão estável não deve ser publicada enquanto os itens físicos pendentes em `docs/RELEASE-CHECKLIST.md` não estiverem concluídos.
+Antes de publicar, confirme que `docs/RELEASE-CHECKLIST.md` permanece totalmente concluído e que os checksums correspondem aos artefatos enviados.

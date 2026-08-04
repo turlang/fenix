@@ -84,7 +84,7 @@ import {
 } from './central-panel.js';
 
 const MODULE_ID = 'mestre-orc';
-const MODULE_BUILD = '1.0.0-rc.3';
+const MODULE_BUILD = '1.0.0';
 const BUTTON_ID = 'mestre-orc-start';
 const ROUND_BUTTON_ID = 'mestre-orc-resolve-round';
 const AUDIO_BUTTON_ID = 'mestre-orc-audio-toggle';

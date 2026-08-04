@@ -58,12 +58,12 @@ await rm(staging, { recursive: true, force: true });
 await rm(output, { recursive: true, force: true });
 await mkdir(output, { recursive: true });
 
-const auditReport = join(output, 'release-candidate-audit.json');
-const sbomFile = join(output, 'mestre-orc-sbom.cdx.json');
-execFileSync(process.execPath, [join(root, 'scripts', 'release-candidate-audit.mjs')], {
+const auditReport = join(output, `mestre-orc-${version}-audit.json`);
+const sbomFile = join(output, `mestre-orc-${version}-sbom.cdx.json`);
+execFileSync(process.execPath, [join(root, 'scripts', 'release-audit.mjs')], {
   cwd: root,
   stdio: 'inherit',
-  env: { ...process.env, RC_AUDIT_REPORT_FILE: auditReport }
+  env: { ...process.env, RELEASE_AUDIT_REPORT_FILE: auditReport }
 });
 execFileSync(process.execPath, [join(root, 'scripts', 'generate-sbom.mjs')], {
   cwd: root,
@@ -105,7 +105,7 @@ const release = {
   releaseBaseUrl: releaseBaseUrl || null,
   artifacts
 };
-await writeFile(join(output, 'release-manifest.json'), `${JSON.stringify(release, null, 2)}\n`, 'utf8');
-await writeFile(join(output, 'checksums.sha256'), `${artifacts.map((entry) => `${entry.sha256}  ${entry.fileName}`).join('\n')}\n`, 'utf8');
+await writeFile(join(output, `mestre-orc-${version}-release-manifest.json`), `${JSON.stringify(release, null, 2)}\n`, 'utf8');
+await writeFile(join(output, `mestre-orc-${version}-checksums.sha256`), `${artifacts.map((entry) => `${entry.sha256}  ${entry.fileName}`).join('\n')}\n`, 'utf8');
 await rm(staging, { recursive: true, force: true });
 console.log(`Distribuição preparada em ${relative(root, output)} (${artifacts.length} artefatos).`);

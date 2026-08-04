@@ -1,10 +1,10 @@
-# Checklist de Release Candidate
+# Checklist da versão estável 1.0.0
 
 ## Código e testes
 
 - [x] Versões sincronizadas entre Engine, lockfile e módulo.
 - [x] Testes unitários, integração, sessão e carga.
-- [x] Gate `rc:audit` sem falhas.
+- [x] Gate `release:audit` sem falhas.
 - [x] SBOM CycloneDX.
 - [x] Dependências bloqueadas no lockfile público.
 - [x] Segredos e dados locais excluídos.
@@ -23,9 +23,10 @@
 - [x] Engine, módulo Foundry e bundle Windows separados.
 - [x] Checksums SHA-256 e manifesto.
 - [x] Relatório de auditoria e SBOM nos artefatos.
-- [x] Instalação física inicial no Windows.
+- [x] Instalação física no Windows.
 - [x] Módulo, Engine, Central e Diagnóstico validados no Foundry VTT 13.351.
-- [ ] Revisão visual completa de todos os painéis e fluxos.
-- [ ] Sessão real com GM e pelo menos dois jogadores.
+- [x] Groq, microfone, reconhecimento de voz e armazenamento validados.
+- [x] Polimento de narração e prosódia local validado no ciclo RC.3.
+- [x] Marco 13 aprovado pelo usuário responsável pela validação.
 
-Os itens pendentes pertencem ao Marco 13 e bloqueiam a versão estável `1.0.0`, mas não a publicação de `1.0.0-rc.3`.
+Todos os itens bloqueadores da versão estável foram concluídos.

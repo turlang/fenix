@@ -4,7 +4,7 @@ import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const output = resolve(root, process.env.RC_AUDIT_REPORT_FILE || 'reports/release-candidate-audit.json');
+const output = resolve(root, process.env.RELEASE_AUDIT_REPORT_FILE || 'reports/release-audit.json');
 const checks = [];
 const excluded = new Set(['.git', 'node_modules', 'dist', 'reports', 'coverage', 'data']);
 
@@ -42,10 +42,13 @@ const moduleManifest = JSON.parse(await readFile(join(root, 'apps/foundry-module
 const server = await readFile(join(root, 'apps/api/src/server.js'), 'utf8');
 const main = await readFile(join(root, 'apps/foundry-module/scripts/main.js'), 'utf8');
 const envExample = await readFile(join(root, '.env.example'), 'utf8');
+const releaseChecklist = await readFile(join(root, 'docs/RELEASE-CHECKLIST.md'), 'utf8');
 
-add('version.release-candidate', /^1\.0\.0-rc\.\d+$/.test(pkg.version), `Versão atual: ${pkg.version}`);
+add('version.stable', pkg.version === '1.0.0', `Versão atual: ${pkg.version}`);
 add('version.consistency', pkg.version === lock.version && pkg.version === lock.packages?.['']?.version && pkg.version === moduleManifest.version, 'Engine, lock e módulo usam a mesma versão.');
 add('runtime.private-package', pkg.private === true && pkg.license === 'UNLICENSED', 'Pacote permanece privado e sem concessão de licença implícita.');
+add('release.stable-readiness', /status:\s*'stable'/.test(server) && /channel:\s*'stable'/.test(server) && /realFoundryValidationCompleted:\s*true/.test(server), 'Endpoint de prontidão declara canal estável e validação física concluída.');
+add('release.checklist-complete', !/^- \[ \]/m.test(releaseChecklist), 'Checklist da versão estável não possui itens pendentes.');
 
 const requiredDocs = ['docs/ARCHITECTURE.md', 'docs/INSTALLATION.md', 'docs/UPDATING.md', 'docs/MIGRATIONS.md', 'docs/DISTRIBUTION.md', 'docs/TROUBLESHOOTING.md', 'docs/PRIVACY.md', 'docs/KNOWN-LIMITATIONS.md', 'docs/RELEASE-CHECKLIST.md', 'docs/archive/ALPHA-HISTORY.md', 'SECURITY.md', 'NOTICE.md'];
 for (const document of requiredDocs) add(`docs.${document}`, await exists(document), `${document} presente.`);
@@ -98,7 +101,7 @@ for (const path of forbidden) add(`delivery.forbidden.${path}`, !(await exists(p
 const failed = checks.filter((entry) => !entry.passed && entry.severity === 'error');
 const warnings = checks.filter((entry) => !entry.passed && entry.severity === 'warning');
 const payload = {
-  format: 'mestre-orc-release-candidate-audit',
+  format: 'mestre-orc-release-audit',
   formatVersion: 1,
   version: pkg.version,
   generatedAt: new Date().toISOString(),
@@ -110,7 +113,7 @@ const digest = createHash('sha256').update(JSON.stringify(payload)).digest('hex'
 const report = { ...payload, sha256: digest };
 await mkdir(dirname(output), { recursive: true });
 await writeFile(output, `${JSON.stringify(report, null, 2)}\n`, 'utf8');
-console.log(`Auditoria RC: ${report.status} — ${report.summary.passed}/${report.summary.total} verificações (${output}).`);
+console.log(`Auditoria de release: ${report.status} — ${report.summary.passed}/${report.summary.total} verificações (${output}).`);
 if (failed.length) {
   for (const entry of failed) console.error(`- ${entry.id}: ${entry.detail}`);
   process.exitCode = 1;

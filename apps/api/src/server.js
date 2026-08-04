@@ -174,12 +174,13 @@ app.get('/health', { logLevel: 'silent' }, async () => ({
 }));
 
 app.get('/v1/release/readiness', { logLevel: 'silent' }, async () => ({
-  status: 'release-candidate',
+  status: 'stable',
   version: packageMetadata.version,
-  channel: 'rc',
+  channel: 'stable',
   engineValidated: true,
   automatedFoundrySimulation: true,
-  realFoundryValidationRequired: true,
+  realFoundryValidationRequired: false,
+  realFoundryValidationCompleted: true,
   dataSchemaVersion: migrationStartup.inspection?.targetSchemaVersion ?? migrationStartup.inspection?.schemaVersion ?? null,
   security: {
     localOnly: ['127.0.0.1', 'localhost', '::1'].includes(config.host),

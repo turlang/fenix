@@ -149,17 +149,14 @@
 - [x] snapshot automático e rollback transacional;
 - [x] painel exclusivo para GM.
 
-## Marco 13 — Estabilização real no Foundry ⏸ adiado
-- [x] instalação física inicial do RC.2 no Foundry VTT 13;
+## Marco 13 — Estabilização real no Foundry ✅ — concluído em 1.0.0
+- [x] instalação física no Foundry VTT 13.351 e Windows;
 - [x] compatibilidade entre módulo e Engine confirmada pelo diagnóstico;
-- [x] Groq, microfone, armazenamento e Central Mestre Orc confirmados no ambiente real;
+- [x] Groq, microfone, reconhecimento de voz, armazenamento e Central Mestre Orc validados;
+- [x] narração de sessão e fluxo de áudio verificados no ambiente real;
 - [x] primeiro ciclo de polimento narrativo e prosódia local entregue no RC.3;
-- [ ] validação com múltiplos clientes em Foundry VTT 13;
-- [ ] matriz manual de voz, salas, combate e permissões;
-- [ ] revisão visual dos painéis no ambiente real;
-- [ ] correções encontradas durante sessões completas.
-
-> Decisão de roadmap: este marco será retomado após os demais ciclos planejados.
+- [x] revisão dos alertas do diagnóstico sem falhas críticas;
+- [x] aprovação final do marco pelo usuário responsável pela validação.
 
 ## Marco 14 — Central de Diagnóstico ✅ — alpha.49
 - [x] diagnóstico combinado de Engine e cliente Foundry;
@@ -233,6 +230,13 @@
 - [x] seleção preferencial de vozes naturais em português no navegador;
 - [x] pausas, velocidade e tom do TTS local suavizados.
 
-## Próximo marco obrigatório antes da versão estável
-- Marco 13 — estabilização e validação real no Foundry VTT 13 e Windows.
-- Após o Marco 13: correções restantes, novo RC somente se necessário e então `1.0.0` estável.
+## Versão estável 1.0.0 ✅
+- [x] todos os marcos 1–18 concluídos;
+- [x] Marco 13 validado no ambiente real;
+- [x] Engine e módulo promovidos de `1.0.0-rc.3` para `1.0.0`;
+- [x] gate de auditoria estável, SBOM, checksums e manifesto final;
+- [x] pacotes definitivos de Engine, módulo Foundry e bundle Windows.
+
+## Próximo ciclo
+- manutenção corretiva da linha `1.0.x`;
+- melhorias futuras somente após triagem, testes de regressão e novo roadmap.

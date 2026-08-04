@@ -52,7 +52,7 @@ const required = [
   'packages/narration-service/src/index.js',
   'packages/foundry-publisher/src/index.js',
   'scripts/prepare-release.mjs',
-  'scripts/release-candidate-audit.mjs',
+  'scripts/release-audit.mjs',
   'scripts/generate-sbom.mjs',
   'scripts/run-tests.mjs',
   'scripts/run-integration-tests.mjs',
@@ -96,8 +96,8 @@ const packageLock = JSON.parse(await readFile(new URL('package-lock.json', root)
 const moduleJson = JSON.parse(await readFile(new URL('apps/foundry-module/module.json', root), 'utf8'));
 
 
-if (!/^1\.0\.0-rc\.\d+$/.test(packageJson.version)) {
-  throw new Error(`Versão do Release Candidate inválida: ${packageJson.version}`);
+if (packageJson.version !== '1.0.0') {
+  throw new Error(`Versão estável inválida: ${packageJson.version}`);
 }
 const legacyReadmes = await readdir(root);
 if (legacyReadmes.some((name) => /^README-ALPHA\d+\.md$/i.test(name))) {
@@ -111,7 +111,7 @@ if (packageJson.version !== packageLock.version || packageJson.version !== packa
   throw new Error('package.json e package-lock.json possuem versões divergentes.');
 }
 
-for (const scriptName of ['test', 'test:integration', 'test:session', 'test:load', 'test:all', 'validate', 'check', 'check:offline', 'rc:audit', 'sbom:generate', 'release:prepare', 'release:build', 'release:rc', 'migrate:inspect', 'migrate:apply', 'install:verify']) {
+for (const scriptName of ['test', 'test:integration', 'test:session', 'test:load', 'test:all', 'validate', 'check', 'check:offline', 'release:audit', 'rc:audit', 'sbom:generate', 'release:prepare', 'release:build', 'release:stable', 'migrate:inspect', 'migrate:apply', 'install:verify']) {
   if (!packageJson.scripts?.[scriptName]) throw new Error(`Script obrigatório ausente: ${scriptName}`);
 }
 
@@ -128,7 +128,7 @@ for (const expectedRule of ['node_modules/', '.env', 'data/*.json', 'data/backup
 
 const envExample = await readFile(new URL('.env.example', root), 'utf8');
 if (!/HOST=127\.0\.0\.1/.test(envExample) || !/MESTRE_ORC_API_TOKEN=/.test(envExample)) {
-  throw new Error('.env.example não possui os padrões de segurança do RC.');
+  throw new Error('.env.example não possui os padrões de segurança da versão estável.');
 }
 const moduleSource = await readFile(new URL('apps/foundry-module/scripts/main.js', root), 'utf8');
 if (/const\s+API_URL\s*=/.test(moduleSource) || /console\.log\s*\(/.test(moduleSource)) {

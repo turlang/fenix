@@ -45,7 +45,7 @@ test('worldId divergente e microfone negado produzem falha', async () => {
 });
 
 test('diagnóstico alerta quando Engine e módulo Foundry usam versões diferentes', async () => {
-  const report = await service({ engineVersion: '1.0.0-rc.3' }).run('world-1', {
+  const report = await service({ engineVersion: '1.0.0' }).run('world-1', {
     requester: gm(),
     client: {
       apiLatencyMs: 10,
@@ -58,7 +58,7 @@ test('diagnóstico alerta quando Engine e módulo Foundry usam versões diferent
   const compatibility = report.checks.find((entry) => entry.id === 'engine-module-version');
   assert.equal(compatibility.level, 'WARN');
   assert.match(compatibility.message, /1\.0\.0-rc\.1/);
-  assert.match(compatibility.message, /1\.0\.0-rc\.3/);
+  assert.match(compatibility.message, /Engine 1\.0\.0/);
 });
 
 test('telemetria limita eventos, registra latência e sanitiza erros', () => {

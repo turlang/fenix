@@ -1,7 +1,7 @@
 {
   "name": "mestre-orc-engine",
-  "version": "1.0.0-rc.3",
-  "description": "Release Candidate do Mestre Orc Engine: narração, voz, combate, memória, criação assistida, segurança, diagnóstico, backup, migrações e distribuição para Foundry VTT 13.",
+  "version": "1.0.0",
+  "description": "Versão estável do Mestre Orc Engine: narração, voz, combate, memória, criação assistida, segurança, diagnóstico, backup, migrações e distribuição para Foundry VTT 13.",
   "private": true,
   "type": "module",
   "workspaces": [
@@ -14,9 +14,9 @@
     "test": "node scripts/run-tests.mjs",
     "audit": "npm audit --omit=dev",
     "validate": "node scripts/validate.mjs",
-    "check:offline": "npm run validate && npm run test:all && npm run rc:audit",
+    "check:offline": "npm run validate && npm run test:all && npm run release:audit",
     "release:prepare": "node scripts/prepare-release.mjs",
-    "check": "npm run validate && npm run audit && npm run test:all && npm run rc:audit",
+    "check": "npm run validate && npm run audit && npm run test:all && npm run release:audit",
     "test:integration": "node scripts/run-integration-tests.mjs",
     "test:session": "node scripts/run-session-simulation.mjs",
     "test:load": "node scripts/run-load-tests.mjs",
@@ -25,9 +25,10 @@
     "migrate:apply": "node scripts/migrate-data.mjs apply",
     "install:verify": "node scripts/verify-installation.mjs",
     "release:build": "node scripts/build-distribution.mjs",
-    "rc:audit": "node scripts/release-candidate-audit.mjs",
+    "rc:audit": "npm run release:audit",
     "sbom:generate": "node scripts/generate-sbom.mjs",
-    "release:rc": "npm run check && npm run release:build && npm run install:verify"
+    "release:audit": "node scripts/release-audit.mjs",
+    "release:stable": "npm run check && npm run release:build && npm run install:verify"
   },
   "engines": {
     "node": ">=20 <25"

@@ -4,7 +4,25 @@ Este projeto segue o formato do [Keep a Changelog](https://keepachangelog.com/pt
 
 ## [Não publicado]
 
-Nenhuma alteração registrada após o RC.3.
+Nenhuma alteração registrada após a versão estável 1.0.0.
+
+## [1.0.0] - 2026-08-03
+
+### Estável
+
+- Marco 13 validado no Foundry VTT 13.351 e Windows.
+- Engine e módulo confirmados na mesma versão, com diagnóstico, Groq, microfone, reconhecimento de voz e armazenamento operacionais.
+- Promoção sincronizada de Engine, módulo e lockfile de `1.0.0-rc.3` para `1.0.0`.
+- Endpoint de prontidão passa a declarar canal `stable` e validação física concluída.
+- Gate de auditoria generalizado para `release:audit`.
+- Artefatos finais incluem auditoria de release, SBOM CycloneDX, manifesto e checksums SHA-256.
+- Documentação, checklist, roadmap, instalação, atualização e limitações consolidados para a versão estável.
+
+### Compatibilidade
+
+- Foundry VTT 13.
+- Node.js 20, 22 e 24.
+- Migração direta suportada a partir da linha `1.0.0-rc.x`, preservando `.env` e dados persistentes.
 
 ## [1.0.0-rc.3] - 2026-08-03
 

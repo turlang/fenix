@@ -12,7 +12,7 @@
 ```bash
 npm ci --ignore-scripts
 npm run check:offline
-npm run rc:audit
+npm run release:audit
 ```
 
 Quando o registro npm estiver acessível, execute também:

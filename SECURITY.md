@@ -2,7 +2,7 @@
 
 ## Versões suportadas
 
-Durante o Release Candidate, somente `1.0.0-rc.x` mais recente recebe correções. A versão estável só será publicada depois do Marco 13.
+A linha estável `1.0.x` recebe correções de segurança e manutenção. Versões alpha e `1.0.0-rc.x` não recebem novas correções após a publicação da versão estável.
 
 ## Perímetro da API
 
@@ -28,7 +28,7 @@ Nunca publique:
 - tokens da API;
 - snapshots de migração.
 
-O gate `npm run rc:audit` procura padrões conhecidos de segredo e arquivos proibidos. O SBOM não contém credenciais.
+O gate `npm run release:audit` procura padrões conhecidos de segredo e arquivos proibidos. O SBOM não contém credenciais.
 
 ## Provedores de IA e voz
 
@@ -65,7 +65,7 @@ O gate `npm run rc:audit` procura padrões conhecidos de segredo e arquivos proi
 
 ## Dependências
 
-O lockfile do RC usa o registro público do npm. `fastify` está bloqueado em `5.10.0` e `fast-uri` em `3.1.4`. O gate offline exige `fast-uri >= 3.1.2`. Execute `npm run check` quando o registro npm estiver acessível para incluir `npm audit`.
+O lockfile usa o registro público do npm. `fastify` está bloqueado em `5.10.0` e `fast-uri` em `3.1.4`. O gate offline exige `fast-uri >= 3.1.2`. Execute `npm run check` quando o registro npm estiver acessível para incluir `npm audit`.
 
 ## Relato responsável
 

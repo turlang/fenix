@@ -33,7 +33,7 @@ O limite de requisições foi atingido. Aguarde o `Retry-After` ou ajuste `MESTR
 - Use HTTPS ou `localhost`.
 - TTS local varia conforme as vozes instaladas.
 - Mantenha **Suavizar prosódia da voz local** ativado nas configurações do módulo.
-- Deixe **Nome da voz TTS** vazio para o RC.3 escolher automaticamente a melhor voz `pt-BR`, priorizando variantes Natural/Neural/Online quando disponíveis.
+- Deixe **Nome da voz TTS** vazio para a versão estável escolher automaticamente a melhor voz `pt-BR`, priorizando variantes Natural/Neural/Online quando disponíveis.
 - Para testar outra voz, informe o nome exato mostrado pelo navegador e mantenha velocidade próxima de `0,95` e tom próximo de `1,00`.
 - Em falha neural, use `neural-auto` para permitir fallback local.
 
