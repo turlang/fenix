@@ -1,7 +1,38 @@
+const EMOTION_PATTERN = /\[(calmo|tenso|sussurro|urgente|pausa)\]/gi;
+
 function clamp(value, minimum, maximum, fallback) {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return fallback;
   return Math.min(maximum, Math.max(minimum, numeric));
+}
+
+export function parseEmotionalSegments(value) {
+  const source = String(value ?? '');
+  const segments = [];
+  let emotion = 'neutral';
+  let cursor = 0;
+
+  for (const match of source.matchAll(EMOTION_PATTERN)) {
+    const before = source.slice(cursor, match.index).replace(/\s+/g, ' ').trim();
+    if (before) segments.push({ type: 'speech', emotion, text: before });
+    const marker = String(match[1] ?? '').toLowerCase();
+    if (marker === 'pausa') segments.push({ type: 'pause', durationMs: 450 });
+    else emotion = marker;
+    cursor = Number(match.index) + match[0].length;
+  }
+
+  const remainder = source.slice(cursor).replace(/\s+/g, ' ').trim();
+  if (remainder) segments.push({ type: 'speech', emotion, text: remainder });
+  return segments;
+}
+
+function flattenSpeech(segments) {
+  return segments
+    .filter((segment) => segment.type === 'speech')
+    .map((segment) => segment.text)
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 export class AudioNarrationService {
@@ -25,13 +56,15 @@ export class AudioNarrationService {
 
   createDirective(text, metadata = {}) {
     if (!this.enabled) return null;
-    const normalizedText = String(text ?? '').replace(/\s+/g, ' ').trim();
+    const segments = parseEmotionalSegments(text);
+    const normalizedText = flattenSpeech(segments);
     if (!normalizedText) return null;
 
     const directive = {
       id: crypto.randomUUID(),
       mode: this.mode,
       text: normalizedText,
+      segments,
       language: this.language,
       rate: this.rate,
       pitch: this.pitch,
@@ -46,7 +79,8 @@ export class AudioNarrationService {
       mode: directive.mode,
       language: directive.language,
       sceneId: directive.sceneId,
-      characters: normalizedText.length
+      characters: normalizedText.length,
+      segments: segments.length
     });
 
     return directive;
