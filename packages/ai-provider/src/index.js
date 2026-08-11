@@ -1,3 +1,5 @@
+import { buildNarratorSystemPrompt } from './system-prompt.js';
+
 export class NarrativeProvider {
   constructor({ generateText }) {
     if (typeof generateText !== 'function') throw new TypeError('generateText é obrigatório.');
@@ -33,7 +35,7 @@ function openingPrompt(context) {
     .join('\n');
 
   return [
-    'Você é o narrador cinematográfico de uma mesa de RPG e está abrindo a sessão na cena ativa.',
+    'Abra a sessão na cena ativa.',
     'O texto-fonte é uma âncora canônica: extraia seus fatos observáveis, interprete-os e reescreva a cena com clareza e atmosfera.',
     'NÃO traduza literalmente, NÃO copie frases e NÃO mantenha a mesma ordem de ideias do texto-fonte.',
     'Preserve os fatos visíveis e descreva cada elemento canônico apenas uma vez.',
@@ -44,8 +46,7 @@ function openingPrompt(context) {
     'Não revele informações de condução, estatísticas, segredos, áreas futuras ou pensamentos de NPCs.',
     'Não controle falas, emoções, decisões, olhares, expectativas ou ações dos personagens jogadores.',
     'Quando houver atores visíveis, mencione seus nomes no máximo uma vez e apenas para registrar que estão presentes no local.',
-    'É proibido mencionar livro, aventura, capítulo, Journal, Scene, Foundry, sistema, mestre, instruções ou material-fonte.',
-    'Escreva apenas a narração que os jogadores ouvirão, em português do Brasil.',
+    'Escreva apenas a narração que os jogadores ouvirão.',
     'Produza 2 ou 3 parágrafos, entre 80 e 150 palavras antes da pergunta final.',
     'Termine exatamente com: O que vocês fazem?',
     '',
@@ -80,13 +81,12 @@ function openingPrompt(context) {
 function roomEntryPrompt(context) {
   const actors = (context.visibleActors ?? []).map((actor) => actor.name).filter(Boolean).slice(0, 8);
   return [
-    'Você é o narrador cinematográfico de uma mesa de RPG descrevendo a sala em que o grupo acaba de entrar.',
+    'Descreva a sala em que o grupo acaba de entrar.',
     'Use a âncora canônica somente como fonte de fatos observáveis; interprete e reescreva, sem copiar frases ou a ordem original.',
     'Não invente ameaças, inimigos, armadilhas, tesouros, acontecimentos, segredos ou detalhes não confirmados.',
     'Não revele estatísticas, instruções do mestre, áreas futuras ou pensamentos de NPCs.',
     'Não controle ações, emoções, falas ou decisões dos personagens jogadores.',
-    'Não mencione Journal, Note, Foundry, livro, aventura, capítulo, sistema, mestre ou material-fonte.',
-    'Escreva em português do Brasil, em 1 ou 2 parágrafos, entre 50 e 120 palavras.',
+    'Escreva em 1 ou 2 parágrafos, entre 50 e 120 palavras.',
     'Não faça pergunta final e não termine com “O que vocês fazem?”.',
     `Cena: ${context.scene?.name ?? 'sem nome'}`,
     `Sala: ${context.room?.name ?? 'sem nome'}`,
@@ -99,7 +99,14 @@ function roomEntryPrompt(context) {
 }
 
 export class GroqNarrativeProvider {
-  constructor({ apiKey, model, baseUrl = 'https://api.groq.com/openai/v1', logger = console, timeoutMs = 45000 } = {}) {
+  constructor({
+    apiKey,
+    model,
+    baseUrl = 'https://api.groq.com/openai/v1',
+    logger = console,
+    timeoutMs = 45000,
+    audioMarkersEnabled = false
+  } = {}) {
     if (!apiKey) throw new TypeError('GROQ_API_KEY não configurada.');
     if (!model) throw new TypeError('GROQ_MODEL não configurado.');
     this.apiKey = apiKey;
@@ -107,6 +114,7 @@ export class GroqNarrativeProvider {
     this.baseUrl = baseUrl.replace(/\/$/, '');
     this.logger = logger;
     this.timeoutMs = timeoutMs;
+    this.systemPrompt = buildNarratorSystemPrompt({ audioMarkersEnabled });
   }
 
   async createOpening(context) {
@@ -132,7 +140,7 @@ export class GroqNarrativeProvider {
       ? `NPC identificado: ${relationship.npcName}; disposição: ${relationship.disposition}; relação: ${relationship.relationshipType}.`
       : 'Nenhum NPC específico identificado.';
     const prompt = [
-      'Você é o narrador de uma mesa de RPG. Narre as consequências da ação abaixo.',
+      'Narre as consequências da ação abaixo.',
       'Seja direto e cinematográfico. Não explique regras, não refaça eventos e preserve a agência dos jogadores.',
       'Não invente resultados mecânicos além dos dados fornecidos. Termine em um resultado ou ponto claro de decisão.',
       `Cena: ${context?.scene?.name ?? 'sem nome'}`,
@@ -162,7 +170,7 @@ export class GroqNarrativeProvider {
         body: JSON.stringify({
           model: this.model,
           messages: [
-            { role: 'system', content: 'Você produz narração de RPG em texto natural. Nunca responda em JSON.' },
+            { role: 'system', content: this.systemPrompt },
             { role: 'user', content: prompt }
           ],
           temperature,
@@ -198,5 +206,6 @@ export function createNarrativeProviderFromEnv({ logger = console } = {}) {
     logger.warn?.('[Mestre Orc][AI] GROQ_API_KEY/GROQ_MODEL ausentes; a narração será recusada até a configuração do .env.');
     return null;
   }
-  return new GroqNarrativeProvider({ apiKey, model, logger });
+  const audioMarkersEnabled = /^(1|true|on|enabled)$/i.test(String(process.env.MESTRE_ORC_AUDIO_EMOTION_MARKERS ?? 'false'));
+  return new GroqNarrativeProvider({ apiKey, model, audioMarkersEnabled, logger });
 }
