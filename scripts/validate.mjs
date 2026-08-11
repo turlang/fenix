@@ -43,8 +43,10 @@ for (const file of required) await access(new URL(`../${file}`, import.meta.url)
 
 const packageJson = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
 const moduleJson = JSON.parse(await readFile(new URL('../apps/foundry-module/module.json', import.meta.url), 'utf8'));
-if (packageJson.version !== moduleJson.version) {
-  throw new Error(`Versões divergentes: engine=${packageJson.version}, foundry=${moduleJson.version}`);
+const coreSource = await readFile(new URL('../packages/core/src/index.js', import.meta.url), 'utf8');
+const coreVersion = coreSource.match(/ENGINE_VERSION\s*=\s*['"]([^'"]+)['"]/)?.[1] ?? null;
+if (packageJson.version !== moduleJson.version || packageJson.version !== coreVersion) {
+  throw new Error(`Versões divergentes: engine=${packageJson.version}, foundry=${moduleJson.version}, core=${coreVersion}`);
 }
 if (!packageJson.scripts?.test || !packageJson.scripts?.check) throw new Error('Scripts de qualidade ausentes.');
 
