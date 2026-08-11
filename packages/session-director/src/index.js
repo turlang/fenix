@@ -1,9 +1,29 @@
 import { SessionState } from '../../core/src/index.js';
+import { assertNarrationOutputPort, assertVttContextPort } from '../../vtt-contracts/src/index.js';
 
 export class SessionDirector {
-  constructor({ foundryAdapter, contextBuilder, intentInterpreter, rulesService, relationshipService, narrationService, audioNarrationService = null, foundryPublisher, logger = console }) {
-    const required = { foundryAdapter, contextBuilder, intentInterpreter, rulesService, relationshipService, narrationService, foundryPublisher };
-    for (const [name, service] of Object.entries(required)) if (!service) throw new TypeError(`${name} é obrigatório.`);
+  constructor({
+    contextPort = null,
+    narrationOutput = null,
+    // Aliases temporários para consumidores alpha.24.
+    foundryAdapter = null,
+    foundryPublisher = null,
+    contextBuilder,
+    intentInterpreter,
+    rulesService,
+    relationshipService,
+    narrationService,
+    audioNarrationService = null,
+    logger = console
+  }) {
+    const resolvedContextPort = assertVttContextPort(contextPort ?? foundryAdapter);
+    const resolvedNarrationOutput = assertNarrationOutputPort(narrationOutput ?? foundryPublisher);
+    const required = { contextBuilder, intentInterpreter, rulesService, relationshipService, narrationService };
+    for (const [name, service] of Object.entries(required)) {
+      if (!service) throw new TypeError(`${name} é obrigatório.`);
+    }
+    this.contextPort = resolvedContextPort;
+    this.narrationOutput = resolvedNarrationOutput;
     Object.assign(this, required);
     this.audioNarrationService = audioNarrationService;
     this.logger = logger;
@@ -11,13 +31,21 @@ export class SessionDirector {
     this.session = null;
   }
 
-  getStatus() { return { state: this.state, sessionId: this.session?.id ?? null, sceneId: this.session?.context?.scene?.id ?? null }; }
+  getStatus() {
+    return {
+      state: this.state,
+      sessionId: this.session?.id ?? null,
+      sceneId: this.session?.context?.scene?.id ?? null
+    };
+  }
 
   async start() {
     try {
-      if (![SessionState.IDLE, SessionState.ENDED].includes(this.state)) throw new Error('Já existe uma sessão em andamento.');
+      if (![SessionState.IDLE, SessionState.ENDED].includes(this.state)) {
+        throw new Error('Já existe uma sessão em andamento.');
+      }
       this.state = SessionState.SYNCING;
-      const raw = await this.foundryAdapter.sync();
+      const raw = await this.contextPort.sync();
       const context = this.contextBuilder.build(raw);
       this.state = SessionState.OPENING;
       const sessionId = crypto.randomUUID();
@@ -26,20 +54,26 @@ export class SessionDirector {
         sceneId: context.scene?.id ?? null,
         sessionId
       }) ?? null;
-      await this.foundryPublisher.postNarration(opening);
+      await this.narrationOutput.publishNarration(opening, {
+        type: 'SESSION_OPENING',
+        sceneId: context.scene?.id ?? null,
+        sessionId
+      });
       this.session = { id: sessionId, context, opening, audio, startedAt: new Date().toISOString() };
       this.state = SessionState.COLLECTING_ACTIONS;
       return { state: this.state, sessionId: this.session.id, opening, audio };
     } catch (error) {
       this.state = SessionState.IDLE;
-      this.logger.error?.('[Mestre Orc][Session] falha ao iniciar', { message: error.message, stack: error.stack });
+      this.logger.error?.('[Fênix][Session] falha ao iniciar', { message: error.message, stack: error.stack });
       throw error;
     }
   }
 
   async processAction(input) {
     try {
-      if (!this.session || this.state !== SessionState.COLLECTING_ACTIONS) throw new Error('Sessão não está pronta para receber ações.');
+      if (!this.session || this.state !== SessionState.COLLECTING_ACTIONS) {
+        throw new Error('Sessão não está pronta para receber ações.');
+      }
       const context = this.contextBuilder.build({ ...this.session.context, messages: [input] });
       const intent = await this.intentInterpreter.interpret(input);
       this.state = SessionState.RESOLVING;
@@ -51,12 +85,17 @@ export class SessionDirector {
         sceneId: context.scene?.id ?? this.session.context?.scene?.id ?? null,
         sessionId: this.session.id
       }) ?? null;
-      await this.foundryPublisher.postNarration(narration);
+      await this.narrationOutput.publishNarration(narration, {
+        type: 'ACTION_RESOLUTION',
+        sceneId: context.scene?.id ?? null,
+        sessionId: this.session.id,
+        actorId: input?.actorId ?? null
+      });
       this.state = SessionState.COLLECTING_ACTIONS;
       return { state: this.state, intent, rules, relationship, narration, audio };
     } catch (error) {
       this.state = this.session ? SessionState.COLLECTING_ACTIONS : SessionState.IDLE;
-      this.logger.error?.('[Mestre Orc][Session] falha ao processar ação', { message: error.message, stack: error.stack });
+      this.logger.error?.('[Fênix][Session] falha ao processar ação', { message: error.message, stack: error.stack });
       throw error;
     }
   }
@@ -87,10 +126,15 @@ export class SessionDirector {
         sceneId: context.scene?.id ?? null,
         sessionId: this.session.id
       }) ?? null;
-      await this.foundryPublisher.postNarration(opening);
+      await this.narrationOutput.publishNarration(opening, {
+        type: 'ROOM_ENTRY',
+        sceneId: context.scene?.id ?? null,
+        roomId: context.room.id,
+        sessionId: this.session.id
+      });
       return { state: this.state, sessionId: this.session.id, opening, audio, room: context.room };
     } catch (error) {
-      this.logger.error?.('[Mestre Orc][Session] falha ao narrar sala', { message: error.message, stack: error.stack });
+      this.logger.error?.('[Fênix][Session] falha ao narrar sala', { message: error.message, stack: error.stack });
       throw error;
     }
   }
