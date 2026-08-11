@@ -16,14 +16,14 @@ Este projeto segue o formato do [Keep a Changelog](https://keepachangelog.com/pt
 
 ### Alterado
 
-- `SessionDirector` passa a depender de `contextPort` e `narrationOutput`, sem dependência nominal do Foundry no domínio.
+- `SessionDirector` passa a depender exclusivamente de `contextPort` e `narrationOutput`, sem dependência nominal do Foundry no domínio.
 - `server.js` passa a atuar somente como composition root; rotas, schemas, controller e criação do Fastify foram separados.
 - `/health` usa a versão centralizada do Engine em vez de valor hardcoded antigo.
 - Foundry Adapter normaliza o estado pelo contrato universal antes de entrar no Core.
 
 ### Compatibilidade
 
-- `foundryApi`, `publishChat`, `foundryAdapter`, `foundryPublisher` e `postNarration()` permanecem como aliases de transição para consumidores alpha.24.
+- `foundryApi` e `publishChat` permanecem como aliases de transição no `session-runtime`, e `postNarration()` permanece como alias no publisher para consumidores alpha.24.
 - A regra alpha.24 de correlação por número da sala permanece no adapter Foundry.
 
 ## [0.1.0-alpha.24] - 2026-07-21
