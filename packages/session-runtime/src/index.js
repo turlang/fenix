@@ -1,28 +1,26 @@
 import { FoundryAdapter } from '../../foundry-adapter/src/index.js';
+import { FoundryPublisher } from '../../foundry-publisher/src/index.js';
+import { NarrationOutput } from '../../narration-output/src/index.js';
+import {
+  createSnapshotContextPort,
+  normalizePlayerActionEvent,
+  normalizeRoomEnteredEvent
+} from '../../vtt-contracts/src/index.js';
 import { createNarrationContextBuilder } from '../../narration-context-builder/src/index.js';
 import { IntentInterpreter } from '../../intent-interpreter/src/index.js';
 import { RulesService } from '../../rules-service/src/index.js';
 import { RelationshipService } from '../../relationship-service/src/index.js';
 import { NarrationService } from '../../narration-service/src/index.js';
-import { FoundryPublisher } from '../../foundry-publisher/src/index.js';
 import { SessionDirector } from '../../session-director/src/index.js';
 import { AudioNarrationService } from '../../audio-narration-service/src/index.js';
 
-function createInputApi(initial = {}) {
-  let snapshot = initial;
-  return {
-    setSnapshot(next) { snapshot = next ?? {}; },
-    async getActiveScene() { return snapshot.activeScene ?? snapshot.scene ?? null; },
-    async getCampaignMetadata() { return snapshot.campaign ?? null; },
-    async getVisibleActors() { return snapshot.visibleActors ?? snapshot.actors ?? []; },
-    async getLinkedSceneJournal() { return snapshot.sceneJournal ?? snapshot.journal ?? null; }
-  };
-}
-
 export function createSessionRuntime({
-  foundryApi,
+  vttContextPort = null,
+  narrationOutputPort = null,
+  // Compatibilidade alpha.24. Novos adapters devem usar as portas genéricas acima.
+  foundryApi = null,
+  publishChat = null,
   narrator,
-  publishChat,
   narrationMemory,
   openingPlanner,
   noveltyGuard,
@@ -31,10 +29,16 @@ export function createSessionRuntime({
   audioOptions,
   logger = console
 } = {}) {
-  const inputApi = foundryApi ?? createInputApi();
-  const adapter = new FoundryAdapter(inputApi);
+  const snapshotPort = !vttContextPort && !foundryApi ? createSnapshotContextPort() : null;
+  const contextPort = vttContextPort
+    ?? (foundryApi ? new FoundryAdapter(foundryApi) : snapshotPort);
+  const narrationOutput = narrationOutputPort
+    ?? (publishChat
+      ? new FoundryPublisher({ publishChat, logger })
+      : new NarrationOutput({ logger }));
+
   const director = new SessionDirector({
-    foundryAdapter: adapter,
+    contextPort,
     contextBuilder: createNarrationContextBuilder({ logger }),
     intentInterpreter: new IntentInterpreter({ logger }),
     rulesService: new RulesService({ logger }),
@@ -48,18 +52,23 @@ export function createSessionRuntime({
       logger
     }),
     audioNarrationService: audioNarrationService ?? new AudioNarrationService({ ...(audioOptions ?? {}), logger }),
-    foundryPublisher: new FoundryPublisher({ publishChat, logger }),
+    narrationOutput,
     logger
   });
 
   return {
     getStatus: () => director.getStatus(),
     async start(input = {}) {
-      inputApi.setSnapshot?.(input.snapshot ?? input);
+      const snapshot = input?.snapshot ?? input;
+      if (typeof contextPort.setSnapshot === 'function') contextPort.setSnapshot(snapshot);
       return director.start();
     },
-    processAction: (input) => director.processAction(input),
-    describeRoom: (roomContext) => director.describeRoom(roomContext),
+    processAction(input) {
+      return director.processAction(normalizePlayerActionEvent(input));
+    },
+    describeRoom(roomContext) {
+      return director.describeRoom(normalizeRoomEnteredEvent(roomContext));
+    },
     end: () => director.end()
   };
 }
