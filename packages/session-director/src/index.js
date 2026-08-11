@@ -1,6 +1,18 @@
 import { SessionState } from '../../core/src/index.js';
 import { assertNarrationOutputPort, assertVttContextPort } from '../../vtt-contracts/src/index.js';
 
+function resolveNarrationOutput(candidate) {
+  if (candidate?.publishNarration) return candidate;
+  if (candidate?.postNarration) {
+    return {
+      publishNarration(content, metadata) {
+        return candidate.postNarration(content, metadata);
+      }
+    };
+  }
+  return candidate;
+}
+
 export class SessionDirector {
   constructor({
     contextPort = null,
@@ -17,7 +29,7 @@ export class SessionDirector {
     logger = console
   }) {
     const resolvedContextPort = assertVttContextPort(contextPort ?? foundryAdapter);
-    const resolvedNarrationOutput = assertNarrationOutputPort(narrationOutput ?? foundryPublisher);
+    const resolvedNarrationOutput = assertNarrationOutputPort(resolveNarrationOutput(narrationOutput ?? foundryPublisher));
     const required = { contextBuilder, intentInterpreter, rulesService, relationshipService, narrationService };
     for (const [name, service] of Object.entries(required)) {
       if (!service) throw new TypeError(`${name} é obrigatório.`);
