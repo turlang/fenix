@@ -2,6 +2,30 @@
 
 Este projeto segue o formato do [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e usa versionamento semântico durante a fase alfa.
 
+## [Unreleased]
+
+### Adicionado
+
+- Contratos VTT-agnósticos para snapshot, ações de jogador e entrada de sala.
+- `NarrationOutput` genérico e compatibilidade com o publisher do Foundry.
+- System Prompt versionado da IA Narradora com política de agência, grounding e marcadores emocionais opcionais.
+- Fila de áudio in-memory com prioridade e deduplicação para a futura síntese neural.
+- Parser de segmentos emocionais que remove marcadores do texto falado pelo Browser-TTS.
+- Testes de contrato do Shared Core, áudio, prompt e separação HTTP/domínio.
+- Diretrizes de arquitetura e UI/UX para o Fênix VTT standalone.
+
+### Alterado
+
+- `SessionDirector` passa a depender de `contextPort` e `narrationOutput`, sem dependência nominal do Foundry no domínio.
+- `server.js` passa a atuar somente como composition root; rotas, schemas, controller e criação do Fastify foram separados.
+- `/health` usa a versão centralizada do Engine em vez de valor hardcoded antigo.
+- Foundry Adapter normaliza o estado pelo contrato universal antes de entrar no Core.
+
+### Compatibilidade
+
+- `foundryApi`, `publishChat`, `foundryAdapter`, `foundryPublisher` e `postNarration()` permanecem como aliases de transição para consumidores alpha.24.
+- A regra alpha.24 de correlação por número da sala permanece no adapter Foundry.
+
 ## [0.1.0-alpha.24] - 2026-07-21
 
 ### Alterado
