@@ -75,8 +75,9 @@ export class NarrationContextBuilder {
           content: asText(message?.content ?? message?.text)
         })).filter((message) => message.content),
         metadata: {
+          ...(raw.metadata && typeof raw.metadata === 'object' ? raw.metadata : {}),
           normalizedAt: new Date().toISOString(),
-          source: 'foundry'
+          source: asText(raw.metadata?.adapter ?? raw.metadata?.source, 'unknown')
         }
       };
 
@@ -84,7 +85,8 @@ export class NarrationContextBuilder {
       this.logger.info?.('[Mestre Orc][Context] contexto normalizado', {
         sceneId: context.scene.id,
         actors: context.visibleActors.length,
-        hasJournal: Boolean(context.sceneJournal)
+        hasJournal: Boolean(context.sceneJournal),
+        source: context.metadata.source
       });
       return context;
     } catch (error) {
