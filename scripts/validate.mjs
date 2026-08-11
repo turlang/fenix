@@ -1,8 +1,16 @@
 import { access, readFile } from 'node:fs/promises';
 const required = [
   'apps/api/src/server.js',
+  'apps/api/src/app.js',
+  'apps/api/src/http/session-controller.js',
+  'apps/api/src/http/session-schemas.js',
+  'apps/api/src/http/register-session-routes.js',
   'apps/foundry-module/module.json',
+  'packages/core/src/index.js',
+  'packages/vtt-contracts/src/index.js',
   'packages/session-director/src/index.js',
+  'packages/session-runtime/src/index.js',
+  'packages/narration-output/src/index.js',
   'packages/narration-context-builder/src/index.js',
   'packages/scene-opening-context/src/index.js',
   'packages/opening-narrative-planner/src/index.js',
@@ -10,12 +18,15 @@ const required = [
   'packages/narration-quality-guard/src/index.js',
   'packages/narration-memory/src/index.js',
   'packages/audio-narration-service/src/index.js',
+  'packages/audio-queue/src/index.js',
   'packages/config/src/index.js',
   'packages/intent-interpreter/src/index.js',
   'packages/rules-service/src/index.js',
   'packages/relationship-service/src/index.js',
   'packages/narration-service/src/index.js',
+  'packages/foundry-adapter/src/index.js',
   'packages/foundry-publisher/src/index.js',
+  'packages/ai-provider/src/system-prompt.js',
   '.env.example',
   '.gitignore',
   '.gitattributes',
@@ -24,7 +35,9 @@ const required = [
   'CHANGELOG.md',
   'CONTRIBUTING.md',
   'SECURITY.md',
-  'README.md'
+  'README.md',
+  'docs/FENIX_SHARED_CORE.md',
+  'docs/FENIX_VTT_UI_UX.md'
 ];
 for (const file of required) await access(new URL(`../${file}`, import.meta.url));
 
