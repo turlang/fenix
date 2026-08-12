@@ -153,6 +153,7 @@ try {
   const scene = createdScene.json().scene;
   assert.equal(scene.backgroundAssetId, asset.id);
   assert.deepEqual(scene.grid, { size: 70, type: 'square', offsetX: 0, offsetY: 0, visible: true });
+  assert.deepEqual(scene.walls, []);
 
   const remoteScene = await app.inject({
     method: 'POST',
@@ -184,6 +185,21 @@ try {
     visible: true
   });
 
+  const authoredWalls = await app.inject({
+    method: 'POST',
+    url: `/v1/campaigns/${campaign.id}/scenes/${scene.id}/walls`,
+    headers: { cookie: gmCookie },
+    payload: {
+      walls: [
+        { id: 'wall-1', kind: 'wall', a: { x: 0, y: 0 }, b: { x: 500, y: 0 } },
+        { id: 'door-1', kind: 'door', doorState: 'closed', a: { x: 500, y: 0 }, b: { x: 580, y: 0 } }
+      ]
+    }
+  });
+  assert.equal(authoredWalls.statusCode, 200);
+  assert.equal(authoredWalls.json().scene.walls.length, 2);
+  assert.equal(authoredWalls.json().scene.walls[1].doorState, 'closed');
+
   const readAsset = await app.inject({
     method: 'GET',
     url: `/v1/campaigns/${campaign.id}/assets/${asset.id}`,
@@ -211,6 +227,7 @@ try {
   assert.equal(sceneCatalog.json().scenes.length, 2);
   assert.equal(sceneCatalog.json().scenes[0].name, 'Templo em Ruínas');
   assert.equal(sceneCatalog.json().scenes[0].grid.offsetX, 14);
+  assert.equal(sceneCatalog.json().scenes[0].walls.length, 2);
   assert.equal(sceneCatalog.json().activeSceneId, scene.id);
 
   const inviteResponse = await app.inject({
@@ -246,6 +263,7 @@ try {
   });
   assert.equal(playerSceneCatalog.statusCode, 200);
   assert.equal(playerSceneCatalog.json().scenes.length, 2);
+  assert.equal(playerSceneCatalog.json().scenes[0].walls.length, 2);
 
   const playerMapUpload = await app.inject({
     method: 'POST',
@@ -274,6 +292,14 @@ try {
     payload: { size: 10, offsetX: 999, offsetY: 999, visible: false }
   });
   assert.equal(playerGridChange.statusCode, 403);
+
+  const playerWallsChange = await app.inject({
+    method: 'POST',
+    url: `/v1/campaigns/${campaign.id}/scenes/${scene.id}/walls`,
+    headers: { cookie: playerCookie },
+    payload: { walls: [] }
+  });
+  assert.equal(playerWallsChange.statusCode, 403);
 
   const inviteReplay = await app.inject({
     method: 'POST',
@@ -312,7 +338,7 @@ try {
   assert.equal(playerStart.statusCode, 403);
   assert.equal(sessionStartCalls, 0);
 
-  console.log('Auth + campaign + scene + grid + remote map HTTP integration OK');
+  console.log('Auth + campaign + scene + grid + walls + remote map HTTP integration OK');
 } finally {
   await app.close();
   await rm(assetRoot, { recursive: true, force: true });
