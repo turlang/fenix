@@ -128,14 +128,6 @@ Conta → Campaign Membership → VTT ---┘                       │
 
 ## CI
 
-A pipeline exige:
-
-1. validação + `node:test` em Node.js 20, 22 e 24;
-2. isolamento de runtimes e concorrência por campanha;
-3. lockfile portátil + `npm ci` público;
-4. PostgreSQL 16 real e teste de mutações concorrentes;
-5. integração HTTP de auth/campanhas;
-6. integração WebSocket real;
-7. build de produção do Fênix VTT.
+A CI #168 foi concluída com sucesso: 94/94 testes no Node 24, matriz Node 20/22/24 verde, PostgreSQL 16 real, auth/campanhas HTTP, WebSocket real, `npm ci` e build Next aprovados. O workflow final usa somente `contents: read`.
 
 Veja `docs/FENIX_AUTH_PERSISTENCE.md` para os limites e a evolução distribuída. Os `README-ALPHA*.md` preservam o histórico anterior.
