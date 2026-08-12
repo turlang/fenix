@@ -17,6 +17,7 @@
     "test:realtime-integration": "node integration-tests/realtime-websocket.mjs",
     "test:auth-integration": "node integration-tests/auth-campaign-http.mjs",
     "test:postgres-integration": "node integration-tests/postgres-persistence.mjs",
+    "test:coordination-integration": "node integration-tests/distributed-runtime-coordination.mjs",
     "migrate:postgres": "node scripts/migrate-fenix-json-to-postgres.mjs",
     "validate": "node scripts/validate.mjs",
     "check": "npm run validate && npm test"
