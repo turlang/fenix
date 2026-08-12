@@ -19,6 +19,7 @@ const required = [
   'apps/fenix-vtt/app/page.js',
   'apps/fenix-vtt/app/globals.css',
   'apps/fenix-vtt/app/live-bridge.css',
+  'apps/fenix-vtt/app/wall-authoring.css',
   'apps/fenix-vtt/components/auth-campaign-gate.jsx',
   'apps/fenix-vtt/components/vtt-shell.jsx',
   'apps/fenix-vtt/components/map-stage.jsx',
@@ -34,6 +35,7 @@ const required = [
   'packages/standalone-vtt-adapter/src/index.js',
   'packages/map-renderer-port/src/index.js',
   'packages/webgl-map-renderer/src/index.js',
+  'packages/scene-geometry/src/index.js',
   'packages/session-director/src/index.js',
   'packages/session-runtime/src/index.js',
   'packages/persistent-session-service/src/index.js',
@@ -84,7 +86,8 @@ const required = [
   'README.md',
   'docs/FENIX_SHARED_CORE.md',
   'docs/FENIX_VTT_UI_UX.md',
-  'docs/FENIX_AUTH_PERSISTENCE.md'
+  'docs/FENIX_AUTH_PERSISTENCE.md',
+  'docs/FENIX_WALLS_DOORS.md'
 ];
 for (const file of required) await access(new URL(`../${file}`, import.meta.url));
 
@@ -166,6 +169,18 @@ const remoteMapSource = await readFile(new URL('../packages/remote-map-importer/
 for (const marker of ['REMOTE_MAP_PRIVATE_HOST_FORBIDDEN', 'resolvePublicRemoteHost', 'maxRedirects', 'REMOTE_MAP_SIGNATURE_INVALID']) {
   if (!remoteMapSource.includes(marker)) throw new Error(`Importador remoto sem hardening obrigatório: ${marker}.`);
 }
+const geometrySource = await readFile(new URL('../packages/scene-geometry/src/index.js', import.meta.url), 'utf8');
+for (const marker of ['SceneWallKind', 'SceneDoorState', 'normalizeSceneWalls', 'wallBlocksMovement', 'wallBlocksVision']) {
+  if (!geometrySource.includes(marker)) throw new Error(`Contrato de geometria de cena incompleto: ${marker}.`);
+}
+const sceneServiceSource = await readFile(new URL('../packages/campaign-scene-service/src/index.js', import.meta.url), 'utf8');
+for (const marker of ['updateWalls', 'normalizeSceneWalls', "requireRole(campaignId, userId, 'gm')"]) {
+  if (!sceneServiceSource.includes(marker)) throw new Error(`Scene Manager sem authoring persistente: ${marker}.`);
+}
+const sceneRoutesSource = await readFile(new URL('../apps/api/src/http/register-scene-routes.js', import.meta.url), 'utf8');
+if (!sceneRoutesSource.includes("scenes/:sceneId/walls")) {
+  throw new Error('Endpoint de paredes da cena ausente.');
+}
 const directorSource = await readFile(new URL('../packages/session-director/src/index.js', import.meta.url), 'utf8');
 for (const forbidden of [
   'PostgresRuntimeLeaseManager',
@@ -177,9 +192,11 @@ for (const forbidden of [
   'RuntimeObservability',
   'OwnerAwareRuntimeRouter',
   'RemoteMapImporter',
-  'asset-storage'
+  'asset-storage',
+  'SceneWallKind',
+  'scene-geometry'
 ]) {
-  if (directorSource.includes(forbidden)) throw new Error(`SessionDirector não pode conhecer infraestrutura: ${forbidden}.`);
+  if (directorSource.includes(forbidden)) throw new Error(`SessionDirector não pode conhecer infraestrutura/authoring: ${forbidden}.`);
 }
 const persistenceSource = await readFile(new URL('../packages/persistence-repository/src/index.js', import.meta.url), 'utf8');
 for (const marker of ['PostgresFenixRepository', 'FOR UPDATE', "import('pg')", 'setChangePublisher']) {
@@ -204,6 +221,10 @@ for (const marker of ['RuntimeObservability', 'fenix_runtime_events_total', 'toP
 const appSource = await readFile(new URL('../apps/api/src/app.js', import.meta.url), 'utf8');
 for (const marker of ["app.get('/ready'", "app.get('/metrics'", "app.get('/v1/runtime/observability'", 'X-Idempotency-Key']) {
   if (!appSource.includes(marker)) throw new Error(`Borda operacional incompleta: ${marker}.`);
+}
+const realtimeSource = await readFile(new URL('../packages/realtime-session-gateway/src/index.js', import.meta.url), 'utf8');
+for (const marker of ['normalizeSceneWalls', 'SCENE_UPDATED', 'REALTIME_SCENE_FORBIDDEN']) {
+  if (!realtimeSource.includes(marker)) throw new Error(`Realtime sem geometria autoritativa: ${marker}.`);
 }
 const realtimeClientSource = await readFile(new URL('../apps/fenix-vtt/lib/realtime-client.js', import.meta.url), 'utf8');
 if (/searchParams\.set\(['"](?:role|actorId|userId)['"]/.test(realtimeClientSource)) {
