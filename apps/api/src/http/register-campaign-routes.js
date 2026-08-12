@@ -100,7 +100,8 @@ export function registerCampaignRoutes(app, { authService, campaignService, conf
       const session = await authService.createSession(user.id);
       reply.header('Set-Cookie', serializeAuthSessionCookie(session.token, {
         expiresAt: session.expiresAt,
-        secure: config.isProduction
+        secure: config.isProduction,
+        sameSite: config.authCookieSameSite
       }));
       return { user: session.user, campaign };
     } catch (error) {
