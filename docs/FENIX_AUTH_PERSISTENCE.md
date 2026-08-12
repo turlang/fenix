@@ -1,8 +1,8 @@
-# Fênix — Autenticação, Campanhas, Persistência, Coordenação e Ingress
+# Fênix — Autenticação, Campanhas, Persistência, Coordenação, Idempotência e Ingress
 
 ## Objetivo
 
-A infraestrutura standalone mantém identidade, campanhas, convites e estado realtime fora do navegador, recupera sessões após reinício e permite múltiplas campanhas simultâneas. Com PostgreSQL, o Engine coordena ownership de runtime entre réplicas por lease distribuído, invalida caches por `LISTEN/NOTIFY` e encaminha HTTP/WebSocket para o owner atual sem acoplar essa infraestrutura ao Shared Core.
+A infraestrutura standalone mantém identidade, campanhas, convites e estado realtime fora do navegador, recupera sessões após reinício e permite múltiplas campanhas simultâneas. Com PostgreSQL, o Engine coordena ownership por lease, invalida caches por `LISTEN/NOTIFY`, encaminha HTTP/WebSocket para o owner atual e deduplica comandos distribuídos por `commandId`, sem acoplar essa infraestrutura ao Shared Core.
 
 ## Fluxo de identidade
 
@@ -41,14 +41,14 @@ Convites são criados pelo GM, reservam um `actorId`, usam token aleatório, per
 
 ### JSON — fallback local
 
-`JsonFileFenixRepository` permanece disponível para desenvolvimento e instalações alpha single-instance. Ele escreve arquivo temporário com permissão restrita e faz `rename` atômico.
+`JsonFileFenixRepository` permanece disponível para desenvolvimento e instalações alpha single-instance.
 
 ```env
 FENIX_PERSISTENCE_DRIVER=json
 FENIX_STATE_FILE=./data/fenix-state.json
 ```
 
-JSON não ativa leases, `LISTEN/NOTIFY` nem proxy distribuído.
+JSON não ativa leases, `LISTEN/NOTIFY` nem proxy distribuído. O command ledger usa memória neste modo e, portanto, idempotência não sobrevive ao restart.
 
 ### PostgreSQL — persistência compartilhada
 
@@ -62,31 +62,19 @@ FENIX_POSTGRES_CONNECT_TIMEOUT_MS=5000
 FENIX_POSTGRES_IDLE_TIMEOUT_MS=30000
 ```
 
-O adapter usa:
-
-- pool reutilizável do `node-postgres`;
-- `pg_advisory_xact_lock` para serializar a criação inicial do schema entre processos;
-- transação com client dedicado;
-- `SELECT ... FOR UPDATE` antes de cada `mutate`;
-- `COMMIT/ROLLBACK` explícitos;
-- uma linha JSONB versionada como formato de transição da alpha;
-- publicação de invalidação somente depois do `COMMIT` e depois de liberar o client da transação.
-
-Assim, duas instâncias do repository podem mutar o mesmo estado sem lost update. Falha de `NOTIFY` não transforma um `COMMIT` já confirmado em falha de aplicação.
+O adapter usa pool reutilizável, advisory lock na criação de schema, transação com client dedicado, `SELECT ... FOR UPDATE`, `COMMIT/ROLLBACK` explícitos e publicação de invalidação somente depois do commit.
 
 ### Migração JSON → PostgreSQL
-
-Com `DATABASE_URL` configurada:
 
 ```bash
 npm run migrate:postgres
 ```
 
-O script importa o JSON somente quando o estado PostgreSQL está vazio. Se o banco já contém dados, a migração falha fechada em vez de sobrescrevê-los.
+O script importa JSON somente quando o estado PostgreSQL está vazio.
 
 ## CampaignRuntimeRegistry
 
-O Engine não possui mais um único runtime global. O registry mantém:
+O Engine mantém um runtime independente por campanha:
 
 ```text
 campaign-a → runtime A → session A
@@ -94,23 +82,11 @@ campaign-b → runtime B → session B
 campaign-c → runtime C → session C
 ```
 
-Ele:
-
-- restaura campanhas persistidas cuja ownership consegue adquirir;
-- indexa `campaignId ↔ sessionId` localmente;
-- direciona action/room/status/end ao runtime correto;
-- impede dois `start` concorrentes para a mesma campanha;
-- permite campanhas diferentes iniciarem simultaneamente;
-- encerra uma campanha sem derrubar as demais;
-- preserva um runtime legado isolado para o adapter Foundry em desenvolvimento;
-- reconcilia periodicamente estado persistido e ownership distribuído;
-- expõe `assertOwnership()` para a camada realtime aplicar fencing sem conhecer PostgreSQL.
+O registry restaura campanhas cujo lease consegue adquirir, indexa `campaignId ↔ sessionId`, roteia operações ao runtime correto, impede starts concorrentes da mesma campanha, reconcilia estado distribuído e expõe `assertOwnership()` para a borda realtime aplicar fencing sem conhecer PostgreSQL.
 
 ## Runtime lease distribuído
 
-Quando o driver é PostgreSQL, `PostgresRuntimeLeaseManager` cria a tabela `fenix_runtime_leases`.
-
-Cada registro contém:
+`PostgresRuntimeLeaseManager` usa `fenix_runtime_leases` com:
 
 - `campaign_id`;
 - `owner_id`;
@@ -130,69 +106,31 @@ FENIX_RUNTIME_HEARTBEAT_MS=5000
 FENIX_RUNTIME_RECONCILE_MS=5000
 ```
 
-`FENIX_INSTANCE_ID` deve ser único por processo/réplica. Para roteamento distribuído, `FENIX_INSTANCE_PUBLIC_URL` deve ser alcançável pelas demais réplicas.
-
-### Aquisição e heartbeat
-
-Antes de iniciar/restaurar uma campanha persistente, a instância precisa adquirir o lease. Enquanto for owner, renova `lease_until` periodicamente. Outra instância recebe `RUNTIME_LEASE_HELD` enquanto o lease estiver válido.
-
-### Fencing token
-
-`generation` é um fencing token monotônico. Quando um lease expirado é retomado, a geração aumenta — inclusive se a retomada usar o mesmo `owner_id`.
-
-Antes de operações narrativas persistentes o registry chama `assertOwned()` com a geração registrada no runtime local. A camada realtime também executa `assertOwnership()` antes de cada comando recebido, cobrindo `TOKEN_MOVE`, `SCENE_UPDATE`, `ACTION_SUBMIT`, sync e demais mensagens de uma conexão já aberta.
-
-Isso impede que uma instância antiga continue processando a campanha depois de um takeover.
+`generation` é fencing token monotônico. Quando um lease expirado é retomado, a geração aumenta. Antes de operações persistentes e de cada comando realtime, a camada apropriada valida a ownership atual.
 
 ### Failover
 
-Quando o lease expira:
-
 ```text
-Engine A perde/expira lease
+Engine A perde lease
         ↓
 Engine B reconcilia
         ↓
-acquire campaign lease
-        ↓
-generation N → N+1
+acquire generation N+1
         ↓
 restore mesma sessionId
         ↓
-hidrata RealtimeSessionHub
+hidrata estado realtime
 ```
 
-O `SessionDirector.restore()` não executa `createOpening()`, então o takeover não repete automaticamente a abertura da cena.
+`SessionDirector.restore()` não executa nova abertura. O owner antigo passa a falhar por fencing e sockets obsoletos são encerrados com `1012`.
 
-A instância antiga falha em `assertOwned()` com `RUNTIME_LEASE_LOST` e remove seu runtime do registry local. Em WebSocket já estabelecido, o transporte encerra a conexão obsoleta com close code `1012` para forçar nova resolução do owner.
+## Postgres LISTEN/NOTIFY
 
-## Postgres LISTEN/NOTIFY e invalidação de cache
-
-`PostgresStateBus` mantém uma conexão dedicada em:
-
-```sql
-LISTEN fenix_state_changed;
-```
-
-Após mutações persistentes, o origin publica um evento `STATE_CHANGED` usando `pg_notify`. A outra instância:
-
-1. recebe a notificação;
-2. executa `repository.refresh()`;
-3. reconstrói os índices do `AuthService`;
-4. reconstrói os índices do `CampaignService`;
-5. reconcilia runtimes/leases.
-
-Eventos originados pela própria instância são ignorados pelo listener. O canal possui reconexão automática em caso de erro.
-
-`NOTIFY` é aceleração, não a única garantia de convergência: a reconciliação periódica continua verificando o banco, cobrindo notificações perdidas e períodos de reconexão.
+`PostgresStateBus` mantém `LISTEN fenix_state_changed`. Depois de uma mutação confirmada, outras réplicas atualizam repository/cache de auth/campaign e reconciliam runtimes. A reconciliação periódica continua sendo a recuperação caso uma notificação seja perdida.
 
 ## Owner-Aware Runtime Routing
 
-`OwnerAwareRuntimeRouter` fica na composition layer. Ele consulta o lease atual e classifica a rota como:
-
-- `local`: esta instância possui o lease válido;
-- `remote`: outra instância possui o lease válido;
-- `unowned`: não existe lease ativo para a campanha.
+`OwnerAwareRuntimeRouter` consulta o lease e classifica a rota como `local`, `remote` ou `unowned`.
 
 ### Configuração
 
@@ -202,11 +140,11 @@ FENIX_RUNTIME_ROUTING_TIMEOUT_MS=5000
 FENIX_RUNTIME_ROUTING_MAX_RETRIES=1
 ```
 
-O mesmo secret deve ser compartilhado somente entre as réplicas do Engine. Sem secret, o roteamento distribuído fica desabilitado e o comportamento continua local-only.
+O mesmo secret é compartilhado somente entre Engines autorizados.
 
 ### Autenticação Engine → Engine
 
-Cada requisição interna usa headers assinados:
+Headers internos:
 
 - `x-fenix-route-hop`;
 - `x-fenix-route-source`;
@@ -214,19 +152,7 @@ Cada requisição interna usa headers assinados:
 - `x-fenix-route-timestamp`;
 - `x-fenix-route-signature`.
 
-A assinatura HMAC-SHA256 cobre origem, geração, timestamp, método HTTP, path e SHA-256 do body canônico.
-
-O receptor exige:
-
-- secret válido;
-- timestamp dentro da janela aceita;
-- assinatura em tempo constante;
-- `hop === 1`;
-- generation compatível com o lease atual.
-
-Uma tentativa de injetar headers internos sem HMAC válido recebe `RUNTIME_ROUTING_AUTH_INVALID`. Uma requisição que já possui hop interno nunca cria um segundo proxy, prevenindo loops entre réplicas.
-
-A assinatura interna **não substitui autenticação do usuário**. Cookie e `Authorization` originais são preservados, e o owner executa as mesmas regras de sessão/membership.
+A assinatura HMAC-SHA256 cobre origem, geração, timestamp, método, path e SHA-256 do body canônico. O receptor exige timestamp recente, assinatura válida e `hop === 1`. A assinatura interna nunca substitui autenticação/membership do usuário.
 
 ### HTTP
 
@@ -241,16 +167,14 @@ owner = Engine A
   ↓ HMAC proxy
 Engine A
   ↓ auth + membership + fence
+Command Ledger
+  ↓
 CampaignRuntime
 ```
 
-Se o owner responder explicitamente que perdeu ownership, o ingress reconsulta o lease e pode repetir o comando para uma nova `generation`, respeitando `FENIX_RUNTIME_ROUTING_MAX_RETRIES`.
-
-Timeouts e falhas de rede não são tratados como prova de que a mutação não ocorreu; isso evita retry cego de ações potencialmente já processadas.
+Erros explícitos de ownership permitem re-resolução do lease. Timeout/unreachability só pode ser repetido automaticamente quando há `commandId`/`X-Idempotency-Key`, pois o owner consegue deduplicar o replay.
 
 ### WebSocket
-
-O browser permanece conectado ao Engine público escolhido pelo balanceador. Se ele não for owner, essa instância cria um WebSocket interno assinado para o owner e encaminha frames nos dois sentidos.
 
 ```text
 Browser
@@ -259,66 +183,138 @@ Engine B / ingress
    ⇅ proxy WS assinado
 Engine A / owner
    ⇅
-RealtimeSessionGateway
+Command Ledger → RealtimeSessionGateway
 ```
 
-O proxy possui buffer limitado durante abertura e retry limitado quando o handshake indica mudança de owner/generation. Se um socket já estabelecido perde ownership, o owner obsoleto fecha com `1012`. O `FenixRealtimeClient` reconecta com backoff limitado no **mesmo endpoint público**, permitindo que o ingress resolva novamente o owner — inclusive quando o próprio ingress se tornou o novo owner.
+O browser permanece no endpoint público. O proxy possui buffer e retry limitados. Se a ownership mudar depois de a conexão estar aberta, o owner antigo fecha com `1012`; o cliente reconecta no mesmo endpoint público e a rota é resolvida novamente.
+
+## Distributed Command Ledger
+
+### Objetivo
+
+Resolver a falha ambígua clássica:
+
+```text
+Ingress envia commandId=123
+        ↓
+Owner produz o efeito
+        ↓
+resposta se perde
+        ↓
+Ingress repete commandId=123
+        ↓
+Owner devolve resultado anterior
+sem executar o efeito novamente
+```
+
+No PostgreSQL, `PostgresCommandLedger` cria `fenix_command_ledger`. A chave primária é `(scope_key, command_id)`, onde o scope privilegia campanha e usa sessão como fallback.
+
+Campos principais:
+
+- `scope_key`;
+- `command_id`;
+- `command_type`;
+- `session_id`;
+- `request_hash`;
+- `status`;
+- `result_json`;
+- `error_code`;
+- `owner_id`;
+- `generation`;
+- timestamps.
+
+O body original não é persistido; somente seu SHA-256 canônico é usado para provar que um replay corresponde à mesma entrada. O resultado confirmado é persistido porque é necessário para reapresentação exata.
+
+### Máquina de estados
+
+```text
+claim novo
+   ↓
+IN_PROGRESS
+  ├─ confirmação segura → COMPLETED → replay do result_json
+  └─ resultado incerto  → UNKNOWN   → bloquear auto-reexecução
+```
+
+Semântica:
+
+- `COMPLETED`: devolve o resultado anterior;
+- `IN_PROGRESS`: aguarda por uma janela curta e, se necessário, retorna `COMMAND_IN_PROGRESS`;
+- `UNKNOWN`: retorna `COMMAND_OUTCOME_UNKNOWN` e nunca reexecuta automaticamente;
+- mesmo `commandId` com outro payload: `COMMAND_ID_CONFLICT`;
+- resultado maior que o limite configurado não é considerado replay-safe;
+- entradas antigas são removidas conforme retenção configurada.
+
+A criação da tabela usa `pg_advisory_xact_lock`, evitando corrida de catálogo quando várias réplicas inicializam simultaneamente.
+
+### Configuração
+
+```env
+FENIX_COMMAND_LEDGER_WAIT_MS=1500
+FENIX_COMMAND_LEDGER_UNKNOWN_AFTER_MS=60000
+FENIX_COMMAND_LEDGER_RETENTION_HOURS=168
+FENIX_COMMAND_LEDGER_RESULT_MAX_BYTES=524288
+```
+
+O cliente standalone gera `commandId` para start, action, room-entry e end. Ações realtime já carregam `commandId`. Integrações externas também podem enviar `X-Idempotency-Key`.
+
+### Compatibilidade legada
+
+Chamadas sem idempotency key continuam aceitas para não quebrar Foundry alpha.24. Essas chamadas não recebem retry automático em timeout/unreachability porque não existe prova de que o efeito não ocorreu.
+
+## Observabilidade operacional
+
+`RuntimeObservability` agrega eventos de routing, proxy, retry, command claim, replay, conflito, unknown e failover.
+
+Endpoints:
+
+- `/health`: liveness/capabilities;
+- `/ready`: consulta a saúde do ledger e responde 503 quando a dependência não está pronta;
+- `/metrics`: contadores e latências em formato Prometheus;
+- `/v1/runtime/observability`: somente `startedAt`, counters e latências agregadas.
+
+Detalhes como owner, source, generation e attempts permanecem em logs estruturados do Engine. Eles não são publicados pelo endpoint JSON agregado.
 
 ## Recuperação
 
 ```text
 Repository.initialize()
+  → CommandLedger.initialize()
   → PostgresStateBus.initialize()
   → PostgresRuntimeLeaseManager.initialize()
   → AuthService.initialize()
   → CampaignService.initialize()
   → CampaignRuntimeRegistry.initialize()
-  → adquirir leases disponíveis
-  → restaurar activeSessions pertencentes à instância
+  → restaurar sessões cujos leases foram adquiridos
   → SessionDirector.restore()
-  → hidratar RealtimeSessionHub por sessionId
-  → OwnerAwareRuntimeRouter resolve tráfego para o owner atual
+  → hidratar RealtimeSessionHub
+  → OwnerAwareRuntimeRouter resolve ingress
 ```
 
-Cena, tokens, revisão, sala atual e histórico recente são recuperados; presença continua efêmera e é reconstruída conforme os browsers reconectam.
+A tabela do ledger é compartilhada entre réplicas, então replay de `COMPLETED` continua disponível mesmo após troca de owner ou restart do processo.
 
 ## Shutdown seguro
 
-No encerramento normal o Engine:
+No encerramento normal o Engine persiste snapshots, fecha o ingress, interrompe coordenação, libera leases e fecha as conexões externas. Em crash abrupto, takeover depende do TTL do lease; a deduplicação de comandos já confirmados continua no PostgreSQL.
 
-1. persiste snapshots realtime;
-2. fecha o Fastify para parar a entrada de novas requisições;
-3. interrompe reconciliação/heartbeat;
-4. libera os leases que ainda possui;
-5. fecha `LISTEN` e pool PostgreSQL.
+## Limite distribuído atual: entrega de eventos realtime
 
-Isso reduz a janela de split-brain durante deploy/shutdown normal. Em crash abrupto, o failover depende da expiração do TTL do lease.
+O command ledger garante deduplicação da **execução** quando um `commandId` é reapresentado. Ele não é um outbox de eventos.
 
-## Limite distribuído atual: idempotência de comandos
-
-Ownership, cache invalidation, failover e encaminhamento HTTP/WebSocket já estão coordenados. A fronteira seguinte é tratar falhas **ambíguas** de rede.
-
-Exemplo:
+Exemplo restante:
 
 ```text
-Ingress envia ACTION_SUBMIT
+Owner confirma commandId
         ↓
-Owner processa a ação
+persiste COMPLETED
         ↓
-resposta se perde na rede
-        ↓
-Ingress não sabe se é seguro repetir
+processo cai antes de entregar NARRATION/TOKEN_MOVED a todos os peers
 ```
 
-Sem um registro distribuído de `commandId`/idempotency key, repetir automaticamente esse comando poderia produzir consequência narrativa ou mutação duplicada. Por isso o roteador só faz retry automático em erros explícitos de ownership e não promete exactly-once em timeout/unreachability.
-
-A próxima etapa deve adicionar idempotência persistente por campanha/sessão/comando e observabilidade de routing/lease antes de ampliar a política de retry.
+Depois do failover, repetir o comando é corretamente deduplicado, mas o broadcast que faltou não possui uma fila durável própria para ser reenviado. A próxima fronteira é **Durable Realtime Outbox + Event Delivery Guarantees**.
 
 ## Compatibilidade Foundry
 
-O módulo Foundry alpha.24 continua usando os endpoints existentes. Em desenvolvimento, `FENIX_ALLOW_LEGACY_SESSION_HTTP=true` preserva o caminho legado. Em produção ele fica fechado por padrão.
-
-A regra alpha.24 de correlação por número da sala continua no adapter Foundry e não foi movida para o Shared Core.
+A regra alpha.24 de correlação por número da sala continua no adapter Foundry. `FENIX_ALLOW_LEGACY_SESSION_HTTP` mantém o caminho legado conforme configuração; em produção permanece fechado por padrão.
 
 ## Gates
 
@@ -326,21 +322,18 @@ A pipeline valida:
 
 - Core em Node.js 20, 22 e 24;
 - suíte `node:test` sem regressões;
-- PostgreSQL 16 real em service container;
-- inicialização concorrente do schema;
-- duas instâncias de repository sem lost update;
-- dois Engines disputando a mesma campanha;
-- rejeição do segundo owner enquanto o lease está válido;
-- takeover após expiração com incremento de `generation`;
-- bloqueio da instância antiga por fencing;
-- restauração da mesma `sessionId` no novo owner;
-- `LISTEN/NOTIFY` atualizando caches de auth e campanhas;
-- HTTP enviado ao não-owner e processado pelo owner correto;
-- WebSocket enviado ao não-owner e proxyado ao owner correto;
-- HMAC interno forjado rejeitado;
-- reconnect do cliente após `1012`;
-- auth/campanhas HTTP reais;
-- WebSocket base real;
-- `npm ci` com lockfile público;
-- build Next.js de produção;
+- PostgreSQL 16 real;
+- repository sem lost update;
+- ownership, fencing, takeover e `LISTEN/NOTIFY`;
+- inicialização concorrente do command ledger;
+- duas réplicas disputando o mesmo `commandId` com uma única execução;
+- replay do resultado `COMPLETED` em outra instância;
+- `COMMAND_ID_CONFLICT` para payload incompatível;
+- `UNKNOWN` bloqueando reexecução automática;
+- timeout com commandId podendo ser repetido de forma deduplicável;
+- timeout sem commandId continuando fail-closed;
+- HTTP/WebSocket enviados ao não-owner e processados no owner;
+- HMAC forjado rejeitado;
+- reconnect após `1012`;
+- auth/campanhas HTTP, WebSocket base e build Next;
 - workflow somente-leitura (`contents: read`).
