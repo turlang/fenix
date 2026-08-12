@@ -19,9 +19,14 @@ Este projeto segue o formato do [Keep a Changelog](https://keepachangelog.com/pt
 - `CampaignService` com campanhas, memberships GM/Player, `actorId` autoritativo e convites expirantes de uso único.
 - `JsonFileFenixRepository` com escrita atômica como fallback local/single-instance.
 - `PostgresFenixRepository` com pool, advisory lock de schema, transações e `SELECT ... FOR UPDATE` para mutações concorrentes.
-- `CampaignRuntimeRegistry` com runtime isolado por campanha, índice `campaignId ↔ sessionId` e restauração de todas as mesas ativas.
+- `CampaignRuntimeRegistry` com runtime isolado por campanha, índice `campaignId ↔ sessionId` e restauração coordenada de mesas ativas.
+- `PostgresRuntimeLeaseManager` com TTL, heartbeat, owner por campanha, takeover e fencing token por `generation`.
+- `PostgresStateBus` com conexão dedicada `LISTEN/NOTIFY`, reconexão e eventos de invalidação entre Engines.
+- Refresh de caches de `AuthService` e `CampaignService` após mudança persistida em outra instância.
+- Reconciliação periódica de campanhas/leases para convergência mesmo quando uma notificação for perdida.
 - Migração segura `npm run migrate:postgres`, que só importa JSON quando o estado PostgreSQL está vazio.
 - Integração PostgreSQL real no CI com duas instâncias concorrentes do repository.
+- Integração distribuída real com dois Engines, disputa de lease, expiração, takeover da mesma `sessionId`, fencing e cache invalidation.
 - `PersistentSessionService` e `SessionDirector.restore()` para recuperar sessão após restart sem repetir a abertura.
 - Gate visual `AuthCampaignGate` com bootstrap do primeiro GM, login, criação/seleção de campanha e aceite de convite.
 - Testes de segredo em repouso, bootstrap concorrente, convite one-time, anti-escalation, restauração, hidratação realtime e start concorrente por campanha.
@@ -31,10 +36,15 @@ Este projeto segue o formato do [Keep a Changelog](https://keepachangelog.com/pt
 
 ### Alterado
 
-- `SessionDirector` depende exclusivamente de `contextPort` e `narrationOutput`, sem dependência nominal do Foundry no domínio.
-- `server.js` passa a compor `CampaignRuntimeRegistry` em vez de um runtime narrativo global.
-- Endpoints `/v1/session/status`, `/action`, `/room-entry` e `/end` passam a ser escopados por campanha/sessão no standalone autenticado.
-- Cada conexão realtime é roteada ao runtime correspondente à própria `sessionId` sem alterar o contrato do `RealtimeSessionGateway`.
+- `SessionDirector` depende exclusivamente de `contextPort` e `narrationOutput`, sem dependência nominal do Foundry ou de coordenação distribuída no domínio.
+- `server.js` compõe `CampaignRuntimeRegistry`, `PostgresStateBus` e `PostgresRuntimeLeaseManager` apenas nas camadas externas.
+- Endpoints `/v1/session/status`, `/action`, `/room-entry` e `/end` são escopados por campanha/sessão no standalone autenticado.
+- Cada conexão realtime é roteada ao runtime local correspondente à própria `sessionId` sem alterar o contrato do `RealtimeSessionGateway`.
+- Runtimes persistentes validam lease/fencing antes de action, room entry, end e persistência realtime.
+- Startup restaura somente campanhas cujo lease a instância consegue adquirir; campanhas já pertencentes a outra réplica ficam marcadas como remotas.
+- Após expiração do owner, outra instância pode adquirir o lease e restaurar a mesma `sessionId` sem repetir a abertura.
+- `PostgresFenixRepository` publica invalidação best-effort somente após `COMMIT` e liberação do client transacional.
+- Shutdown fecha o ingress Fastify antes de liberar leases distribuídos.
 - `/health` usa a versão centralizada do Engine e reporta auth/persistence/realtime quando configurados.
 - Foundry Adapter continua normalizando estado pelo contrato universal.
 - O cliente realtime não transporta `role`, `userId` e `actorId` na URL; o servidor deriva autoridade da sessão autenticada e membership.
@@ -43,7 +53,7 @@ Este projeto segue o formato do [Keep a Changelog](https://keepachangelog.com/pt
 - Produção fecha o HTTP legado de sessão por padrão; desenvolvimento preserva compatibilidade alpha.24 do Foundry.
 - Cookies usam `SameSite=Lax` em desenvolvimento e `None + Secure` por padrão em produção, com configuração explícita disponível.
 - Persistência seleciona PostgreSQL quando configurada, mantendo JSON e memória como adapters alternativos.
-- CI passa a exigir PostgreSQL 16 real, concorrência do repository, auth/campaign HTTP, WebSocket real e build Next, além da matriz Node.js 20/22/24.
+- CI passa a exigir PostgreSQL 16 real, concorrência do repository, coordenação distribuída de dois Engines, auth/campaign HTTP, WebSocket real e build Next, além da matriz Node.js 20/22/24.
 
 ### Segurança
 
@@ -51,6 +61,8 @@ Este projeto segue o formato do [Keep a Changelog](https://keepachangelog.com/pt
 - Bootstrap do primeiro usuário possui trava contra corrida concorrente.
 - Registro por convite remove a conta recém-criada caso a reserva do convite falhe antes de concluir a membership.
 - `CampaignRuntimeRegistry` bloqueia duas inicializações concorrentes da mesma campanha.
+- `generation` aumenta em toda retomada de lease expirado, inclusive pelo mesmo `owner_id`, impedindo reutilização de fencing token antigo.
+- Instância que perde o lease recebe `RUNTIME_LEASE_LOST` antes de executar novas operações narrativas persistentes.
 - Upgrade WebSocket continua validando `Origin`, tamanho de payload e rate limit por peer.
 
 ### Compatibilidade
@@ -58,7 +70,8 @@ Este projeto segue o formato do [Keep a Changelog](https://keepachangelog.com/pt
 - `foundryApi` e `publishChat` permanecem como aliases de transição no `session-runtime`, e `postNarration()` permanece como alias no publisher para consumidores alpha.24.
 - A regra alpha.24 de correlação por número da sala permanece no adapter Foundry.
 - `FENIX_ALLOW_LEGACY_SESSION_HTTP` mantém o caminho HTTP atual do Foundry durante a transição; em produção exige ativação explícita.
-- PostgreSQL torna as mutações do repository seguras entre processos, mas caches de serviço e ownership distribuído de runtimes ainda exigem coordenação adicional para horizontal scaling completo.
+- JSON continua operando sem lease/LISTEN para desenvolvimento single-instance.
+- PostgreSQL coordena ownership, cache invalidation e failover entre Engines, mas ainda não existe proxy/redirect transparente para encaminhar uma requisição que chegou à réplica não-owner.
 
 ## [0.1.0-alpha.24] - 2026-07-21
 
