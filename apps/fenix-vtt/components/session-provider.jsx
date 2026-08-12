@@ -29,7 +29,8 @@ function runtimeScene(scene) {
     description: scene.description ?? '',
     width: scene.width,
     height: scene.height,
-    grid: structuredClone(scene.grid ?? { size: 70, type: 'square', offsetX: 0, offsetY: 0, visible: true })
+    grid: structuredClone(scene.grid ?? { size: 70, type: 'square', offsetX: 0, offsetY: 0, visible: true }),
+    walls: structuredClone(scene.walls ?? [])
   };
 }
 
@@ -456,6 +457,27 @@ export function FenixSessionProvider({ children, campaign, currentUser }) {
     }
   }, [campaign.id, client, isGm]);
 
+  const updateSceneWalls = useCallback(async (sceneId, walls) => {
+    if (!isGm) throw new Error('Somente o mestre pode editar paredes e portas.');
+    dispatch({ type: 'REQUEST_BEGIN' });
+    try {
+      const result = await client.updateSceneWalls(campaign.id, sceneId, walls);
+      setSceneCatalog((current) => ({
+        ...current,
+        scenes: current.scenes.map((scene) => scene.id === result.scene.id ? result.scene : scene)
+      }));
+      if (result.activeSceneId === result.scene.id && realtimeRef.current?.connected) {
+        realtimeRef.current.updateScene(runtimeScene(result.scene));
+      }
+      return result;
+    } catch (error) {
+      dispatch({ type: 'CONNECTION_ERROR', disconnected: false, error: errorMessage(error) });
+      throw error;
+    } finally {
+      dispatch({ type: 'REQUEST_END' });
+    }
+  }, [campaign.id, client, isGm]);
+
   const selfPresence = state.presence.find((peer) => peer.userId === currentUser?.id) ?? null;
   const value = useMemo(() => ({
     state,
@@ -476,13 +498,14 @@ export function FenixSessionProvider({ children, campaign, currentUser }) {
     createRemoteMapScene,
     activateScene,
     updateSceneGrid,
+    updateSceneWalls,
     resolveAssetUrl: (assetId) => client.assetUrl(campaign.id, assetId),
     selectActor: (actorId) => {
       if (isGm || actorId === membership?.actorId) dispatch({ type: 'SELECT_ACTOR', actorId });
     },
     clearError: () => dispatch({ type: 'CLEAR_ERROR' }),
     replayAudio: (audio) => enqueueAudio(audio)
-  }), [activeScene, activateScene, campaign, client, connect, createInvite, createMapScene, createRemoteMapScene, currentUser, endSession, enqueueAudio, enterRoom, isGm, membership, moveToken, sceneCatalog.scenes, selfPresence, state, submitAction, updateSceneGrid]);
+  }), [activeScene, activateScene, campaign, client, connect, createInvite, createMapScene, createRemoteMapScene, currentUser, endSession, enqueueAudio, enterRoom, isGm, membership, moveToken, sceneCatalog.scenes, selfPresence, state, submitAction, updateSceneGrid, updateSceneWalls]);
 
   return <FenixSessionContext.Provider value={value}>{children}</FenixSessionContext.Provider>;
 }
