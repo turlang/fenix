@@ -114,7 +114,8 @@ test('encerrar uma campanha não derruba o runtime da outra', async () => {
 test('duas campanhas novas podem iniciar sessões simultâneas independentes', async () => {
   const calls = [];
   const campaignService = createCampaignService();
-  campaignService.repository.snapshot = () => ({ campaigns: [] });
+  campaignService.getRaw('campaign-a').activeSession = null;
+  campaignService.getRaw('campaign-b').activeSession = null;
   const registry = new CampaignRuntimeRegistry({
     runtimeFactory: createRuntimeFactory(calls),
     campaignService,
