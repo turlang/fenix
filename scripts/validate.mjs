@@ -9,6 +9,7 @@ const required = [
   'apps/api/src/http/register-campaign-routes.js',
   'apps/api/src/http/session-authorizer.js',
   'apps/api/src/realtime/register-realtime-routes.js',
+  'apps/api/src/realtime/owner-aware-websocket-proxy.js',
   'apps/foundry-module/module.json',
   'apps/fenix-vtt/package.json',
   'apps/fenix-vtt/postcss.config.mjs',
@@ -37,6 +38,9 @@ const required = [
   'packages/persistent-session-service/src/index.js',
   'packages/campaign-runtime-registry/src/index.js',
   'packages/distributed-runtime-coordination/src/index.js',
+  'packages/owner-aware-runtime-router/src/index.js',
+  'packages/distributed-command-ledger/src/index.js',
+  'packages/runtime-observability/src/index.js',
   'packages/persistence-repository/src/index.js',
   'packages/auth-service/src/index.js',
   'packages/campaign-service/src/index.js',
@@ -62,6 +66,8 @@ const required = [
   'integration-tests/auth-campaign-http.mjs',
   'integration-tests/postgres-persistence.mjs',
   'integration-tests/distributed-runtime-coordination.mjs',
+  'integration-tests/owner-aware-runtime-routing.mjs',
+  'integration-tests/distributed-command-idempotency.mjs',
   'scripts/migrate-fenix-json-to-postgres.mjs',
   '.env.example',
   '.gitignore',
@@ -89,8 +95,9 @@ if (packageJson.version !== moduleJson.version || packageJson.version !== coreVe
 if (!packageJson.scripts?.test || !packageJson.scripts?.check || !packageJson.scripts?.['build:vtt']
   || !packageJson.scripts?.['test:realtime-integration'] || !packageJson.scripts?.['test:auth-integration']
   || !packageJson.scripts?.['test:postgres-integration'] || !packageJson.scripts?.['test:coordination-integration']
+  || !packageJson.scripts?.['test:routing-integration'] || !packageJson.scripts?.['test:idempotency-integration']
   || !packageJson.scripts?.['migrate:postgres']) {
-  throw new Error('Scripts de qualidade, autenticação, realtime, Postgres, coordenação, migração ou build do VTT ausentes.');
+  throw new Error('Scripts de qualidade, autenticação, realtime, Postgres, coordenação, routing, idempotência, migração ou build do VTT ausentes.');
 }
 if (!/^\^?15\./.test(vttPackageJson.dependencies?.next ?? '')) {
   throw new Error('apps/fenix-vtt deve permanecer no Next.js 15 durante este marco.');
@@ -136,7 +143,15 @@ for (const marker of ['refreshFromRepository', 'listActiveSessions']) {
   if (!campaignSource.includes(marker)) throw new Error(`CampaignService sem coordenação de cache: ${marker}.`);
 }
 const serverSource = await readFile(new URL('../apps/api/src/server.js', import.meta.url), 'utf8');
-for (const marker of ['createAuthenticatedPeerAuthorizer', 'CampaignRuntimeRegistry', 'PostgresRuntimeLeaseManager', 'PostgresStateBus']) {
+for (const marker of [
+  'createAuthenticatedPeerAuthorizer',
+  'CampaignRuntimeRegistry',
+  'PostgresRuntimeLeaseManager',
+  'PostgresStateBus',
+  'OwnerAwareRuntimeRouter',
+  'createCommandLedger',
+  'RuntimeObservability'
+]) {
   if (!serverSource.includes(marker)) throw new Error(`Composition root distribuído incompleto: ${marker}.`);
 }
 if (serverSource.includes('createDevelopmentPeerAuthorizer')) {
@@ -150,9 +165,34 @@ const coordinationSource = await readFile(new URL('../packages/distributed-runti
 for (const marker of ['fenix_runtime_leases', 'pg_notify', 'LISTEN', 'generation', 'lease_until', 'assertOwned']) {
   if (!coordinationSource.includes(marker)) throw new Error(`Coordenação distribuída incompleta: ${marker}.`);
 }
+const routingSource = await readFile(new URL('../packages/owner-aware-runtime-router/src/index.js', import.meta.url), 'utf8');
+for (const marker of ['RuntimeRoutingSigner', 'x-fenix-route-signature', 'RUNTIME_OWNER_TIMEOUT', 'hasCommandId']) {
+  if (!routingSource.includes(marker)) throw new Error(`Owner-aware routing incompleto: ${marker}.`);
+}
+const ledgerSource = await readFile(new URL('../packages/distributed-command-ledger/src/index.js', import.meta.url), 'utf8');
+for (const marker of ['fenix_command_ledger', 'IN_PROGRESS', 'COMPLETED', 'UNKNOWN', 'pg_advisory_xact_lock', 'COMMAND_ID_CONFLICT', 'COMMAND_OUTCOME_UNKNOWN']) {
+  if (!ledgerSource.includes(marker)) throw new Error(`Ledger distribuído de comandos incompleto: ${marker}.`);
+}
+const observabilitySource = await readFile(new URL('../packages/runtime-observability/src/index.js', import.meta.url), 'utf8');
+for (const marker of ['RuntimeObservability', 'fenix_runtime_events_total', 'toPrometheus']) {
+  if (!observabilitySource.includes(marker)) throw new Error(`Observabilidade de runtime incompleta: ${marker}.`);
+}
+const appSource = await readFile(new URL('../apps/api/src/app.js', import.meta.url), 'utf8');
+for (const marker of ["app.get('/ready'", "app.get('/metrics'", "app.get('/v1/runtime/observability'", 'X-Idempotency-Key']) {
+  if (!appSource.includes(marker)) throw new Error(`Borda operacional incompleta: ${marker}.`);
+}
 const directorSource = await readFile(new URL('../packages/session-director/src/index.js', import.meta.url), 'utf8');
-for (const forbidden of ['PostgresRuntimeLeaseManager', 'PostgresStateBus', 'fenix_runtime_leases', 'pg_notify']) {
-  if (directorSource.includes(forbidden)) throw new Error(`SessionDirector não pode conhecer coordenação distribuída: ${forbidden}.`);
+for (const forbidden of [
+  'PostgresRuntimeLeaseManager',
+  'PostgresStateBus',
+  'fenix_runtime_leases',
+  'pg_notify',
+  'PostgresCommandLedger',
+  'fenix_command_ledger',
+  'RuntimeObservability',
+  'OwnerAwareRuntimeRouter'
+]) {
+  if (directorSource.includes(forbidden)) throw new Error(`SessionDirector não pode conhecer infraestrutura distribuída: ${forbidden}.`);
 }
 const realtimeClientSource = await readFile(new URL('../apps/fenix-vtt/lib/realtime-client.js', import.meta.url), 'utf8');
 if (/searchParams\.set\(['"](?:role|actorId|userId)['"]/.test(realtimeClientSource)) {
