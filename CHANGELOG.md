@@ -17,32 +17,40 @@ Este projeto segue o formato do [Keep a Changelog](https://keepachangelog.com/pt
 - `RealtimeSessionHub` e `RealtimeSessionGateway` com presença, cena/tokens autoritativos, broadcast de narração/áudio e WebSocket real.
 - Autenticação standalone com `AuthService`, senha derivada por `scrypt`, sessão opaca e cookie HttpOnly.
 - `CampaignService` com campanhas, memberships GM/Player, `actorId` autoritativo e convites expirantes de uso único.
-- `JsonFileFenixRepository` com escrita atômica para contas, sessões, campanhas, convites e estado realtime na fase alpha single-instance.
-- `PersistentSessionService` e `SessionDirector.restore()` para recuperar a mesma sessão após restart sem repetir a abertura.
+- `JsonFileFenixRepository` com escrita atômica como fallback local/single-instance.
+- `PostgresFenixRepository` com pool, advisory lock de schema, transações e `SELECT ... FOR UPDATE` para mutações concorrentes.
+- `CampaignRuntimeRegistry` com runtime isolado por campanha, índice `campaignId ↔ sessionId` e restauração de todas as mesas ativas.
+- Migração segura `npm run migrate:postgres`, que só importa JSON quando o estado PostgreSQL está vazio.
+- Integração PostgreSQL real no CI com duas instâncias concorrentes do repository.
+- `PersistentSessionService` e `SessionDirector.restore()` para recuperar sessão após restart sem repetir a abertura.
 - Gate visual `AuthCampaignGate` com bootstrap do primeiro GM, login, criação/seleção de campanha e aceite de convite.
-- Testes de segredo em repouso, bootstrap concorrente, convite one-time, anti-escalation, restauração de sessão e hidratação realtime.
+- Testes de segredo em repouso, bootstrap concorrente, convite one-time, anti-escalation, restauração, hidratação realtime e start concorrente por campanha.
 - Integrações reais HTTP de autenticação/campanha e WebSocket Fastify no CI.
 - Validação arquitetural que impede a UI standalone de importar regras, Groq, `SessionDirector` ou código Foundry.
 - Normalizador/check de `package-lock.json` para impedir URLs de registry privado na distribuição.
 
 ### Alterado
 
-- `SessionDirector` passa a depender exclusivamente de `contextPort` e `narrationOutput`, sem dependência nominal do Foundry no domínio.
-- `server.js` passa a atuar como composition root de persistência, autenticação, campanha, runtime e realtime.
+- `SessionDirector` depende exclusivamente de `contextPort` e `narrationOutput`, sem dependência nominal do Foundry no domínio.
+- `server.js` passa a compor `CampaignRuntimeRegistry` em vez de um runtime narrativo global.
+- Endpoints `/v1/session/status`, `/action`, `/room-entry` e `/end` passam a ser escopados por campanha/sessão no standalone autenticado.
+- Cada conexão realtime é roteada ao runtime correspondente à própria `sessionId` sem alterar o contrato do `RealtimeSessionGateway`.
 - `/health` usa a versão centralizada do Engine e reporta auth/persistence/realtime quando configurados.
 - Foundry Adapter continua normalizando estado pelo contrato universal.
-- O cliente realtime deixa de transportar `role`, `userId` e `actorId` na URL; o servidor deriva autoridade da sessão autenticada e membership.
+- O cliente realtime não transporta `role`, `userId` e `actorId` na URL; o servidor deriva autoridade da sessão autenticada e membership.
 - Jogadores têm `actorId` reescrito/autorizado no servidor e não podem iniciar/encerrar sessão ou trocar cena como GM.
-- O mundo realtime passa a persistir cena, tokens, salas, revisão e histórico recente; presença continua efêmera.
+- O mundo realtime persiste cena, tokens, salas, revisão e histórico recente; presença continua efêmera.
 - Produção fecha o HTTP legado de sessão por padrão; desenvolvimento preserva compatibilidade alpha.24 do Foundry.
 - Cookies usam `SameSite=Lax` em desenvolvimento e `None + Secure` por padrão em produção, com configuração explícita disponível.
-- CI passa a exigir lockfile portátil, `npm ci`, auth/campaign HTTP, WebSocket real e build Next, além da matriz Node.js 20/22/24.
+- Persistência seleciona PostgreSQL quando configurada, mantendo JSON e memória como adapters alternativos.
+- CI passa a exigir PostgreSQL 16 real, concorrência do repository, auth/campaign HTTP, WebSocket real e build Next, além da matriz Node.js 20/22/24.
 
 ### Segurança
 
 - Tokens reutilizáveis de sessão e convite não são persistidos em texto puro; somente hashes SHA-256 ficam em repouso.
 - Bootstrap do primeiro usuário possui trava contra corrida concorrente.
 - Registro por convite remove a conta recém-criada caso a reserva do convite falhe antes de concluir a membership.
+- `CampaignRuntimeRegistry` bloqueia duas inicializações concorrentes da mesma campanha.
 - Upgrade WebSocket continua validando `Origin`, tamanho de payload e rate limit por peer.
 
 ### Compatibilidade
@@ -50,6 +58,7 @@ Este projeto segue o formato do [Keep a Changelog](https://keepachangelog.com/pt
 - `foundryApi` e `publishChat` permanecem como aliases de transição no `session-runtime`, e `postNarration()` permanece como alias no publisher para consumidores alpha.24.
 - A regra alpha.24 de correlação por número da sala permanece no adapter Foundry.
 - `FENIX_ALLOW_LEGACY_SESSION_HTTP` mantém o caminho HTTP atual do Foundry durante a transição; em produção exige ativação explícita.
+- PostgreSQL torna as mutações do repository seguras entre processos, mas caches de serviço e ownership distribuído de runtimes ainda exigem coordenação adicional para horizontal scaling completo.
 
 ## [0.1.0-alpha.24] - 2026-07-21
 
