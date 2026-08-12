@@ -11,6 +11,10 @@ test('configuração aplica padrões seguros de desenvolvimento', () => {
   assert.equal(config.internalRoutingSecret, null);
   assert.equal(config.runtimeRoutingTimeoutMs, 5000);
   assert.equal(config.runtimeRoutingMaxRetries, 1);
+  assert.equal(config.commandLedgerWaitMs, 1500);
+  assert.equal(config.commandLedgerUnknownAfterMs, 60000);
+  assert.equal(config.commandLedgerRetentionHours, 168);
+  assert.equal(config.commandLedgerResultMaxBytes, 512 * 1024);
   assert.equal(config.runtimeLeaseTtlMs, 15000);
   assert.equal(config.runtimeHeartbeatMs, 5000);
   assert.equal(config.runtimeReconcileMs, 5000);
@@ -37,7 +41,7 @@ test('CORS permite Foundry em rede local na porta padrão', () => {
   assert.equal(isOriginAllowed('https://example.com:30000', []), false);
 });
 
-test('configuração rejeita porta, SameSite, heartbeat e secret de roteamento inválidos', () => {
+test('configuração rejeita porta, SameSite, heartbeat, secret e ledger inválidos', () => {
   assert.throws(() => createConfig({ PORT: '70000' }), /PORT/);
   assert.throws(
     () => createConfig({ FENIX_AUTH_COOKIE_SAME_SITE: 'insecure' }),
@@ -51,9 +55,17 @@ test('configuração rejeita porta, SameSite, heartbeat e secret de roteamento i
     () => createConfig({ FENIX_INTERNAL_ROUTING_SECRET: 'curto' }),
     /FENIX_INTERNAL_ROUTING_SECRET/
   );
+  assert.throws(
+    () => createConfig({ FENIX_COMMAND_LEDGER_UNKNOWN_AFTER_MS: '1000' }),
+    /FENIX_COMMAND_LEDGER_UNKNOWN_AFTER_MS/
+  );
+  assert.throws(
+    () => createConfig({ FENIX_COMMAND_LEDGER_RESULT_MAX_BYTES: '10' }),
+    /FENIX_COMMAND_LEDGER_RESULT_MAX_BYTES/
+  );
 });
 
-test('configuração interpreta origens, proxy, identidade e coordenação explicitamente', () => {
+test('configuração interpreta origens, proxy, identidade, coordenação e ledger explicitamente', () => {
   const config = createConfig({
     NODE_ENV: 'production',
     PORT: '8080',
@@ -65,6 +77,10 @@ test('configuração interpreta origens, proxy, identidade e coordenação expli
     FENIX_INTERNAL_ROUTING_SECRET: '0123456789abcdef0123456789abcdef',
     FENIX_RUNTIME_ROUTING_TIMEOUT_MS: '4000',
     FENIX_RUNTIME_ROUTING_MAX_RETRIES: '2',
+    FENIX_COMMAND_LEDGER_WAIT_MS: '800',
+    FENIX_COMMAND_LEDGER_UNKNOWN_AFTER_MS: '45000',
+    FENIX_COMMAND_LEDGER_RETENTION_HOURS: '72',
+    FENIX_COMMAND_LEDGER_RESULT_MAX_BYTES: '262144',
     FENIX_RUNTIME_LEASE_TTL_MS: '20000',
     FENIX_RUNTIME_HEARTBEAT_MS: '4000',
     FENIX_RUNTIME_RECONCILE_MS: '3000',
@@ -79,6 +95,10 @@ test('configuração interpreta origens, proxy, identidade e coordenação expli
   assert.equal(config.internalRoutingSecret, '0123456789abcdef0123456789abcdef');
   assert.equal(config.runtimeRoutingTimeoutMs, 4000);
   assert.equal(config.runtimeRoutingMaxRetries, 2);
+  assert.equal(config.commandLedgerWaitMs, 800);
+  assert.equal(config.commandLedgerUnknownAfterMs, 45000);
+  assert.equal(config.commandLedgerRetentionHours, 72);
+  assert.equal(config.commandLedgerResultMaxBytes, 262144);
   assert.equal(config.runtimeLeaseTtlMs, 20000);
   assert.equal(config.runtimeHeartbeatMs, 4000);
   assert.equal(config.runtimeReconcileMs, 3000);
