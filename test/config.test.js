@@ -33,7 +33,10 @@ test('CORS permite Foundry em rede local na porta padrão', () => {
 
 test('configuração rejeita porta e SameSite inválidos', () => {
   assert.throws(() => createConfig({ PORT: '70000' }), /PORT/);
-  assert.throws(() => createConfig({ FENIX_AUTH_COOKIE_SAME_SITE: 'insecure' }), /SameSite/);
+  assert.throws(
+    () => createConfig({ FENIX_AUTH_COOKIE_SAME_SITE: 'insecure' }),
+    /FENIX_AUTH_COOKIE_SAME_SITE/
+  );
 });
 
 test('configuração interpreta origens, proxy e compatibilidade explicitamente', () => {
