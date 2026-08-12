@@ -86,18 +86,19 @@ export function registerCampaignRoutes(app, { authService, campaignService, conf
   });
 
   app.post('/v1/invites/register', async (request, reply) => {
+    let createdUser = null;
     try {
       campaignService.inspectInvite(request.body?.token);
-      const user = await authService.createUser({
+      createdUser = await authService.createUser({
         email: request.body?.email,
         displayName: request.body?.displayName,
         password: request.body?.password
       });
       const campaign = await campaignService.acceptInvite({
         token: request.body?.token,
-        userId: user.id
+        userId: createdUser.id
       });
-      const session = await authService.createSession(user.id);
+      const session = await authService.createSession(createdUser.id);
       reply.header('Set-Cookie', serializeAuthSessionCookie(session.token, {
         expiresAt: session.expiresAt,
         secure: config.isProduction,
@@ -105,6 +106,9 @@ export function registerCampaignRoutes(app, { authService, campaignService, conf
       }));
       return { user: session.user, campaign };
     } catch (error) {
+      if (createdUser) {
+        await authService.deleteUser(createdUser.id).catch(() => undefined);
+      }
       return sendError(reply, error, 'CAMPAIGN_INVITE_REGISTER_FAILED');
     }
   });
