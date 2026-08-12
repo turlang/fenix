@@ -6,7 +6,7 @@ import { createSessionController } from './http/session-controller.js';
 import { registerSessionRoutes } from './http/register-session-routes.js';
 import { registerRealtimeRoutes } from './realtime/register-realtime-routes.js';
 
-export function createApiApp({ config, sessionService, narrator, audioNarrationService, realtimeGateway = null }) {
+export async function createApiApp({ config, sessionService, narrator, audioNarrationService, realtimeGateway = null }) {
   if (!config) throw new TypeError('config é obrigatório.');
   if (!sessionService) throw new TypeError('sessionService é obrigatório.');
 
@@ -17,7 +17,7 @@ export function createApiApp({ config, sessionService, narrator, audioNarrationS
   });
 
   if (realtimeGateway) {
-    app.register(websocket, {
+    await app.register(websocket, {
       options: {
         maxPayload: 64 * 1024,
         perMessageDeflate: false
