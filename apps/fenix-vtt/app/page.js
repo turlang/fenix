@@ -1,10 +1,5 @@
-import { FenixSessionProvider } from '../components/session-provider.jsx';
-import { VttShell } from '../components/vtt-shell.jsx';
+import { AuthCampaignGate } from '../components/auth-campaign-gate.jsx';
 
 export default function HomePage() {
-  return (
-    <FenixSessionProvider>
-      <VttShell />
-    </FenixSessionProvider>
-  );
+  return <AuthCampaignGate />;
 }
