@@ -21,13 +21,31 @@ function narrationTitle(metadata = {}) {
   return 'Narração do Engine';
 }
 
-export function FenixSessionProvider({ children }) {
+function snapshotForCampaign(campaign) {
+  return {
+    ...structuredClone(demoSessionSnapshot),
+    campaign: {
+      worldId: campaign.id,
+      title: campaign.title
+    },
+    metadata: {
+      ...(demoSessionSnapshot.metadata ?? {}),
+      campaignId: campaign.id,
+      source: 'fenix-vtt',
+      mode: 'standalone'
+    }
+  };
+}
+
+export function FenixSessionProvider({ children, campaign, currentUser }) {
   const [state, dispatch] = useReducer(sessionReducer, undefined, createInitialSessionState);
   const client = useMemo(() => createFenixApiClient(), []);
   const audioQueueRef = useRef(null);
   const realtimeRef = useRef(null);
   const hydrateHistoryRef = useRef(false);
   const lastRoomRef = useRef(null);
+  const membership = campaign?.membership ?? null;
+  const isGm = membership?.role === 'gm';
 
   const enqueueAudio = useCallback((audio) => {
     if (audio) audioQueueRef.current?.enqueue(audio);
@@ -79,18 +97,10 @@ export function FenixSessionProvider({ children }) {
         dispatch({ type: 'REALTIME_PRESENCE', presence: event.payload?.presence });
         break;
       case 'TOKEN_MOVED':
-        dispatch({
-          type: 'REALTIME_TOKEN',
-          token: event.payload?.token,
-          revision: event.payload?.revision
-        });
+        dispatch({ type: 'REALTIME_TOKEN', token: event.payload?.token, revision: event.payload?.revision });
         break;
       case 'SCENE_UPDATED':
-        dispatch({
-          type: 'REALTIME_SCENE',
-          scene: event.payload?.scene,
-          revision: event.payload?.revision
-        });
+        dispatch({ type: 'REALTIME_SCENE', scene: event.payload?.scene, revision: event.payload?.revision });
         break;
       case 'NARRATION':
         appendRealtimeNarration(event.payload);
@@ -111,10 +121,30 @@ export function FenixSessionProvider({ children }) {
     }
   }, [appendRealtimeNarration]);
 
+  const connectRealtime = useCallback(async (sessionId, { hydrateHistory = false, seedWorld = false } = {}) => {
+    const realtime = realtimeRef.current;
+    if (!realtime || !sessionId) return false;
+    hydrateHistoryRef.current = hydrateHistory;
+    dispatch({ type: 'REALTIME_CONNECTION', status: 'connecting', error: null });
+    try {
+      await realtime.connect(sessionId);
+      dispatch({ type: 'REALTIME_CONNECTION', status: 'connected', error: null });
+      if (seedWorld && isGm) {
+        realtime.updateScene(demoSessionSnapshot.activeScene);
+        for (const token of demoTokens) realtime.moveToken(token, { roomId: null });
+      }
+      return true;
+    } catch (error) {
+      dispatch({ type: 'REALTIME_CONNECTION', status: 'disconnected', error: errorMessage(error) });
+      return false;
+    }
+  }, [isGm]);
+
   useEffect(() => {
     audioQueueRef.current = createBrowserAudioQueue();
     let active = true;
     let unsubscribeRealtime = () => undefined;
+    if (membership?.actorId) dispatch({ type: 'SELECT_ACTOR', actorId: membership.actorId });
 
     try {
       const realtime = createFenixRealtimeClient();
@@ -129,9 +159,12 @@ export function FenixSessionProvider({ children }) {
       .then(async (status) => {
         if (!active) return;
         dispatch({ type: 'ENGINE_STATUS', payload: status });
+        if (status.state === 'COLLECTING_ACTIONS' && status.campaignId && status.campaignId !== campaign.id) {
+          dispatch({ type: 'CONNECTION_ERROR', disconnected: false, error: 'Outra campanha possui a sessão ativa neste Engine.' });
+          return;
+        }
         if (status.state === 'COLLECTING_ACTIONS' && status.sessionId && realtimeRef.current) {
           hydrateHistoryRef.current = true;
-          dispatch({ type: 'REALTIME_CONNECTION', status: 'connecting' });
           try {
             await realtimeRef.current.connect(status.sessionId);
           } catch (error) {
@@ -139,8 +172,8 @@ export function FenixSessionProvider({ children }) {
           }
         }
       })
-      .catch(() => {
-        if (active) dispatch({ type: 'CONNECTION_ERROR', disconnected: true, error: 'Engine offline. Inicie a API na porta 3001.' });
+      .catch((error) => {
+        if (active) dispatch({ type: 'CONNECTION_ERROR', disconnected: true, error: errorMessage(error) });
       });
 
     return () => {
@@ -151,36 +184,22 @@ export function FenixSessionProvider({ children }) {
       audioQueueRef.current?.destroy();
       audioQueueRef.current = null;
     };
-  }, [client, handleRealtimeEvent]);
-
-  const connectRealtime = useCallback(async (sessionId, { hydrateHistory = false, seedWorld = false } = {}) => {
-    const realtime = realtimeRef.current;
-    if (!realtime || !sessionId) return false;
-    hydrateHistoryRef.current = hydrateHistory;
-    dispatch({ type: 'REALTIME_CONNECTION', status: 'connecting', error: null });
-    try {
-      await realtime.connect(sessionId);
-      dispatch({ type: 'REALTIME_CONNECTION', status: 'connected', error: null });
-      if (seedWorld && realtime.identity.role === 'gm') {
-        realtime.updateScene(demoSessionSnapshot.activeScene);
-        for (const token of demoTokens) realtime.moveToken(token, { roomId: null });
-      }
-      return true;
-    } catch (error) {
-      dispatch({ type: 'REALTIME_CONNECTION', status: 'disconnected', error: errorMessage(error) });
-      return false;
-    }
-  }, []);
+  }, [campaign.id, client, handleRealtimeEvent, membership?.actorId]);
 
   const ensureSession = useCallback(async () => {
     const status = await client.status();
     if (status.state === 'COLLECTING_ACTIONS') {
+      if (status.campaignId && status.campaignId !== campaign.id) {
+        throw new Error('Outra campanha possui a sessão ativa neste Engine.');
+      }
       dispatch({ type: 'ENGINE_STATUS', payload: status });
       await connectRealtime(status.sessionId, { hydrateHistory: true });
       return status;
     }
 
-    const started = await client.start(demoSessionSnapshot);
+    if (!isGm) throw new Error('Aguarde o mestre iniciar a sessão desta campanha.');
+    const snapshot = snapshotForCampaign(campaign);
+    const started = await client.start(snapshot, campaign.id);
     const entry = createTimelineEntry({
       type: 'SESSION_OPENING',
       title: 'Abertura da cena',
@@ -191,7 +210,7 @@ export function FenixSessionProvider({ children }) {
     enqueueAudio(started.audio);
     await connectRealtime(started.sessionId, { hydrateHistory: false, seedWorld: true });
     return started;
-  }, [client, connectRealtime, enqueueAudio]);
+  }, [campaign, client, connectRealtime, enqueueAudio, isGm]);
 
   const connect = useCallback(async () => {
     dispatch({ type: 'REQUEST_BEGIN' });
@@ -218,7 +237,6 @@ export function FenixSessionProvider({ children }) {
         submittedRealtime = true;
         return { state: 'PENDING_REALTIME', transport: 'websocket' };
       }
-
       const result = await client.action({
         content: text,
         actorId: state.selectedActorId,
@@ -272,9 +290,9 @@ export function FenixSessionProvider({ children }) {
   }, [client, enqueueAudio, ensureSession]);
 
   const moveToken = useCallback(async (token, { roomEntry = null, roomId = undefined } = {}) => {
+    if (!isGm && membership?.actorId && token.id !== membership.actorId) return false;
     const normalizedToken = { ...token };
     dispatch({ type: 'REALTIME_TOKEN', token: normalizedToken, revision: state.revision });
-
     if (realtimeRef.current?.connected) {
       if (roomEntry) dispatch({ type: 'REQUEST_BEGIN' });
       try {
@@ -285,12 +303,12 @@ export function FenixSessionProvider({ children }) {
         dispatch({ type: 'REALTIME_CONNECTION', status: 'degraded', error: errorMessage(error) });
       }
     }
-
     if (roomEntry) await enterRoom(roomEntry);
     return false;
-  }, [enterRoom, state.revision]);
+  }, [enterRoom, isGm, membership?.actorId, state.revision]);
 
   const endSession = useCallback(async () => {
+    if (!isGm) return null;
     dispatch({ type: 'REQUEST_BEGIN' });
     try {
       const result = await client.end();
@@ -305,20 +323,33 @@ export function FenixSessionProvider({ children }) {
     } finally {
       dispatch({ type: 'REQUEST_END' });
     }
-  }, [client]);
+  }, [client, isGm]);
 
+  const createInvite = useCallback(async (actorId) => {
+    if (!isGm) throw new Error('Somente o mestre pode criar convites.');
+    return client.createInvite(campaign.id, actorId);
+  }, [campaign.id, client, isGm]);
+
+  const selfPresence = state.presence.find((peer) => peer.userId === currentUser?.id) ?? null;
   const value = useMemo(() => ({
     state,
-    identity: realtimeRef.current?.identity ?? null,
+    campaign,
+    currentUser,
+    membership,
+    isGm,
+    identity: selfPresence ?? membership,
     connect,
     submitAction,
     enterRoom,
     moveToken,
     endSession,
-    selectActor: (actorId) => dispatch({ type: 'SELECT_ACTOR', actorId }),
+    createInvite,
+    selectActor: (actorId) => {
+      if (isGm || actorId === membership?.actorId) dispatch({ type: 'SELECT_ACTOR', actorId });
+    },
     clearError: () => dispatch({ type: 'CLEAR_ERROR' }),
     replayAudio: (audio) => enqueueAudio(audio)
-  }), [connect, endSession, enqueueAudio, enterRoom, moveToken, state, submitAction]);
+  }), [campaign, connect, createInvite, currentUser, endSession, enqueueAudio, enterRoom, isGm, membership, moveToken, selfPresence, state, submitAction]);
 
   return <FenixSessionContext.Provider value={value}>{children}</FenixSessionContext.Provider>;
 }
