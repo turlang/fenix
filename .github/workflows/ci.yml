@@ -15,6 +15,50 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  normalize-lock:
+    name: Regenerate portable npm lock once
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'agent/fenix-shared-core-phase2-5'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+
+      - name: Configure Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      - name: Regenerate workspace lock
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --package-lock-only --ignore-scripts --no-audit --no-fund --registry=https://registry.npmjs.org
+          node scripts/normalize-package-lock-registry.mjs
+
+      - name: Commit regenerated lock when needed
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- package-lock.json; then
+            echo "package-lock.json already synchronized"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package-lock.json
+          git commit -m "regenerate realtime npm lockfile"
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
+
   quality:
     name: Core / Node.js ${{ matrix.node-version }}
     runs-on: ubuntu-latest
@@ -40,7 +84,7 @@ jobs:
         run: node --test
 
   integration-build:
-    name: Portable install + API + VTT build / Node.js 24
+    name: Portable install + API + realtime + VTT build / Node.js 24
     runs-on: ubuntu-latest
     timeout-minutes: 8
 
@@ -60,8 +104,11 @@ jobs:
       - name: Install dependencies
         run: npm ci --ignore-scripts --no-audit --no-fund --registry=https://registry.npmjs.org
 
-      - name: Import Fastify runtime
-        run: node -e "import('fastify').then(() => console.log('Fastify runtime OK'))"
+      - name: Import Fastify runtimes
+        run: node -e "Promise.all([import('fastify'), import('@fastify/websocket')]).then(() => console.log('Fastify realtime runtime OK'))"
+
+      - name: Test realtime WebSocket adapter
+        run: npm run test:realtime-integration
 
       - name: Build standalone VTT
         env:
