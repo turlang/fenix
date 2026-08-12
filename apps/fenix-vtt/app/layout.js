@@ -1,5 +1,6 @@
 import './globals.css';
 import './live-bridge.css';
+import './realtime.css';
 
 export const metadata = {
   title: 'Fênix VTT',
