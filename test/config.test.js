@@ -8,6 +8,9 @@ test('configuração aplica padrões seguros de desenvolvimento', () => {
   assert.equal(config.trustProxy, false);
   assert.equal(config.allowLegacySessionHttp, true);
   assert.equal(config.authCookieSameSite, 'Lax');
+  assert.equal(config.runtimeLeaseTtlMs, 15000);
+  assert.equal(config.runtimeHeartbeatMs, 5000);
+  assert.equal(config.runtimeReconcileMs, 5000);
   assert.deepEqual(config.allowedOrigins, [
     'http://localhost:30000',
     'http://127.0.0.1:30000',
@@ -31,27 +34,41 @@ test('CORS permite Foundry em rede local na porta padrão', () => {
   assert.equal(isOriginAllowed('https://example.com:30000', []), false);
 });
 
-test('configuração rejeita porta e SameSite inválidos', () => {
+test('configuração rejeita porta, SameSite e heartbeat inválidos', () => {
   assert.throws(() => createConfig({ PORT: '70000' }), /PORT/);
   assert.throws(
     () => createConfig({ FENIX_AUTH_COOKIE_SAME_SITE: 'insecure' }),
     /FENIX_AUTH_COOKIE_SAME_SITE/
   );
+  assert.throws(
+    () => createConfig({ FENIX_RUNTIME_LEASE_TTL_MS: '5000', FENIX_RUNTIME_HEARTBEAT_MS: '5000' }),
+    /HEARTBEAT/
+  );
 });
 
-test('configuração interpreta origens, proxy e compatibilidade explicitamente', () => {
+test('configuração interpreta origens, proxy, identidade e coordenação explicitamente', () => {
   const config = createConfig({
     NODE_ENV: 'production',
     PORT: '8080',
     TRUST_PROXY: 'true',
     FENIX_ALLOW_LEGACY_SESSION_HTTP: 'true',
     FENIX_AUTH_COOKIE_SAME_SITE: 'Strict',
+    FENIX_INSTANCE_ID: 'engine-a',
+    FENIX_INSTANCE_PUBLIC_URL: 'https://engine-a.example',
+    FENIX_RUNTIME_LEASE_TTL_MS: '20000',
+    FENIX_RUNTIME_HEARTBEAT_MS: '4000',
+    FENIX_RUNTIME_RECONCILE_MS: '3000',
     CORS_ALLOWED_ORIGINS: 'https://app.example, https://foundry.example'
   });
   assert.equal(config.isProduction, true);
   assert.equal(config.trustProxy, true);
   assert.equal(config.allowLegacySessionHttp, true);
   assert.equal(config.authCookieSameSite, 'Strict');
+  assert.equal(config.instanceId, 'engine-a');
+  assert.equal(config.instancePublicUrl, 'https://engine-a.example');
+  assert.equal(config.runtimeLeaseTtlMs, 20000);
+  assert.equal(config.runtimeHeartbeatMs, 4000);
+  assert.equal(config.runtimeReconcileMs, 3000);
   assert.deepEqual(config.allowedOrigins, [
     'http://localhost:30000',
     'http://127.0.0.1:30000',
