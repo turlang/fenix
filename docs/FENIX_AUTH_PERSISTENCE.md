@@ -131,9 +131,10 @@ O módulo Foundry alpha.24 continua usando os endpoints existentes. Em desenvolv
 
 ## Gates
 
-O CI exige:
+A CI #167 foi concluída com sucesso em 2026-08-12. O gate provou:
 
-- testes do Core em Node.js 20, 22 e 24;
+- Core em Node.js 20, 22 e 24;
+- 94 testes / 94 aprovados no Node 24;
 - isolamento de múltiplos runtimes e bloqueio de start duplicado;
 - PostgreSQL 16 real em service container;
 - inicialização concorrente do schema;
@@ -141,4 +142,5 @@ O CI exige:
 - auth/campanhas HTTP reais;
 - WebSocket real;
 - `npm ci` com lockfile público;
-- build Next.js de produção.
+- build Next.js de produção;
+- workflow final somente-leitura (`contents: read`).
