@@ -13,6 +13,11 @@ Este projeto segue o formato do [Keep a Changelog](https://keepachangelog.com/pt
 - Parser de segmentos emocionais que remove marcadores do texto falado pelo Browser-TTS.
 - Testes de contrato do Shared Core, áudio, prompt e separação HTTP/domínio.
 - Diretrizes de arquitetura e UI/UX para o Fênix VTT standalone.
+- `StandaloneVttAdapter` com estado independente e tradução para os mesmos contratos consumidos pelo Shared Core.
+- `MapRendererPort` com renderer headless para testes, capability detection WebGPU/WebGL2 e baseline WebGL2 real.
+- Source scaffold `apps/fenix-vtt` no padrão App Router, com Map Stage, Scene Tree, Context Rail, Narration Timeline e Player Focus Mode.
+- Testes automatizados que executam o mesmo `createSessionRuntime` usando o adapter standalone, sem APIs do Foundry.
+- Validação arquitetural que impede a UI standalone de importar regras, Groq, `SessionDirector` ou código Foundry.
 
 ### Alterado
 
@@ -20,6 +25,7 @@ Este projeto segue o formato do [Keep a Changelog](https://keepachangelog.com/pt
 - `server.js` passa a atuar somente como composition root; rotas, schemas, controller e criação do Fastify foram separados.
 - `/health` usa a versão centralizada do Engine em vez de valor hardcoded antigo.
 - Foundry Adapter normaliza o estado pelo contrato universal antes de entrar no Core.
+- CI separa a qualidade do Shared Core do smoke test de instalação de dependências, evitando que falhas internas do npm escondam regressões de domínio.
 
 ### Compatibilidade
 
