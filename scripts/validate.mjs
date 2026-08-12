@@ -6,8 +6,18 @@ const required = [
   'apps/api/src/http/session-schemas.js',
   'apps/api/src/http/register-session-routes.js',
   'apps/foundry-module/module.json',
+  'apps/fenix-vtt/app/layout.js',
+  'apps/fenix-vtt/app/page.js',
+  'apps/fenix-vtt/app/globals.css',
+  'apps/fenix-vtt/components/vtt-shell.jsx',
+  'apps/fenix-vtt/components/map-stage.jsx',
+  'apps/fenix-vtt/lib/demo-scene.js',
+  'apps/fenix-vtt/next.config.mjs',
   'packages/core/src/index.js',
   'packages/vtt-contracts/src/index.js',
+  'packages/standalone-vtt-adapter/src/index.js',
+  'packages/map-renderer-port/src/index.js',
+  'packages/webgl-map-renderer/src/index.js',
   'packages/session-director/src/index.js',
   'packages/session-runtime/src/index.js',
   'packages/narration-output/src/index.js',
@@ -49,6 +59,29 @@ if (packageJson.version !== moduleJson.version || packageJson.version !== coreVe
   throw new Error(`Versões divergentes: engine=${packageJson.version}, foundry=${moduleJson.version}, core=${coreVersion}`);
 }
 if (!packageJson.scripts?.test || !packageJson.scripts?.check) throw new Error('Scripts de qualidade ausentes.');
+
+const standaloneUiFiles = [
+  'apps/fenix-vtt/app/layout.js',
+  'apps/fenix-vtt/app/page.js',
+  'apps/fenix-vtt/components/vtt-shell.jsx',
+  'apps/fenix-vtt/components/map-stage.jsx'
+];
+const forbiddenUiImports = [
+  'RulesService',
+  'NarrationService',
+  'GroqNarrativeProvider',
+  'foundry-adapter',
+  'foundry-module',
+  'SessionDirector'
+];
+for (const file of standaloneUiFiles) {
+  const source = await readFile(new URL(`../${file}`, import.meta.url), 'utf8');
+  for (const forbiddenImport of forbiddenUiImports) {
+    if (source.includes(forbiddenImport)) {
+      throw new Error(`Fronteira UI violada: ${file} referencia ${forbiddenImport}.`);
+    }
+  }
+}
 
 const forbidden = ['.env', 'node_modules', 'data/narration-history.json'];
 for (const path of forbidden) {
