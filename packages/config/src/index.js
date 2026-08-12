@@ -16,6 +16,13 @@ function parseInteger(value, fallback, { min, max, name }) {
   return parsed;
 }
 
+function parseSameSite(value, fallback) {
+  const normalized = String(value ?? fallback).trim().toLowerCase();
+  const options = { lax: 'Lax', strict: 'Strict', none: 'None' };
+  if (!options[normalized]) throw new TypeError('FENIX_AUTH_COOKIE_SAME_SITE deve ser Lax, Strict ou None.');
+  return options[normalized];
+}
+
 export function loadEnvFile(filePath = resolve(process.cwd(), process.env.MESTRE_ORC_ENV_FILE || '.env')) {
   if (!existsSync(filePath)) return false;
   const source = readFileSync(filePath, 'utf8');
@@ -37,6 +44,7 @@ export function loadEnvFile(filePath = resolve(process.cwd(), process.env.MESTRE
 
 export function createConfig(env = process.env) {
   const nodeEnv = env.NODE_ENV?.trim() || 'development';
+  const isProduction = nodeEnv === 'production';
   const configuredOrigins = (env.CORS_ALLOWED_ORIGINS || 'http://localhost:3000,http://localhost:3001')
     .split(',').map((origin) => origin.trim()).filter(Boolean);
   const allowedOrigins = [...new Set([
@@ -46,7 +54,7 @@ export function createConfig(env = process.env) {
   ])];
   return Object.freeze({
     nodeEnv,
-    isProduction: nodeEnv === 'production',
+    isProduction,
     host: env.HOST?.trim() || '0.0.0.0',
     port: parseInteger(env.PORT, 3001, { min: 1, max: 65535, name: 'PORT' }),
     bodyLimit: parseInteger(env.BODY_LIMIT_BYTES, 2 * 1024 * 1024, {
@@ -55,7 +63,8 @@ export function createConfig(env = process.env) {
       name: 'BODY_LIMIT_BYTES'
     }),
     trustProxy: parseBoolean(env.TRUST_PROXY, false),
-    allowLegacySessionHttp: parseBoolean(env.FENIX_ALLOW_LEGACY_SESSION_HTTP, nodeEnv !== 'production'),
+    allowLegacySessionHttp: parseBoolean(env.FENIX_ALLOW_LEGACY_SESSION_HTTP, !isProduction),
+    authCookieSameSite: parseSameSite(env.FENIX_AUTH_COOKIE_SAME_SITE, isProduction ? 'None' : 'Lax'),
     allowedOrigins
   });
 }
