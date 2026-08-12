@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { MapStage } from './map-stage.jsx';
+import { useFenixSession } from './session-provider.jsx';
 
 const scenes = [
   { id: '01', name: 'Portão Antigo', state: 'visited' },
@@ -10,15 +11,54 @@ const scenes = [
 ];
 
 const actors = [
-  { name: 'Ayla', role: 'Jogadora', hp: '28 / 34' },
-  { name: 'Dorian', role: 'Jogador', hp: '21 / 27' },
-  { name: 'Guardião', role: 'NPC', hp: 'Oculto' }
+  { id: 'hero-ayla', name: 'Ayla', role: 'Jogadora', hp: '28 / 34' },
+  { id: 'hero-dorian', name: 'Dorian', role: 'Jogador', hp: '21 / 27' },
+  { id: 'npc-warden', name: 'Guardião', role: 'NPC', hp: 'Oculto' }
 ];
 
 export function VttShell() {
   const [leftOpen, setLeftOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(true);
   const [focusMode, setFocusMode] = useState(false);
+  const [actionText, setActionText] = useState('');
+  const {
+    state,
+    connect,
+    submitAction,
+    enterRoom,
+    endSession,
+    selectActor,
+    clearError,
+    replayAudio
+  } = useFenixSession();
+
+  const selectedActor = useMemo(
+    () => actors.find((actor) => actor.id === state.selectedActorId) ?? actors[0],
+    [state.selectedActorId]
+  );
+  const sessionActive = state.engineState === 'COLLECTING_ACTIONS';
+  const timeline = state.timeline.slice(-4).reverse();
+
+  async function handleSessionButton() {
+    try {
+      if (sessionActive) await endSession();
+      else await connect();
+    } catch {
+      // O provider já publicou o erro operacional no estado da UI.
+    }
+  }
+
+  async function handleSubmit(event) {
+    event.preventDefault();
+    const text = actionText.trim();
+    if (!text || state.busy) return;
+    try {
+      await submitAction(text);
+      setActionText('');
+    } catch {
+      // O provider já publicou o erro operacional no estado da UI.
+    }
+  }
 
   return (
     <main className={`vtt-shell ${focusMode ? 'focus-mode' : ''}`}>
@@ -31,10 +71,10 @@ export function VttShell() {
           </div>
         </div>
 
-        <div className="session-pill">
+        <div className={`session-pill ${state.connection === 'connected' ? '' : 'offline'}`}>
           <span className="status-dot" />
-          <span>Sessão conectada</span>
-          <strong>COLLECTING_ACTIONS</strong>
+          <span>{state.connection === 'connected' ? 'Engine conectado' : 'Engine offline'}</span>
+          <strong>{state.engineState}</strong>
         </div>
 
         <div className="topbar-actions">
@@ -43,6 +83,9 @@ export function VttShell() {
           </button>
           <button type="button" className="ghost-button" onClick={() => setRightOpen((value) => !value)}>
             Contexto
+          </button>
+          <button type="button" className="ghost-button" disabled={state.busy} onClick={handleSessionButton}>
+            {sessionActive ? 'Encerrar sessão' : 'Iniciar sessão'}
           </button>
           <button type="button" className="primary-button" onClick={() => setFocusMode((value) => !value)}>
             {focusMode ? 'Modo mestre' : 'Foco jogador'}
@@ -79,7 +122,11 @@ export function VttShell() {
         ) : null}
 
         <section className="center-stage">
-          <MapStage />
+          <MapStage
+            busy={state.busy}
+            onRoomEntered={enterRoom}
+            onSelectedActor={selectActor}
+          />
         </section>
 
         {rightOpen && !focusMode ? (
@@ -91,14 +138,19 @@ export function VttShell() {
 
             <div className="actor-stack">
               {actors.map((actor) => (
-                <article className="actor-card" key={actor.name}>
+                <button
+                  type="button"
+                  className={`actor-card ${state.selectedActorId === actor.id ? 'selected' : ''}`}
+                  key={actor.id}
+                  onClick={() => selectActor(actor.id)}
+                >
                   <div className="actor-avatar">{actor.name.slice(0, 1)}</div>
                   <div className="actor-copy">
                     <strong>{actor.name}</strong>
                     <small>{actor.role}</small>
                   </div>
                   <span className="actor-hp">{actor.hp}</span>
-                </article>
+                </button>
               ))}
             </div>
 
@@ -107,10 +159,10 @@ export function VttShell() {
                 <span className="ai-orb" />
                 <div>
                   <span className="eyebrow">AI Director</span>
-                  <strong>Narrador pronto</strong>
+                  <strong>{state.busy ? 'Processando evento' : sessionActive ? 'Narrador pronto' : 'Aguardando sessão'}</strong>
                 </div>
               </div>
-              <p>Shared Core isolado do VTT. Entrada da próxima sala será convertida em evento universal.</p>
+              <p>Shared Core conectado por HTTP. Movimento do token e ações entram pelo mesmo pipeline universal.</p>
               <div className="ai-status-grid">
                 <span>Safety <b>ON</b></span>
                 <span>Quality <b>ON</b></span>
@@ -125,18 +177,50 @@ export function VttShell() {
         <div className="timeline-heading">
           <div>
             <span className="eyebrow">Narration Timeline</span>
-            <strong>Entrada no Salão das Colunas</strong>
+            <strong>{timeline[0]?.title ?? 'Aguardando narrativa do Engine'}</strong>
           </div>
-          <span className="audio-state">● text-ready · audio standby</span>
+          <span className="audio-state">● {state.busy ? 'processing' : timeline[0]?.audioState ?? 'standby'}</span>
         </div>
-        <p>
-          A luz das tochas divide as colunas em faixas de sombra. Ao norte, uma única porta de madeira interrompe a parede de pedra e define o próximo ponto de decisão.
-        </p>
-        <div className="command-row">
+
+        <div className="timeline-list" aria-live="polite">
+          {timeline.length ? timeline.map((entry) => (
+            <article className="timeline-entry" key={entry.id}>
+              <div>
+                <span>{entry.title}</span>
+                <small>{entry.type}</small>
+              </div>
+              <p>{entry.text}</p>
+              {entry.audio ? (
+                <button type="button" className="timeline-audio-button" onClick={() => replayAudio(entry.audio)}>
+                  Reproduzir áudio
+                </button>
+              ) : null}
+            </article>
+          )) : (
+            <p className="timeline-empty">Inicie a sessão ou arraste Ayla até a Câmara Norte para acionar o primeiro evento real.</p>
+          )}
+        </div>
+
+        {state.error ? (
+          <div className="engine-error" role="alert">
+            <span>{state.error}</span>
+            <button type="button" onClick={clearError}>Fechar</button>
+          </div>
+        ) : null}
+
+        <form className="command-row" onSubmit={handleSubmit}>
           <span className="command-prompt">›</span>
-          <input aria-label="Ação do personagem" placeholder="Descreva sua ação ou use / para comandos…" />
-          <button type="button" className="send-button">Enviar ação</button>
-        </div>
+          <input
+            aria-label="Ação do personagem"
+            placeholder={`Ação de ${selectedActor.name}…`}
+            value={actionText}
+            disabled={state.busy}
+            onChange={(event) => setActionText(event.target.value)}
+          />
+          <button type="submit" className="send-button" disabled={state.busy || !actionText.trim()}>
+            {state.busy ? 'Processando…' : 'Enviar ação'}
+          </button>
+        </form>
       </footer>
     </main>
   );
