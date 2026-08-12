@@ -6,12 +6,16 @@ import { CampaignSceneService } from '../packages/campaign-scene-service/src/ind
 
 function fakeAssetStorage() {
   const files = new Map();
+  async function saveBuffer({ campaignId, assetId = 'asset-map-1', fileName, mimeType, buffer }) {
+    const bytes = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer ?? []);
+    files.set(`${campaignId}:${assetId}`, bytes);
+    return { id: assetId, fileName, mimeType, size: bytes.length };
+  }
   return {
     async saveImage({ campaignId, assetId = 'asset-map-1', fileName, mimeType, dataBase64 }) {
-      const buffer = Buffer.from(dataBase64, 'base64');
-      files.set(`${campaignId}:${assetId}`, buffer);
-      return { id: assetId, fileName, mimeType, size: buffer.length };
+      return saveBuffer({ campaignId, assetId, fileName, mimeType, buffer: Buffer.from(dataBase64, 'base64') });
     },
+    saveImageBuffer: saveBuffer,
     async read({ campaignId, assetId }) {
       const value = files.get(`${campaignId}:${assetId}`);
       if (!value) throw new Error('missing');
@@ -23,7 +27,7 @@ function fakeAssetStorage() {
   };
 }
 
-async function createServiceFixture(title = 'Teste de Mapas') {
+async function createServiceFixture(title = 'Teste de Mapas', { remoteMapImporter = null } = {}) {
   const repository = new InMemoryFenixRepository();
   await repository.initialize();
   const campaignService = new CampaignService({ repository });
@@ -33,6 +37,7 @@ async function createServiceFixture(title = 'Teste de Mapas') {
     campaignService,
     repository,
     assetStorage: fakeAssetStorage(),
+    remoteMapImporter,
     now: () => Date.parse('2026-08-12T20:00:00Z')
   });
   return { repository, campaignService, campaign, service };
@@ -77,6 +82,44 @@ test('CampaignSceneService persiste asset, cria cena e ativa cena da campanha', 
   assert.equal(saved.assets[0].id, created.scene.backgroundAssetId);
 });
 
+test('CampaignSceneService importa mapa remoto como asset local sem persistir URL completa', async () => {
+  const remoteMapImporter = {
+    async importUrl(url) {
+      assert.equal(url, 'https://cdn.example.com/maps/templo.png?token=segredo');
+      return {
+        buffer: Buffer.from('remote-map'),
+        mimeType: 'image/png',
+        fileName: 'templo.png',
+        width: 2400,
+        height: 1600,
+        sourceHost: 'cdn.example.com'
+      };
+    }
+  };
+  const { repository, campaign, service } = await createServiceFixture('Import URL', { remoteMapImporter });
+  const asset = await service.importMapUrl({
+    campaignId: campaign.id,
+    userId: 'gm-1',
+    url: 'https://cdn.example.com/maps/templo.png?token=segredo'
+  });
+  assert.equal(asset.sourceType, 'remote-import');
+  assert.equal(asset.sourceHost, 'cdn.example.com');
+  assert.equal(asset.width, 2400);
+  assert.equal(asset.height, 1600);
+  assert.equal(JSON.stringify(repository.snapshot()).includes('token=segredo'), false);
+
+  const scene = await service.createScene({
+    campaignId: campaign.id,
+    userId: 'gm-1',
+    name: 'Templo Remoto',
+    description: 'Mapa importado por URL.',
+    assetId: asset.id,
+    gridSize: 70
+  });
+  assert.equal(scene.scene.width, 2400);
+  assert.equal(scene.scene.height, 1600);
+});
+
 test('CampaignSceneService persiste tamanho, offset e visibilidade da grade calibrada', async () => {
   const { repository, campaign, service } = await createServiceFixture('Calibração');
   const created = await createMapScene(service, campaign.id);
@@ -101,8 +144,9 @@ test('CampaignSceneService persiste tamanho, offset e visibilidade da grade cali
   assert.deepEqual(persisted.grid, updated.scene.grid);
 });
 
-test('CampaignSceneService bloqueia criação e calibração de cena por jogador', async () => {
-  const { repository, campaignService, campaign, service } = await createServiceFixture('Permissões');
+test('CampaignSceneService bloqueia criação, importação e calibração de cena por jogador', async () => {
+  const remoteMapImporter = { async importUrl() { throw new Error('não deveria executar'); } };
+  const { repository, campaignService, campaign, service } = await createServiceFixture('Permissões', { remoteMapImporter });
   const created = await createMapScene(service, campaign.id);
   const raw = campaignService.getRaw(campaign.id);
   raw.members.push({ userId: 'player-1', role: 'player', actorId: 'hero-1', joinedAt: new Date().toISOString() });
@@ -119,6 +163,15 @@ test('CampaignSceneService bloqueia criação e calibração de cena por jogador
       fileName: 'map.png',
       mimeType: 'image/png',
       dataBase64: Buffer.from('map').toString('base64')
+    }),
+    (error) => error.code === 'CAMPAIGN_ROLE_FORBIDDEN' && error.statusCode === 403
+  );
+
+  await assert.rejects(
+    () => service.importMapUrl({
+      campaignId: campaign.id,
+      userId: 'player-1',
+      url: 'https://example.com/map.png'
     }),
     (error) => error.code === 'CAMPAIGN_ROLE_FORBIDDEN' && error.statusCode === 403
   );
