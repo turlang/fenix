@@ -58,6 +58,7 @@ export function VttShell({ onExitCampaign = null, onLogout = null }) {
     createInvite,
     createMapScene,
     activateScene,
+    updateSceneGrid,
     resolveAssetUrl,
     selectActor,
     clearError,
@@ -257,6 +258,7 @@ export function VttShell({ onExitCampaign = null, onLogout = null }) {
             authoritativeTokens={state.tokens}
             onTokenMoved={moveToken}
             onSelectedActor={selectActor}
+            onGridCalibrated={updateSceneGrid}
             canMoveAny={isGm}
             movableActorId={membership?.actorId ?? null}
           />
