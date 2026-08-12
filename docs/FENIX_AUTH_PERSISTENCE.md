@@ -1,8 +1,8 @@
-# Fênix — Autenticação, Campanhas, Persistência e Coordenação
+# Fênix — Autenticação, Campanhas, Persistência, Coordenação e Ingress
 
 ## Objetivo
 
-A infraestrutura standalone mantém identidade, campanhas, convites e estado realtime fora do navegador, recupera sessões após reinício e permite múltiplas campanhas simultâneas. Com PostgreSQL, o Engine também coordena ownership de runtime entre réplicas por lease distribuído e invalida caches por `LISTEN/NOTIFY`.
+A infraestrutura standalone mantém identidade, campanhas, convites e estado realtime fora do navegador, recupera sessões após reinício e permite múltiplas campanhas simultâneas. Com PostgreSQL, o Engine coordena ownership de runtime entre réplicas por lease distribuído, invalida caches por `LISTEN/NOTIFY` e encaminha HTTP/WebSocket para o owner atual sem acoplar essa infraestrutura ao Shared Core.
 
 ## Fluxo de identidade
 
@@ -15,7 +15,7 @@ Browser
   → AuthService resolve userId
   → CampaignService resolve membership
   → role + actorId autoritativos
-  → RealtimeSessionGateway
+  → Runtime ingress / RealtimeSessionGateway
 ```
 
 A URL WebSocket transporta somente `sessionId` e `clientId`. `role`, `actorId` e `userId` nunca são aceitos como autoridade do navegador no servidor standalone.
@@ -47,6 +47,8 @@ Convites são criados pelo GM, reservam um `actorId`, usam token aleatório, per
 FENIX_PERSISTENCE_DRIVER=json
 FENIX_STATE_FILE=./data/fenix-state.json
 ```
+
+JSON não ativa leases, `LISTEN/NOTIFY` nem proxy distribuído.
 
 ### PostgreSQL — persistência compartilhada
 
@@ -101,9 +103,8 @@ Ele:
 - permite campanhas diferentes iniciarem simultaneamente;
 - encerra uma campanha sem derrubar as demais;
 - preserva um runtime legado isolado para o adapter Foundry em desenvolvimento;
-- reconcilia periodicamente estado persistido e ownership distribuído.
-
-Cada conexão WebSocket é escopada por `sessionId`, mantendo o `RealtimeSessionGateway` e o protocolo existentes sem introduzir WebSocket no Shared Core.
+- reconcilia periodicamente estado persistido e ownership distribuído;
+- expõe `assertOwnership()` para a camada realtime aplicar fencing sem conhecer PostgreSQL.
 
 ## Runtime lease distribuído
 
@@ -113,7 +114,7 @@ Cada registro contém:
 
 - `campaign_id`;
 - `owner_id`;
-- `owner_url` opcional;
+- `owner_url`;
 - `session_id`;
 - `generation`;
 - `lease_until`;
@@ -123,13 +124,13 @@ Configuração típica:
 
 ```env
 FENIX_INSTANCE_ID=engine-a
-FENIX_INSTANCE_PUBLIC_URL=https://engine-a.example.com
+FENIX_INSTANCE_PUBLIC_URL=https://engine-a.internal.example.com
 FENIX_RUNTIME_LEASE_TTL_MS=15000
 FENIX_RUNTIME_HEARTBEAT_MS=5000
 FENIX_RUNTIME_RECONCILE_MS=5000
 ```
 
-`FENIX_INSTANCE_ID` deve ser único por processo/réplica; quando omitido, o Engine gera UUID no boot.
+`FENIX_INSTANCE_ID` deve ser único por processo/réplica. Para roteamento distribuído, `FENIX_INSTANCE_PUBLIC_URL` deve ser alcançável pelas demais réplicas.
 
 ### Aquisição e heartbeat
 
@@ -137,7 +138,9 @@ Antes de iniciar/restaurar uma campanha persistente, a instância precisa adquir
 
 ### Fencing token
 
-`generation` é um fencing token monotônico. Quando um lease expirado é retomado, a geração aumenta — inclusive se a retomada usar o mesmo `owner_id`. Antes de action, room entry, end e persistência realtime, o registry chama `assertOwned()` com a geração registrada no runtime local.
+`generation` é um fencing token monotônico. Quando um lease expirado é retomado, a geração aumenta — inclusive se a retomada usar o mesmo `owner_id`.
+
+Antes de operações narrativas persistentes o registry chama `assertOwned()` com a geração registrada no runtime local. A camada realtime também executa `assertOwnership()` antes de cada comando recebido, cobrindo `TOKEN_MOVE`, `SCENE_UPDATE`, `ACTION_SUBMIT`, sync e demais mensagens de uma conexão já aberta.
 
 Isso impede que uma instância antiga continue processando a campanha depois de um takeover.
 
@@ -161,7 +164,7 @@ hidrata RealtimeSessionHub
 
 O `SessionDirector.restore()` não executa `createOpening()`, então o takeover não repete automaticamente a abertura da cena.
 
-A instância antiga falha em `assertOwned()` com `RUNTIME_LEASE_LOST` e remove seu runtime do registry local.
+A instância antiga falha em `assertOwned()` com `RUNTIME_LEASE_LOST` e remove seu runtime do registry local. Em WebSocket já estabelecido, o transporte encerra a conexão obsoleta com close code `1012` para forçar nova resolução do owner.
 
 ## Postgres LISTEN/NOTIFY e invalidação de cache
 
@@ -183,6 +186,84 @@ Eventos originados pela própria instância são ignorados pelo listener. O cana
 
 `NOTIFY` é aceleração, não a única garantia de convergência: a reconciliação periódica continua verificando o banco, cobrindo notificações perdidas e períodos de reconexão.
 
+## Owner-Aware Runtime Routing
+
+`OwnerAwareRuntimeRouter` fica na composition layer. Ele consulta o lease atual e classifica a rota como:
+
+- `local`: esta instância possui o lease válido;
+- `remote`: outra instância possui o lease válido;
+- `unowned`: não existe lease ativo para a campanha.
+
+### Configuração
+
+```env
+FENIX_INTERNAL_ROUTING_SECRET=troque-por-segredo-aleatorio-com-32-ou-mais-caracteres
+FENIX_RUNTIME_ROUTING_TIMEOUT_MS=5000
+FENIX_RUNTIME_ROUTING_MAX_RETRIES=1
+```
+
+O mesmo secret deve ser compartilhado somente entre as réplicas do Engine. Sem secret, o roteamento distribuído fica desabilitado e o comportamento continua local-only.
+
+### Autenticação Engine → Engine
+
+Cada requisição interna usa headers assinados:
+
+- `x-fenix-route-hop`;
+- `x-fenix-route-source`;
+- `x-fenix-route-generation`;
+- `x-fenix-route-timestamp`;
+- `x-fenix-route-signature`.
+
+A assinatura HMAC-SHA256 cobre origem, geração, timestamp, método HTTP, path e SHA-256 do body canônico.
+
+O receptor exige:
+
+- secret válido;
+- timestamp dentro da janela aceita;
+- assinatura em tempo constante;
+- `hop === 1`;
+- generation compatível com o lease atual.
+
+Uma tentativa de injetar headers internos sem HMAC válido recebe `RUNTIME_ROUTING_AUTH_INVALID`. Uma requisição que já possui hop interno nunca cria um segundo proxy, prevenindo loops entre réplicas.
+
+A assinatura interna **não substitui autenticação do usuário**. Cookie e `Authorization` originais são preservados, e o owner executa as mesmas regras de sessão/membership.
+
+### HTTP
+
+```text
+Client
+  ↓
+Load Balancer
+  ↓
+Engine B
+  ↓ resolve lease
+owner = Engine A
+  ↓ HMAC proxy
+Engine A
+  ↓ auth + membership + fence
+CampaignRuntime
+```
+
+Se o owner responder explicitamente que perdeu ownership, o ingress reconsulta o lease e pode repetir o comando para uma nova `generation`, respeitando `FENIX_RUNTIME_ROUTING_MAX_RETRIES`.
+
+Timeouts e falhas de rede não são tratados como prova de que a mutação não ocorreu; isso evita retry cego de ações potencialmente já processadas.
+
+### WebSocket
+
+O browser permanece conectado ao Engine público escolhido pelo balanceador. Se ele não for owner, essa instância cria um WebSocket interno assinado para o owner e encaminha frames nos dois sentidos.
+
+```text
+Browser
+   ⇅
+Engine B / ingress
+   ⇅ proxy WS assinado
+Engine A / owner
+   ⇅
+RealtimeSessionGateway
+```
+
+O proxy possui buffer limitado durante abertura e retry limitado quando o handshake indica mudança de owner/generation. Se um socket já estabelecido perde ownership, o owner obsoleto fecha com `1012`. O `FenixRealtimeClient` reconecta com backoff limitado no **mesmo endpoint público**, permitindo que o ingress resolva novamente o owner — inclusive quando o próprio ingress se tornou o novo owner.
+
 ## Recuperação
 
 ```text
@@ -196,9 +277,10 @@ Repository.initialize()
   → restaurar activeSessions pertencentes à instância
   → SessionDirector.restore()
   → hidratar RealtimeSessionHub por sessionId
+  → OwnerAwareRuntimeRouter resolve tráfego para o owner atual
 ```
 
-Cena, tokens, revisão, sala atual e histórico recente são recuperados; presença continua efêmera e cada browser precisa reconectar.
+Cena, tokens, revisão, sala atual e histórico recente são recuperados; presença continua efêmera e é reconstruída conforme os browsers reconectam.
 
 ## Shutdown seguro
 
@@ -212,17 +294,31 @@ No encerramento normal o Engine:
 
 Isso reduz a janela de split-brain durante deploy/shutdown normal. Em crash abrupto, o failover depende da expiração do TTL do lease.
 
-## Limite distribuído ainda existente: ingress
+## Limite distribuído atual: idempotência de comandos
 
-Ownership, cache invalidation e failover de runtime já estão coordenados entre Engines. Ainda não existe **proxy/redirect automático de comandos para o owner**.
+Ownership, cache invalidation, failover e encaminhamento HTTP/WebSocket já estão coordenados. A fronteira seguinte é tratar falhas **ambíguas** de rede.
 
-Portanto, se um load balancer enviar uma action ou WebSocket para uma réplica que não possui aquela campanha, a réplica reconhece o runtime como remoto, mas não encaminha automaticamente a operação à réplica dona. Para operação horizontal, use afinidade/roteamento owner-aware até existir essa camada.
+Exemplo:
 
-Essa limitação é intencionalmente separada do Shared Core e do `SessionDirector`.
+```text
+Ingress envia ACTION_SUBMIT
+        ↓
+Owner processa a ação
+        ↓
+resposta se perde na rede
+        ↓
+Ingress não sabe se é seguro repetir
+```
+
+Sem um registro distribuído de `commandId`/idempotency key, repetir automaticamente esse comando poderia produzir consequência narrativa ou mutação duplicada. Por isso o roteador só faz retry automático em erros explícitos de ownership e não promete exactly-once em timeout/unreachability.
+
+A próxima etapa deve adicionar idempotência persistente por campanha/sessão/comando e observabilidade de routing/lease antes de ampliar a política de retry.
 
 ## Compatibilidade Foundry
 
 O módulo Foundry alpha.24 continua usando os endpoints existentes. Em desenvolvimento, `FENIX_ALLOW_LEGACY_SESSION_HTTP=true` preserva o caminho legado. Em produção ele fica fechado por padrão.
+
+A regra alpha.24 de correlação por número da sala continua no adapter Foundry e não foi movida para o Shared Core.
 
 ## Gates
 
@@ -239,8 +335,12 @@ A pipeline valida:
 - bloqueio da instância antiga por fencing;
 - restauração da mesma `sessionId` no novo owner;
 - `LISTEN/NOTIFY` atualizando caches de auth e campanhas;
+- HTTP enviado ao não-owner e processado pelo owner correto;
+- WebSocket enviado ao não-owner e proxyado ao owner correto;
+- HMAC interno forjado rejeitado;
+- reconnect do cliente após `1012`;
 - auth/campanhas HTTP reais;
-- WebSocket real;
+- WebSocket base real;
 - `npm ci` com lockfile público;
 - build Next.js de produção;
 - workflow somente-leitura (`contents: read`).
