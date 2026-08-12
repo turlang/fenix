@@ -125,7 +125,7 @@ export class RealtimeSessionHub {
     return this.sessions.get(id);
   }
 
-  connect({ sessionId, identity, send }) {
+  connect({ sessionId, identity, send, close = null }) {
     if (typeof send !== 'function') throw new TypeError('send é obrigatório.');
     const session = this.ensureSession(sessionId);
     const normalizedIdentity = normalizeRealtimeIdentity(identity);
@@ -135,7 +135,7 @@ export class RealtimeSessionHub {
     }
 
     previousPeer?.close?.(4000, 'Replaced by a newer connection');
-    session.peers.set(normalizedIdentity.clientId, { identity: normalizedIdentity, send });
+    session.peers.set(normalizedIdentity.clientId, { identity: normalizedIdentity, send, close });
     session.presence.set(normalizedIdentity.clientId, {
       ...normalizedIdentity,
       connectedAt: new Date().toISOString()
@@ -242,12 +242,27 @@ export class RealtimeSessionHub {
     });
 
     const roomEntry = input.roomEntry ?? null;
-    const roomId = boundedText(roomEntry?.room?.id, 200) || null;
     const previousRoomId = session.tokenRooms.get(token.id) ?? null;
-    const roomChanged = Boolean(roomId && roomId !== previousRoomId);
-    if (roomChanged) session.tokenRooms.set(token.id, roomId);
+    const explicitRoomId = Object.prototype.hasOwnProperty.call(input, 'roomId');
+    const narratedRoomId = boundedText(roomEntry?.room?.id, 200) || null;
+    const nextRoomId = narratedRoomId ?? (explicitRoomId ? boundedText(input.roomId, 200) || null : previousRoomId);
+    const roomChanged = nextRoomId !== previousRoomId;
+    const shouldNarrate = Boolean(roomEntry && nextRoomId && roomChanged);
 
-    return { token, revision: session.revision, roomChanged, roomEntry, previousRoomId };
+    if (roomChanged) {
+      if (nextRoomId) session.tokenRooms.set(token.id, nextRoomId);
+      else session.tokenRooms.delete(token.id);
+    }
+
+    return {
+      token,
+      revision: session.revision,
+      roomChanged,
+      shouldNarrate,
+      roomEntry,
+      previousRoomId,
+      nextRoomId
+    };
   }
 
   restoreTokenRoom(sessionId, tokenId, previousRoomId) {
@@ -292,7 +307,9 @@ export class RealtimeSessionHub {
       createdAt: new Date().toISOString()
     });
     session.narrations.push(narration);
-    if (session.narrations.length > this.historyLimit) session.narrations.splice(0, session.narrations.length - this.historyLimit);
+    if (session.narrations.length > this.historyLimit) {
+      session.narrations.splice(0, session.narrations.length - this.historyLimit);
+    }
     const delivered = this.broadcast(sessionId, {
       type: RealtimeEventType.NARRATION,
       payload: narration
@@ -371,7 +388,7 @@ export class RealtimeSessionGateway {
       case RealtimeCommandType.TOKEN_MOVE: {
         const moved = this.hub.applyTokenMove(sessionId, identity, message.payload);
         try {
-          if (moved.roomChanged && moved.roomEntry) {
+          if (moved.shouldNarrate) {
             await this.sessionService.describeRoom(moved.roomEntry);
           }
         } catch (error) {
@@ -381,7 +398,8 @@ export class RealtimeSessionGateway {
         this.#ack(sessionId, identity.clientId, commandId, {
           type: message.type,
           revision: moved.revision,
-          roomChanged: moved.roomChanged
+          roomChanged: moved.roomChanged,
+          narrated: moved.shouldNarrate
         });
         return moved;
       }
@@ -404,12 +422,14 @@ export class RealtimeSessionGateway {
         this.#ack(sessionId, identity.clientId, commandId, { type: message.type, state: result.state });
         return result;
       }
-      case RealtimeCommandType.REQUEST_STATE:
+      case RealtimeCommandType.REQUEST_STATE: {
+        const snapshot = this.hub.getSnapshot(sessionId);
         this.hub.sendTo(sessionId, identity.clientId, {
           type: RealtimeEventType.STATE_SYNC,
-          payload: this.hub.getSnapshot(sessionId)
+          payload: snapshot
         });
-        return this.hub.getSnapshot(sessionId);
+        return snapshot;
+      }
       case RealtimeCommandType.PING:
         this.hub.sendTo(sessionId, identity.clientId, {
           type: RealtimeEventType.PONG,
