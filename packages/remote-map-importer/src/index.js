@@ -18,6 +18,10 @@ function normalizeMime(value) {
   return String(value ?? '').split(';')[0].trim().toLowerCase();
 }
 
+function normalizedHostname(value) {
+  return String(value ?? '').trim().toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '');
+}
+
 function privateIpv4(address) {
   const parts = address.split('.').map(Number);
   if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return true;
@@ -32,7 +36,7 @@ function privateIpv4(address) {
 }
 
 function privateIpv6(address) {
-  const value = address.toLowerCase().split('%')[0];
+  const value = normalizedHostname(address).split('%')[0];
   if (value === '::' || value === '::1') return true;
   if (value.startsWith('fc') || value.startsWith('fd') || value.startsWith('fe8') || value.startsWith('fe9') || value.startsWith('fea') || value.startsWith('feb') || value.startsWith('ff')) return true;
   if (value.startsWith('2001:db8:')) return true;
@@ -44,9 +48,10 @@ function privateIpv6(address) {
 }
 
 export function isPublicAddress(address) {
-  const family = isIP(String(address ?? ''));
-  if (family === 4) return !privateIpv4(String(address));
-  if (family === 6) return !privateIpv6(String(address));
+  const value = normalizedHostname(address);
+  const family = isIP(value);
+  if (family === 4) return !privateIpv4(value);
+  if (family === 6) return !privateIpv6(value);
   return false;
 }
 
@@ -63,7 +68,7 @@ export function parseRemoteMapUrl(value) {
   if (url.username || url.password) {
     throw remoteError('URLs com credenciais embutidas não são aceitas.', 'REMOTE_MAP_URL_CREDENTIALS_FORBIDDEN');
   }
-  const host = url.hostname.toLowerCase().replace(/\.$/, '');
+  const host = normalizedHostname(url.hostname);
   if (!host || host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local') || host.endsWith('.internal') || host.endsWith('.lan')) {
     throw remoteError('O endereço do mapa aponta para uma rede local ou reservada.', 'REMOTE_MAP_PRIVATE_HOST_FORBIDDEN', 403);
   }
@@ -71,7 +76,7 @@ export function parseRemoteMapUrl(value) {
 }
 
 export async function resolvePublicRemoteHost(url, lookupImpl = dnsLookup) {
-  const host = url.hostname;
+  const host = normalizedHostname(url.hostname);
   if (isIP(host)) {
     if (!isPublicAddress(host)) throw remoteError('O endereço do mapa aponta para uma rede privada ou reservada.', 'REMOTE_MAP_PRIVATE_HOST_FORBIDDEN', 403);
     return { address: host, family: isIP(host) };
@@ -182,7 +187,12 @@ function imageDimensions(buffer, mimeType) {
 
 function fileNameFor(url, mimeType) {
   const ext = mimeType === 'image/png' ? '.png' : mimeType === 'image/webp' ? '.webp' : '.jpg';
-  const raw = decodeURIComponent(basename(url.pathname || '') || `mapa-remoto${ext}`);
+  let raw = basename(url.pathname || '') || `mapa-remoto${ext}`;
+  try {
+    raw = decodeURIComponent(raw);
+  } catch {
+    raw = `mapa-remoto${ext}`;
+  }
   const safe = raw.replace(/[^A-Za-z0-9._ -]/g, '_').slice(0, 160);
   return safe.includes('.') ? safe : `${safe || 'mapa-remoto'}${ext}`;
 }
@@ -244,7 +254,7 @@ export class RemoteMapImporter {
         fileName: fileNameFor(url, detected),
         width: dimensions.width,
         height: dimensions.height,
-        sourceHost: url.hostname.toLowerCase()
+        sourceHost: normalizedHostname(url.hostname)
       });
     }
     throw remoteError('Falha ao importar mapa remoto.', 'REMOTE_MAP_DOWNLOAD_FAILED', 502);
