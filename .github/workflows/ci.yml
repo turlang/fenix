@@ -15,51 +15,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  normalize-lock:
-    name: Normalize package lock once
-    if: >-
-      github.event_name == 'pull_request' &&
-      github.event.pull_request.head.repo.full_name == github.repository &&
-      github.event.pull_request.head.ref == 'agent/fenix-shared-core-phase2-5'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      contents: write
-
-    steps:
-      - name: Checkout PR head
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.ref }}
-
-      - name: Configure Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          registry-url: https://registry.npmjs.org
-
-      - name: Normalize old registry and regenerate workspace lock
-        shell: bash
-        run: |
-          set -euo pipefail
-          node scripts/normalize-package-lock-registry.mjs
-          npm install --package-lock-only --ignore-scripts --no-audit --no-fund --registry=https://registry.npmjs.org
-          node scripts/normalize-package-lock-registry.mjs
-
-      - name: Commit regenerated lock when needed
-        shell: bash
-        run: |
-          set -euo pipefail
-          if git diff --quiet -- package-lock.json; then
-            echo "package-lock.json already portable"
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add package-lock.json
-          git commit -m "regenerate portable npm lockfile"
-          git push origin HEAD:${{ github.event.pull_request.head.ref }}
-
   quality:
     name: Core / Node.js ${{ matrix.node-version }}
     runs-on: ubuntu-latest
@@ -84,11 +39,10 @@ jobs:
       - name: Run tests
         run: node --test
 
-  dependency-smoke:
-    name: Runtime dependency smoke / Node.js 24
+  integration-build:
+    name: Portable install + API + VTT build / Node.js 24
     runs-on: ubuntu-latest
-    timeout-minutes: 2
-    continue-on-error: true
+    timeout-minutes: 8
 
     steps:
       - name: Checkout
@@ -98,12 +52,18 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 24
+          registry-url: https://registry.npmjs.org
 
-      - name: Install runtime dependencies with hard timeout
-        shell: bash
-        run: |
-          set -euo pipefail
-          timeout --kill-after=5s 45s npm ci --ignore-scripts --no-audit --no-fund --fetch-retries=1 --fetch-timeout=20000
+      - name: Verify portable lockfile
+        run: node scripts/normalize-package-lock-registry.mjs --check
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund --registry=https://registry.npmjs.org
 
       - name: Import Fastify runtime
         run: node -e "import('fastify').then(() => console.log('Fastify runtime OK'))"
+
+      - name: Build standalone VTT
+        env:
+          NEXT_PUBLIC_FENIX_API_URL: http://localhost:3001
+        run: npm run build:vtt
