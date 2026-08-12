@@ -39,8 +39,6 @@ export function createConfig(env = process.env) {
   const nodeEnv = env.NODE_ENV?.trim() || 'development';
   const configuredOrigins = (env.CORS_ALLOWED_ORIGINS || 'http://localhost:3000,http://localhost:3001')
     .split(',').map((origin) => origin.trim()).filter(Boolean);
-  // Foundry local usa 30000 por padrão. Mantenha essas origens mesmo quando um .env antigo
-  // já possui CORS_ALLOWED_ORIGINS sem a porta do Foundry.
   const allowedOrigins = [...new Set([
     'http://localhost:30000',
     'http://127.0.0.1:30000',
@@ -57,6 +55,7 @@ export function createConfig(env = process.env) {
       name: 'BODY_LIMIT_BYTES'
     }),
     trustProxy: parseBoolean(env.TRUST_PROXY, false),
+    allowLegacySessionHttp: parseBoolean(env.FENIX_ALLOW_LEGACY_SESSION_HTTP, nodeEnv !== 'production'),
     allowedOrigins
   });
 }
