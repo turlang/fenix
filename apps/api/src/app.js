@@ -89,7 +89,14 @@ export async function createApiApp({
       reply.type('text/plain; version=0.0.4; charset=utf-8');
       return runtimeObservability.toPrometheus();
     });
-    app.get('/v1/runtime/observability', { logLevel: 'silent' }, async () => runtimeObservability.snapshot());
+    app.get('/v1/runtime/observability', { logLevel: 'silent' }, async () => {
+      const snapshot = runtimeObservability.snapshot();
+      return {
+        startedAt: snapshot.startedAt,
+        counters: snapshot.counters,
+        latencies: snapshot.latencies
+      };
+    });
   }
 
   if (authService && campaignService) {
