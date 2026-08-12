@@ -40,7 +40,7 @@ jobs:
         run: node --test
 
   integration-build:
-    name: Portable install + Postgres + leases + auth + realtime + VTT build / Node.js 24
+    name: Portable install + Postgres + leases + routing + auth + realtime + VTT build / Node.js 24
     runs-on: ubuntu-latest
     timeout-minutes: 10
     services:
@@ -75,7 +75,7 @@ jobs:
         run: npm ci --ignore-scripts --no-audit --no-fund --registry=https://registry.npmjs.org
 
       - name: Import API runtimes
-        run: node -e "Promise.all([import('fastify'), import('@fastify/websocket'), import('pg')]).then(() => console.log('Fastify + PostgreSQL runtimes OK'))"
+        run: node -e "Promise.all([import('fastify'), import('@fastify/websocket'), import('pg'), import('ws')]).then(() => console.log('Fastify + PostgreSQL + WebSocket runtimes OK'))"
 
       - name: Test PostgreSQL repository
         env:
@@ -86,6 +86,11 @@ jobs:
         env:
           DATABASE_URL: postgres://fenix:fenix_test@127.0.0.1:5432/fenix_test
         run: npm run test:coordination-integration
+
+      - name: Test owner-aware runtime routing
+        env:
+          DATABASE_URL: postgres://fenix:fenix_test@127.0.0.1:5432/fenix_test
+        run: npm run test:routing-integration
 
       - name: Test auth and campaign HTTP
         run: npm run test:auth-integration
