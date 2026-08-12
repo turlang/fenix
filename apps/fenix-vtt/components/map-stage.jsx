@@ -129,10 +129,19 @@ export function MapStage({
   }
 
   const backgroundStyle = demoScene.background ? {
+    position: 'absolute',
+    left: 0,
+    top: 0,
     width: `${demoScene.width}px`,
     height: `${demoScene.height}px`,
     backgroundImage: `url("${demoScene.background}")`,
-    transform: `translate(${-demoViewport.x * demoViewport.zoom}px, ${-demoViewport.y * demoViewport.zoom}px) scale(${demoViewport.zoom})`
+    backgroundSize: '100% 100%',
+    backgroundPosition: '0 0',
+    backgroundRepeat: 'no-repeat',
+    transformOrigin: 'top left',
+    transform: `translate(${-demoViewport.x * demoViewport.zoom}px, ${-demoViewport.y * demoViewport.zoom}px) scale(${demoViewport.zoom})`,
+    pointerEvents: 'none',
+    zIndex: 0
   } : undefined;
 
   return (
