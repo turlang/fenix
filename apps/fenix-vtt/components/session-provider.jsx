@@ -209,30 +209,36 @@ export function FenixSessionProvider({ children }) {
     const text = String(content ?? '').trim();
     if (!text) return null;
     dispatch({ type: 'REQUEST_BEGIN' });
+    let submittedRealtime = false;
     try {
       await ensureSession();
+      const realtime = realtimeRef.current;
+      if (realtime?.connected) {
+        realtime.submitAction({ content: text, actorId: state.selectedActorId });
+        submittedRealtime = true;
+        return { state: 'PENDING_REALTIME', transport: 'websocket' };
+      }
+
       const result = await client.action({
         content: text,
         actorId: state.selectedActorId,
         messageId: globalThis.crypto?.randomUUID?.() ?? null
       });
-      if (!realtimeRef.current?.connected) {
-        const entry = createTimelineEntry({
-          type: 'ACTION_RESOLUTION',
-          title: 'Resolução da ação',
-          text: result.narration,
-          audio: result.audio,
-          actorId: state.selectedActorId
-        });
-        dispatch({ type: 'TIMELINE_APPEND', entry, engineState: result.state });
-        enqueueAudio(result.audio);
-      }
+      const entry = createTimelineEntry({
+        type: 'ACTION_RESOLUTION',
+        title: 'Resolução da ação',
+        text: result.narration,
+        audio: result.audio,
+        actorId: state.selectedActorId
+      });
+      dispatch({ type: 'TIMELINE_APPEND', entry, engineState: result.state });
+      enqueueAudio(result.audio);
       return result;
     } catch (error) {
       dispatch({ type: 'CONNECTION_ERROR', disconnected: error?.code === 'FENIX_API_UNREACHABLE', error: errorMessage(error) });
       throw error;
     } finally {
-      dispatch({ type: 'REQUEST_END' });
+      if (!submittedRealtime) dispatch({ type: 'REQUEST_END' });
     }
   }, [client, enqueueAudio, ensureSession, state.selectedActorId]);
 
