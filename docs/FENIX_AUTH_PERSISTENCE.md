@@ -1,8 +1,8 @@
-# Fênix — Autenticação e Persistência de Campanhas
+# Fênix — Autenticação, Campanhas e Persistência
 
 ## Objetivo
 
-Este marco remove a autoridade de GM/jogador da URL do cliente standalone e torna contas, campanhas, convites, sessão narrativa e mundo realtime recuperáveis após reinício do processo.
+A infraestrutura standalone mantém identidade, campanhas, convites e estado realtime fora do navegador e permite recuperar sessões após reinício. O marco atual acrescenta duas capacidades: `PostgresFenixRepository` para persistência transacional e `CampaignRuntimeRegistry` para executar várias campanhas simultaneamente dentro da mesma instância do Engine.
 
 ## Fluxo de identidade
 
@@ -24,104 +24,121 @@ A URL WebSocket transporta somente `sessionId` e `clientId`. `role`, `actorId` e
 
 - Senhas são derivadas com `scrypt`, salt aleatório e comparação em tempo constante.
 - O token de sessão é gerado com `randomBytes(32)`.
-- O token reutilizável não é gravado em disco; somente seu hash SHA-256 é persistido.
+- O token reutilizável não é gravado em repouso; somente seu hash SHA-256 é persistido.
 - O cookie é `HttpOnly` e `Secure` em produção.
 - Desenvolvimento usa `SameSite=Lax` por padrão.
-- Produção usa `SameSite=None` por padrão para permitir frontend/API em sites distintos; deployments same-site podem optar por `Lax` ou `Strict`.
-
-## Bootstrap
-
-A instalação começa sem usuários. `POST /v1/auth/bootstrap` cria exatamente o primeiro usuário. O `AuthService` possui trava em memória para impedir duas requisições concorrentes de se tornarem o primeiro usuário.
-
-Depois da primeira conta, o bootstrap fecha com `AUTH_BOOTSTRAP_CLOSED`.
+- Produção usa `SameSite=None` por padrão para frontend/API em sites distintos; deployments same-site podem escolher `Lax` ou `Strict`.
 
 ## Campanhas e papéis
 
-Uma campanha possui:
-
-- proprietário (`ownerUserId`);
-- membros;
-- papel `gm` ou `player` por membro;
-- `actorId` obrigatório para jogador;
-- sessão narrativa ativa opcional.
-
-O GM pode mover qualquer token, iniciar/encerrar a sessão e trocar cena. O jogador só pode mover e agir como o `actorId` atribuído à sua membership. Essa regra é aplicada no servidor HTTP e no gateway realtime.
+Uma campanha possui proprietário, membros, papel `gm/player`, `actorId` de jogador e sessão narrativa ativa opcional. O GM pode controlar cena e sessão; o jogador só pode mover e agir como o ator atribuído à sua membership. Essa regra é aplicada no servidor HTTP e no gateway realtime.
 
 ## Convites
 
-Convites de jogador:
+Convites são criados pelo GM, reservam um `actorId`, usam token aleatório, persistem somente seu hash, expiram e são one-time. O cliente transporta o segredo no fragmento `#invite=...` e o troca por POST explícito de inspeção/aceite.
 
-- são criados somente por GM;
-- reservam um `actorId`;
-- possuem token aleatório;
-- persistem somente o hash do token;
-- expiram;
-- podem ser usados uma única vez;
-- são enviados pelo cliente no fragmento `#invite=...`, evitando colocar o segredo no path/query HTTP e em logs comuns de servidor.
+## Adapters de persistência
 
-O browser troca o fragmento por um POST explícito para inspeção/aceite.
+### JSON — fallback local
 
-## Persistência alpha
-
-`JsonFileFenixRepository` é o adapter persistente atual. Ele escreve o estado em arquivo temporário com permissão restrita e faz `rename` atômico para o caminho final.
-
-Por padrão:
+`JsonFileFenixRepository` permanece disponível para desenvolvimento e instalações alpha single-instance. Ele escreve arquivo temporário com permissão restrita e faz `rename` atômico.
 
 ```env
+FENIX_PERSISTENCE_DRIVER=json
 FENIX_STATE_FILE=./data/fenix-state.json
 ```
 
-O arquivo contém hashes de senha/token, contas, campanhas, memberships, convites, sessão ativa e snapshots realtime. Ele é ignorado pelo Git.
+### PostgreSQL — produção
 
-### Limite operacional
+`PostgresFenixRepository` implementa o mesmo contrato `snapshot/read/mutate`, portanto `AuthService` e `CampaignService` não conhecem o driver concreto.
 
-Este adapter é apropriado para **uma instância do Engine** durante a fase alpha. Ele não implementa locking distribuído, transações multi-instância ou coordenação horizontal. Em Render, o caminho precisa estar em Persistent Disk para sobreviver a substituição do container.
-
-A futura implementação `PostgresFenixRepository` deverá implementar o mesmo contrato sem alterar `AuthService`, `CampaignService`, `PersistentSessionService` ou `SessionDirector`.
-
-## Recuperação de sessão
-
-Ao iniciar o Engine:
-
-```text
-JsonFileFenixRepository.initialize()
-  → AuthService.initialize()
-  → CampaignService.initialize()
-  → localizar activeSession
-  → runtime.restore(sessionId, snapshot)
-  → SessionDirector.restore()
-  → COLLECTING_ACTIONS
-  → hidratar RealtimeSessionHub
+```env
+FENIX_PERSISTENCE_DRIVER=postgres
+DATABASE_URL=postgres://usuario:senha@host:5432/fenix
+FENIX_POSTGRES_POOL_MAX=10
+FENIX_POSTGRES_CONNECT_TIMEOUT_MS=5000
+FENIX_POSTGRES_IDLE_TIMEOUT_MS=30000
 ```
 
-`SessionDirector.restore()` não executa `createOpening()`. Portanto um restart/deploy não repete automaticamente a abertura da cena.
+O adapter usa:
 
-O snapshot realtime restaura:
+- pool reutilizável do `node-postgres`;
+- `pg_advisory_xact_lock` para serializar a criação inicial do schema entre processos;
+- transação com client dedicado;
+- `SELECT ... FOR UPDATE` antes de cada `mutate`;
+- `COMMIT/ROLLBACK` explícitos;
+- uma linha JSONB versionada como formato de transição da alpha.
 
-- cena;
-- tokens;
-- revisão;
-- sala atual de cada token;
-- histórico recente de narração.
+Assim, duas instâncias do repository podem mutar o mesmo estado sem sobrescrever silenciosamente a atualização concorrente.
 
-Presença não é persistida: cada browser precisa reconectar e gerar presença nova.
+### Migração JSON → PostgreSQL
+
+Com `DATABASE_URL` configurada:
+
+```bash
+npm run migrate:postgres
+```
+
+O script importa o JSON somente quando o estado PostgreSQL está vazio. Se o banco já contém dados, a migração falha fechada em vez de sobrescrevê-los.
+
+## CampaignRuntimeRegistry
+
+O Engine não possui mais um único runtime global. O registry mantém:
+
+```text
+campaign-a → runtime A → session A
+campaign-b → runtime B → session B
+campaign-c → runtime C → session C
+```
+
+Ele:
+
+- restaura todas as campanhas com `activeSession` no boot;
+- indexa `campaignId ↔ sessionId`;
+- direciona action/room/status/end ao runtime correto;
+- impede dois `start` concorrentes para a mesma campanha;
+- permite campanhas diferentes iniciarem simultaneamente;
+- encerra uma campanha sem derrubar as demais;
+- preserva um runtime legado isolado para o adapter Foundry em desenvolvimento.
+
+Cada conexão WebSocket é escopada por `sessionId`, mantendo o `RealtimeSessionGateway` e o protocolo existentes sem introduzir WebSocket no Shared Core.
+
+## Recuperação
+
+```text
+Repository.initialize()
+  → AuthService.initialize()
+  → CampaignService.initialize()
+  → CampaignRuntimeRegistry.initialize()
+  → restaurar cada activeSession
+  → SessionDirector.restore()
+  → hidratar RealtimeSessionHub por sessionId
+```
+
+`SessionDirector.restore()` não executa `createOpening()`, então restart/deploy não repete automaticamente a abertura. Cena, tokens, revisão, sala atual e histórico recente são recuperados; presença continua efêmera.
+
+## Limite distribuído ainda existente
+
+PostgreSQL torna **as mutações do repository** seguras entre processos e o registry permite **múltiplas campanhas dentro de uma instância do Engine**. Isso ainda não equivale a horizontal scaling completo.
+
+`AuthService` e `CampaignService` mantêm índices/cache em memória após `initialize()`, e não existe ainda lease distribuído para decidir qual Engine possui um runtime ativo. Duas instâncias de aplicação podem compartilhar o banco com segurança de escrita, mas ainda precisam de invalidação/refresh de cache e coordenação de ownership antes de atender a mesma campanha simultaneamente.
+
+A próxima fronteira distribuída é `DistributedRuntimeLease + Postgres LISTEN/NOTIFY (ou outro mecanismo de invalidação)`.
 
 ## Compatibilidade Foundry
 
-O módulo Foundry alpha.24 continua usando os endpoints HTTP existentes. Em desenvolvimento, `FENIX_ALLOW_LEGACY_SESSION_HTTP` é `true` por padrão. Em produção, o padrão é `false`; habilite-o explicitamente apenas durante a transição do adapter Foundry.
-
-Isso preserva a integração atual sem permitir que o VTT standalone use o caminho legado para contornar autenticação.
+O módulo Foundry alpha.24 continua usando os endpoints existentes. Em desenvolvimento, `FENIX_ALLOW_LEGACY_SESSION_HTTP=true` preserva o caminho legado. Em produção ele fica fechado por padrão.
 
 ## Gates
 
-O CI verifica:
+O CI exige:
 
-- senha/token não persistidos em texto puro;
-- apenas um bootstrap concorrente;
-- convite one-time;
-- tentativa de elevar `role`/trocar `actorId` ignorada pelo authorizer autenticado;
-- mesma `sessionId` após restart sem nova abertura;
-- hidratação do estado realtime;
-- integração HTTP real de auth/campanhas;
-- integração WebSocket real;
+- testes do Core em Node.js 20, 22 e 24;
+- isolamento de múltiplos runtimes e bloqueio de start duplicado;
+- PostgreSQL 16 real em service container;
+- inicialização concorrente do schema;
+- duas instâncias de repository mutando o mesmo estado sem lost update;
+- auth/campanhas HTTP reais;
+- WebSocket real;
+- `npm ci` com lockfile público;
 - build Next.js de produção.
