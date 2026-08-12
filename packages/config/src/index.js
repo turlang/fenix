@@ -95,6 +95,26 @@ export function createConfig(env = process.env) {
       max: 3,
       name: 'FENIX_RUNTIME_ROUTING_MAX_RETRIES'
     }),
+    commandLedgerWaitMs: parseInteger(env.FENIX_COMMAND_LEDGER_WAIT_MS, 1500, {
+      min: 0,
+      max: 10000,
+      name: 'FENIX_COMMAND_LEDGER_WAIT_MS'
+    }),
+    commandLedgerUnknownAfterMs: parseInteger(env.FENIX_COMMAND_LEDGER_UNKNOWN_AFTER_MS, 60000, {
+      min: 5000,
+      max: 3600000,
+      name: 'FENIX_COMMAND_LEDGER_UNKNOWN_AFTER_MS'
+    }),
+    commandLedgerRetentionHours: parseInteger(env.FENIX_COMMAND_LEDGER_RETENTION_HOURS, 168, {
+      min: 1,
+      max: 2160,
+      name: 'FENIX_COMMAND_LEDGER_RETENTION_HOURS'
+    }),
+    commandLedgerResultMaxBytes: parseInteger(env.FENIX_COMMAND_LEDGER_RESULT_MAX_BYTES, 512 * 1024, {
+      min: 1024,
+      max: 2 * 1024 * 1024,
+      name: 'FENIX_COMMAND_LEDGER_RESULT_MAX_BYTES'
+    }),
     runtimeLeaseTtlMs,
     runtimeHeartbeatMs,
     runtimeReconcileMs: parseInteger(env.FENIX_RUNTIME_RECONCILE_MS, 5000, {
