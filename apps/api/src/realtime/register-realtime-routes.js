@@ -10,11 +10,22 @@ function sendJson(socket, event) {
   return true;
 }
 
-export function registerRealtimeRoutes(app, { gateway }) {
+export function registerRealtimeRoutes(app, { gateway, allowOrigin = () => true }) {
   if (!app) throw new TypeError('app é obrigatório.');
   if (!gateway) throw new TypeError('gateway é obrigatório.');
 
-  app.get('/v1/realtime', { websocket: true }, (socket, request) => {
+  app.get('/v1/realtime', {
+    websocket: true,
+    preValidation: async (request, reply) => {
+      const origin = request.headers.origin;
+      if (origin && !allowOrigin(origin)) {
+        return reply.code(403).send({
+          code: 'REALTIME_ORIGIN_FORBIDDEN',
+          message: 'Origem não autorizada para o canal realtime.'
+        });
+      }
+    }
+  }, (socket, request) => {
     const query = request.query ?? {};
     const sessionId = text(query.sessionId);
     const clientId = text(query.clientId, 120);
