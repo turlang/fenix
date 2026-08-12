@@ -3,6 +3,7 @@ import { dirname, resolve } from 'node:path';
 
 const SCHEMA_VERSION = 1;
 const POSTGRES_ROW_ID = 1;
+const POSTGRES_SCHEMA_LOCK = 734611901;
 
 function emptyState() {
   return {
@@ -160,20 +161,32 @@ export class PostgresFenixRepository extends InMemoryFenixRepository {
       throw new TypeError('Pool PostgreSQL inválido.');
     }
 
-    await this.pool.query(`
-      CREATE TABLE IF NOT EXISTS fenix_repository_state (
-        id SMALLINT PRIMARY KEY CHECK (id = 1),
-        schema_version INTEGER NOT NULL,
-        state JSONB NOT NULL,
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      )
-    `);
-    await this.pool.query(
-      `INSERT INTO fenix_repository_state (id, schema_version, state)
-       VALUES ($1, $2, $3::jsonb)
-       ON CONFLICT (id) DO NOTHING`,
-      [POSTGRES_ROW_ID, SCHEMA_VERSION, JSON.stringify(emptyState())]
-    );
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('SELECT pg_advisory_xact_lock($1)', [POSTGRES_SCHEMA_LOCK]);
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS fenix_repository_state (
+          id SMALLINT PRIMARY KEY CHECK (id = 1),
+          schema_version INTEGER NOT NULL,
+          state JSONB NOT NULL,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `);
+      await client.query(
+        `INSERT INTO fenix_repository_state (id, schema_version, state)
+         VALUES ($1, $2, $3::jsonb)
+         ON CONFLICT (id) DO NOTHING`,
+        [POSTGRES_ROW_ID, SCHEMA_VERSION, JSON.stringify(emptyState())]
+      );
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+
     await this.refresh();
     return this.snapshot();
   }
