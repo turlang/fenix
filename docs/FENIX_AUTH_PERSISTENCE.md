@@ -1,8 +1,8 @@
-# Fênix — Autenticação, Campanhas e Persistência
+# Fênix — Autenticação, Campanhas, Persistência e Coordenação
 
 ## Objetivo
 
-A infraestrutura standalone mantém identidade, campanhas, convites e estado realtime fora do navegador e permite recuperar sessões após reinício. O marco atual acrescenta duas capacidades: `PostgresFenixRepository` para persistência transacional e `CampaignRuntimeRegistry` para executar várias campanhas simultaneamente dentro da mesma instância do Engine.
+A infraestrutura standalone mantém identidade, campanhas, convites e estado realtime fora do navegador, recupera sessões após reinício e permite múltiplas campanhas simultâneas. Com PostgreSQL, o Engine também coordena ownership de runtime entre réplicas por lease distribuído e invalida caches por `LISTEN/NOTIFY`.
 
 ## Fluxo de identidade
 
@@ -48,7 +48,7 @@ FENIX_PERSISTENCE_DRIVER=json
 FENIX_STATE_FILE=./data/fenix-state.json
 ```
 
-### PostgreSQL — produção
+### PostgreSQL — persistência compartilhada
 
 `PostgresFenixRepository` implementa o mesmo contrato `snapshot/read/mutate`, portanto `AuthService` e `CampaignService` não conhecem o driver concreto.
 
@@ -67,9 +67,10 @@ O adapter usa:
 - transação com client dedicado;
 - `SELECT ... FOR UPDATE` antes de cada `mutate`;
 - `COMMIT/ROLLBACK` explícitos;
-- uma linha JSONB versionada como formato de transição da alpha.
+- uma linha JSONB versionada como formato de transição da alpha;
+- publicação de invalidação somente depois do `COMMIT` e depois de liberar o client da transação.
 
-Assim, duas instâncias do repository podem mutar o mesmo estado sem sobrescrever silenciosamente a atualização concorrente.
+Assim, duas instâncias do repository podem mutar o mesmo estado sem lost update. Falha de `NOTIFY` não transforma um `COMMIT` já confirmado em falha de aplicação.
 
 ### Migração JSON → PostgreSQL
 
@@ -93,37 +94,131 @@ campaign-c → runtime C → session C
 
 Ele:
 
-- restaura todas as campanhas com `activeSession` no boot;
-- indexa `campaignId ↔ sessionId`;
+- restaura campanhas persistidas cuja ownership consegue adquirir;
+- indexa `campaignId ↔ sessionId` localmente;
 - direciona action/room/status/end ao runtime correto;
 - impede dois `start` concorrentes para a mesma campanha;
 - permite campanhas diferentes iniciarem simultaneamente;
 - encerra uma campanha sem derrubar as demais;
-- preserva um runtime legado isolado para o adapter Foundry em desenvolvimento.
+- preserva um runtime legado isolado para o adapter Foundry em desenvolvimento;
+- reconcilia periodicamente estado persistido e ownership distribuído.
 
 Cada conexão WebSocket é escopada por `sessionId`, mantendo o `RealtimeSessionGateway` e o protocolo existentes sem introduzir WebSocket no Shared Core.
+
+## Runtime lease distribuído
+
+Quando o driver é PostgreSQL, `PostgresRuntimeLeaseManager` cria a tabela `fenix_runtime_leases`.
+
+Cada registro contém:
+
+- `campaign_id`;
+- `owner_id`;
+- `owner_url` opcional;
+- `session_id`;
+- `generation`;
+- `lease_until`;
+- `updated_at`.
+
+Configuração típica:
+
+```env
+FENIX_INSTANCE_ID=engine-a
+FENIX_INSTANCE_PUBLIC_URL=https://engine-a.example.com
+FENIX_RUNTIME_LEASE_TTL_MS=15000
+FENIX_RUNTIME_HEARTBEAT_MS=5000
+FENIX_RUNTIME_RECONCILE_MS=5000
+```
+
+`FENIX_INSTANCE_ID` deve ser único por processo/réplica; quando omitido, o Engine gera UUID no boot.
+
+### Aquisição e heartbeat
+
+Antes de iniciar/restaurar uma campanha persistente, a instância precisa adquirir o lease. Enquanto for owner, renova `lease_until` periodicamente. Outra instância recebe `RUNTIME_LEASE_HELD` enquanto o lease estiver válido.
+
+### Fencing token
+
+`generation` é um fencing token monotônico. Quando um lease expirado é retomado, a geração aumenta — inclusive se a retomada usar o mesmo `owner_id`. Antes de action, room entry, end e persistência realtime, o registry chama `assertOwned()` com a geração registrada no runtime local.
+
+Isso impede que uma instância antiga continue processando a campanha depois de um takeover.
+
+### Failover
+
+Quando o lease expira:
+
+```text
+Engine A perde/expira lease
+        ↓
+Engine B reconcilia
+        ↓
+acquire campaign lease
+        ↓
+generation N → N+1
+        ↓
+restore mesma sessionId
+        ↓
+hidrata RealtimeSessionHub
+```
+
+O `SessionDirector.restore()` não executa `createOpening()`, então o takeover não repete automaticamente a abertura da cena.
+
+A instância antiga falha em `assertOwned()` com `RUNTIME_LEASE_LOST` e remove seu runtime do registry local.
+
+## Postgres LISTEN/NOTIFY e invalidação de cache
+
+`PostgresStateBus` mantém uma conexão dedicada em:
+
+```sql
+LISTEN fenix_state_changed;
+```
+
+Após mutações persistentes, o origin publica um evento `STATE_CHANGED` usando `pg_notify`. A outra instância:
+
+1. recebe a notificação;
+2. executa `repository.refresh()`;
+3. reconstrói os índices do `AuthService`;
+4. reconstrói os índices do `CampaignService`;
+5. reconcilia runtimes/leases.
+
+Eventos originados pela própria instância são ignorados pelo listener. O canal possui reconexão automática em caso de erro.
+
+`NOTIFY` é aceleração, não a única garantia de convergência: a reconciliação periódica continua verificando o banco, cobrindo notificações perdidas e períodos de reconexão.
 
 ## Recuperação
 
 ```text
 Repository.initialize()
+  → PostgresStateBus.initialize()
+  → PostgresRuntimeLeaseManager.initialize()
   → AuthService.initialize()
   → CampaignService.initialize()
   → CampaignRuntimeRegistry.initialize()
-  → restaurar cada activeSession
+  → adquirir leases disponíveis
+  → restaurar activeSessions pertencentes à instância
   → SessionDirector.restore()
   → hidratar RealtimeSessionHub por sessionId
 ```
 
-`SessionDirector.restore()` não executa `createOpening()`, então restart/deploy não repete automaticamente a abertura. Cena, tokens, revisão, sala atual e histórico recente são recuperados; presença continua efêmera.
+Cena, tokens, revisão, sala atual e histórico recente são recuperados; presença continua efêmera e cada browser precisa reconectar.
 
-## Limite distribuído ainda existente
+## Shutdown seguro
 
-PostgreSQL torna **as mutações do repository** seguras entre processos e o registry permite **múltiplas campanhas dentro de uma instância do Engine**. Isso ainda não equivale a horizontal scaling completo.
+No encerramento normal o Engine:
 
-`AuthService` e `CampaignService` mantêm índices/cache em memória após `initialize()`, e não existe ainda lease distribuído para decidir qual Engine possui um runtime ativo. Duas instâncias de aplicação podem compartilhar o banco com segurança de escrita, mas ainda precisam de invalidação/refresh de cache e coordenação de ownership antes de atender a mesma campanha simultaneamente.
+1. persiste snapshots realtime;
+2. fecha o Fastify para parar a entrada de novas requisições;
+3. interrompe reconciliação/heartbeat;
+4. libera os leases que ainda possui;
+5. fecha `LISTEN` e pool PostgreSQL.
 
-A próxima fronteira distribuída é `DistributedRuntimeLease + Postgres LISTEN/NOTIFY (ou outro mecanismo de invalidação)`.
+Isso reduz a janela de split-brain durante deploy/shutdown normal. Em crash abrupto, o failover depende da expiração do TTL do lease.
+
+## Limite distribuído ainda existente: ingress
+
+Ownership, cache invalidation e failover de runtime já estão coordenados entre Engines. Ainda não existe **proxy/redirect automático de comandos para o owner**.
+
+Portanto, se um load balancer enviar uma action ou WebSocket para uma réplica que não possui aquela campanha, a réplica reconhece o runtime como remoto, mas não encaminha automaticamente a operação à réplica dona. Para operação horizontal, use afinidade/roteamento owner-aware até existir essa camada.
+
+Essa limitação é intencionalmente separada do Shared Core e do `SessionDirector`.
 
 ## Compatibilidade Foundry
 
@@ -131,16 +226,21 @@ O módulo Foundry alpha.24 continua usando os endpoints existentes. Em desenvolv
 
 ## Gates
 
-A CI #167 foi concluída com sucesso em 2026-08-12. O gate provou:
+A pipeline valida:
 
 - Core em Node.js 20, 22 e 24;
-- 94 testes / 94 aprovados no Node 24;
-- isolamento de múltiplos runtimes e bloqueio de start duplicado;
+- suíte `node:test` sem regressões;
 - PostgreSQL 16 real em service container;
 - inicialização concorrente do schema;
-- duas instâncias de repository mutando o mesmo estado sem lost update;
+- duas instâncias de repository sem lost update;
+- dois Engines disputando a mesma campanha;
+- rejeição do segundo owner enquanto o lease está válido;
+- takeover após expiração com incremento de `generation`;
+- bloqueio da instância antiga por fencing;
+- restauração da mesma `sessionId` no novo owner;
+- `LISTEN/NOTIFY` atualizando caches de auth e campanhas;
 - auth/campanhas HTTP reais;
 - WebSocket real;
 - `npm ci` com lockfile público;
 - build Next.js de produção;
-- workflow final somente-leitura (`contents: read`).
+- workflow somente-leitura (`contents: read`).
