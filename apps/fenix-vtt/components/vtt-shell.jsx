@@ -42,6 +42,7 @@ export function VttShell({ onExitCampaign = null, onLogout = null }) {
   const [inviteUrl, setInviteUrl] = useState(null);
   const [sceneManagerOpen, setSceneManagerOpen] = useState(false);
   const [sceneUploadBusy, setSceneUploadBusy] = useState(false);
+  const [sceneSource, setSceneSource] = useState('upload');
   const {
     state,
     identity,
@@ -57,6 +58,7 @@ export function VttShell({ onExitCampaign = null, onLogout = null }) {
     endSession,
     createInvite,
     createMapScene,
+    createRemoteMapScene,
     activateScene,
     updateSceneGrid,
     resolveAssetUrl,
@@ -121,20 +123,30 @@ export function VttShell({ onExitCampaign = null, onLogout = null }) {
     event.preventDefault();
     if (sceneUploadBusy) return;
     const form = new FormData(event.currentTarget);
-    const file = form.get('mapFile');
-    if (!(file instanceof File) || !file.size) return;
     setSceneUploadBusy(true);
     try {
-      const dimensions = await imageDimensions(file);
-      await createMapScene({
-        file,
+      const common = {
         name: form.get('name'),
         description: form.get('description'),
-        width: dimensions.width,
-        height: dimensions.height,
         gridSize: Number(form.get('gridSize')) || 70
-      });
+      };
+      if (sceneSource === 'url') {
+        const url = String(form.get('mapUrl') ?? '').trim();
+        if (!url) return;
+        await createRemoteMapScene({ ...common, url });
+      } else {
+        const file = form.get('mapFile');
+        if (!(file instanceof File) || !file.size) return;
+        const dimensions = await imageDimensions(file);
+        await createMapScene({
+          ...common,
+          file,
+          width: dimensions.width,
+          height: dimensions.height
+        });
+      }
       event.currentTarget.reset();
+      setSceneSource('upload');
       setSceneManagerOpen(false);
     } catch {
       // provider já publicou o erro operacional.
@@ -189,14 +201,22 @@ export function VttShell({ onExitCampaign = null, onLogout = null }) {
 
             {isGm && sceneManagerOpen ? (
               <form className="scene-manager-form" onSubmit={handleCreateScene}>
+                <div className="scene-source-tabs" role="tablist" aria-label="Origem do mapa">
+                  <button type="button" className={sceneSource === 'upload' ? 'active' : ''} onClick={() => setSceneSource('upload')}>Arquivo</button>
+                  <button type="button" className={sceneSource === 'url' ? 'active' : ''} onClick={() => setSceneSource('url')}>URL</button>
+                </div>
                 <label>Nome da cena<input name="name" placeholder="Ex.: Templo em Ruínas" minLength={2} required /></label>
-                <label>Mapa<input name="mapFile" type="file" accept="image/png,image/jpeg,image/webp" required /></label>
+                {sceneSource === 'url' ? (
+                  <label>Endereço HTTP/HTTPS<input name="mapUrl" type="url" inputMode="url" placeholder="https://exemplo.com/mapas/templo.webp" required /></label>
+                ) : (
+                  <label>Mapa<input name="mapFile" type="file" accept="image/png,image/jpeg,image/webp" required /></label>
+                )}
                 <label>Grid (px)<input name="gridSize" type="number" min="8" max="500" defaultValue="70" required /></label>
                 <label>Descrição visível<textarea name="description" rows="3" placeholder="O que os personagens percebem ao entrar nesta cena." /></label>
                 <button className="primary-button" disabled={sceneUploadBusy || state.busy}>
-                  {sceneUploadBusy ? 'Enviando mapa…' : 'Criar cena'}
+                  {sceneUploadBusy ? (sceneSource === 'url' ? 'Importando URL…' : 'Enviando mapa…') : 'Criar cena'}
                 </button>
-                <small>PNG, JPG ou WEBP · até 15 MB.</small>
+                <small>{sceneSource === 'url' ? 'O Engine baixa e salva uma cópia local. Hosts privados/localhost são bloqueados.' : 'PNG, JPG ou WEBP · até 15 MB.'}</small>
               </form>
             ) : null}
 
