@@ -16,7 +16,9 @@ export async function createApiApp({
   audioNarrationService,
   realtimeGateway = null,
   authService = null,
-  campaignService = null
+  campaignService = null,
+  runtimeRouter = null,
+  realtimeProxy = null
 }) {
   if (!config) throw new TypeError('config é obrigatório.');
   if (!sessionService) throw new TypeError('sessionService é obrigatório.');
@@ -58,6 +60,7 @@ export async function createApiApp({
     auth: authService ? 'opaque-session' : 'disabled',
     audio: audioNarrationService?.enabled ? audioNarrationService.mode : 'disabled',
     realtime: realtimeGateway ? 'websocket' : 'disabled',
+    routing: runtimeRouter?.enabled ? 'owner-aware' : 'local-only',
     runtime: sessionService.getStatus()
   }));
 
@@ -69,7 +72,9 @@ export async function createApiApp({
   if (realtimeGateway) {
     registerRealtimeRoutes(app, {
       gateway: realtimeGateway,
-      allowOrigin: (origin) => isOriginAllowed(origin, config.allowedOrigins)
+      allowOrigin: (origin) => isOriginAllowed(origin, config.allowedOrigins),
+      ownerRouter: runtimeRouter,
+      proxyWebSocket: realtimeProxy
     });
   }
 
@@ -81,7 +86,11 @@ export async function createApiApp({
         allowLegacy: config.allowLegacySessionHttp
       })
     : undefined;
-  const controller = createSessionController({ sessionService, authorizeRequest });
+  const controller = createSessionController({
+    sessionService,
+    authorizeRequest,
+    requestRouter: runtimeRouter
+  });
   registerSessionRoutes(app, { controller });
 
   app.setErrorHandler((error, request, reply) => {
