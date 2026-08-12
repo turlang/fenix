@@ -47,7 +47,12 @@ export function createApiApp({ config, sessionService, narrator, audioNarrationS
     runtime: sessionService.getStatus()
   }));
 
-  if (realtimeGateway) registerRealtimeRoutes(app, { gateway: realtimeGateway });
+  if (realtimeGateway) {
+    registerRealtimeRoutes(app, {
+      gateway: realtimeGateway,
+      allowOrigin: (origin) => isOriginAllowed(origin, config.allowedOrigins)
+    });
+  }
 
   const controller = createSessionController({ sessionService });
   registerSessionRoutes(app, { controller });
