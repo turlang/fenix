@@ -32,7 +32,7 @@ const realtimeGateway = new RealtimeSessionGateway({
   logger
 });
 
-const app = createApiApp({
+const app = await createApiApp({
   config,
   sessionService,
   narrator,
