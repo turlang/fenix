@@ -92,18 +92,28 @@ export class FenixApiClient {
   acceptInvite(token) { return this.request('/v1/invites/accept', { method: 'POST', body: { token } }); }
   registerInvite(input) { return this.request('/v1/invites/register', { method: 'POST', body: input }); }
 
-  status() { return this.request('/v1/session/status'); }
+  status(campaignId = null) {
+    const suffix = campaignId ? `?campaignId=${encodeURIComponent(campaignId)}` : '';
+    return this.request(`/v1/session/status${suffix}`);
+  }
   start(snapshot, campaignId = null) {
     return this.request('/v1/session/start', { method: 'POST', body: { snapshot, campaignId } });
   }
-  action({ content, actorId = null, messageId = null } = {}) {
+  action({ content, actorId = null, messageId = null, campaignId = null } = {}) {
     return this.request('/v1/session/action', {
       method: 'POST',
-      body: { content, actorId, messageId }
+      body: { content, actorId, messageId, campaignId }
     });
   }
-  roomEntry(event) { return this.request('/v1/session/room-entry', { method: 'POST', body: event }); }
-  end() { return this.request('/v1/session/end', { method: 'POST' }); }
+  roomEntry(event, campaignId = null) {
+    return this.request('/v1/session/room-entry', {
+      method: 'POST',
+      body: { ...event, campaignId: event?.campaignId ?? campaignId }
+    });
+  }
+  end(campaignId = null) {
+    return this.request('/v1/session/end', { method: 'POST', body: { campaignId } });
+  }
 }
 
 export function createFenixApiClient(options) {
