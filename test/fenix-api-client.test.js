@@ -12,7 +12,7 @@ function jsonResponse(payload, status = 200) {
   };
 }
 
-test('FenixApiClient envia campanha, credenciais e eventos para os endpoints universais', async () => {
+test('FenixApiClient envia campanha, commandId, credenciais e eventos para os endpoints universais', async () => {
   const calls = [];
   const client = new FenixApiClient({
     baseUrl: 'http://engine.test/',
@@ -24,18 +24,24 @@ test('FenixApiClient envia campanha, credenciais e eventos para os endpoints uni
     }
   });
 
-  await client.start({ activeScene: { id: 'scene-1' } }, 'campaign-1');
-  await client.roomEntry({ room: { id: '03', name: 'Câmara Norte' }, source: { canonicalAnchor: true, text: 'Fonte.' } });
+  await client.start({ activeScene: { id: 'scene-1' } }, 'campaign-1', 'command-start-1');
+  await client.roomEntry(
+    { room: { id: '03', name: 'Câmara Norte' }, source: { canonicalAnchor: true, text: 'Fonte.' } },
+    'campaign-1',
+    'command-room-1'
+  );
 
   assert.equal(calls[0].url, 'http://engine.test/v1/session/start');
   assert.deepEqual(JSON.parse(calls[0].options.body), {
     snapshot: { activeScene: { id: 'scene-1' } },
-    campaignId: 'campaign-1'
+    campaignId: 'campaign-1',
+    commandId: 'command-start-1'
   });
   assert.equal(calls[0].options.credentials, 'include');
   assert.equal(calls[1].url, 'http://engine.test/v1/session/room-entry');
   assert.equal(calls[1].options.credentials, 'include');
   assert.equal(JSON.parse(calls[1].options.body).room.id, '03');
+  assert.equal(JSON.parse(calls[1].options.body).commandId, 'command-room-1');
 });
 
 test('FenixApiClient expõe endpoints de autenticação e campanhas com cookie habilitado', async () => {
