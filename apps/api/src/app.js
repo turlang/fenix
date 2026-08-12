@@ -4,9 +4,20 @@ import { ENGINE_VERSION } from '../../../packages/core/src/index.js';
 import { isOriginAllowed } from '../../../packages/config/src/index.js';
 import { createSessionController } from './http/session-controller.js';
 import { registerSessionRoutes } from './http/register-session-routes.js';
+import { registerAuthRoutes } from './http/register-auth-routes.js';
+import { registerCampaignRoutes } from './http/register-campaign-routes.js';
+import { createSessionRequestAuthorizer } from './http/session-authorizer.js';
 import { registerRealtimeRoutes } from './realtime/register-realtime-routes.js';
 
-export async function createApiApp({ config, sessionService, narrator, audioNarrationService, realtimeGateway = null }) {
+export async function createApiApp({
+  config,
+  sessionService,
+  narrator,
+  audioNarrationService,
+  realtimeGateway = null,
+  authService = null,
+  campaignService = null
+}) {
   if (!config) throw new TypeError('config é obrigatório.');
   if (!sessionService) throw new TypeError('sessionService é obrigatório.');
 
@@ -29,6 +40,7 @@ export async function createApiApp({ config, sessionService, narrator, audioNarr
     const origin = request.headers.origin;
     if (origin && isOriginAllowed(origin, config.allowedOrigins)) {
       reply.header('Access-Control-Allow-Origin', origin);
+      reply.header('Access-Control-Allow-Credentials', 'true');
       reply.header('Vary', 'Origin');
     }
     reply.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
@@ -42,10 +54,17 @@ export async function createApiApp({ config, sessionService, narrator, audioNarr
     version: ENGINE_VERSION,
     ai: narrator ? 'groq' : 'not-configured',
     narrativeMemory: 'persistent-file',
+    persistence: campaignService ? 'campaign-file' : 'disabled',
+    auth: authService ? 'opaque-session' : 'disabled',
     audio: audioNarrationService?.enabled ? audioNarrationService.mode : 'disabled',
     realtime: realtimeGateway ? 'websocket' : 'disabled',
     runtime: sessionService.getStatus()
   }));
+
+  if (authService && campaignService) {
+    registerAuthRoutes(app, { authService, campaignService, config });
+    registerCampaignRoutes(app, { authService, campaignService, config });
+  }
 
   if (realtimeGateway) {
     registerRealtimeRoutes(app, {
@@ -54,7 +73,15 @@ export async function createApiApp({ config, sessionService, narrator, audioNarr
     });
   }
 
-  const controller = createSessionController({ sessionService });
+  const authorizeRequest = authService && campaignService
+    ? createSessionRequestAuthorizer({
+        authService,
+        campaignService,
+        sessionService,
+        allowLegacy: config.allowLegacySessionHttp
+      })
+    : undefined;
+  const controller = createSessionController({ sessionService, authorizeRequest });
   registerSessionRoutes(app, { controller });
 
   app.setErrorHandler((error, request, reply) => {
