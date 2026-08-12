@@ -79,24 +79,8 @@ export class FenixRealtimeClient {
     this.socket = socket;
     this.sessionId = id;
 
-    await new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        socket.close?.(4001, 'Realtime connection timeout');
-        reject(new Error('Tempo limite ao conectar o canal realtime.'));
-      }, this.connectTimeoutMs);
-
-      const cleanupOpening = () => clearTimeout(timeout);
-      socket.onopen = () => {
-        cleanupOpening();
-        this.#emit({ type: 'CLIENT_CONNECTED', payload: { sessionId: id } });
-        resolve();
-      };
-      socket.onerror = () => {
-        cleanupOpening();
-        if (socket.readyState !== 1) reject(new Error('Falha ao conectar o canal realtime.'));
-      };
-    });
-
+    let opening = true;
+    let rejectOpening = null;
     socket.onmessage = (event) => {
       try {
         const message = JSON.parse(String(event.data ?? ''));
@@ -106,14 +90,32 @@ export class FenixRealtimeClient {
       }
     };
     socket.onclose = (event) => {
+      if (opening) rejectOpening?.(new Error('Canal realtime fechou durante a conexão.'));
       this.#emit({
         type: 'CLIENT_DISCONNECTED',
         payload: { code: event.code ?? 1000, reason: event.reason ?? '' }
       });
     };
     socket.onerror = () => {
+      if (opening) rejectOpening?.(new Error('Falha ao conectar o canal realtime.'));
       this.#emit({ type: 'CLIENT_SOCKET_ERROR', payload: { message: 'Falha no WebSocket.' } });
     };
+
+    await new Promise((resolve, reject) => {
+      rejectOpening = reject;
+      const timeout = setTimeout(() => {
+        socket.close?.(4001, 'Realtime connection timeout');
+        reject(new Error('Tempo limite ao conectar o canal realtime.'));
+      }, this.connectTimeoutMs);
+
+      socket.onopen = () => {
+        clearTimeout(timeout);
+        opening = false;
+        rejectOpening = null;
+        this.#emit({ type: 'CLIENT_CONNECTED', payload: { sessionId: id } });
+        resolve();
+      };
+    });
     return this;
   }
 
