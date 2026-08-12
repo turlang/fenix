@@ -13,25 +13,13 @@ export function resolveFenixRealtimeUrl(apiBaseUrl = resolveFenixApiBaseUrl()) {
   return url.toString();
 }
 
-export function createBrowserRealtimeIdentity({
-  locationLike = globalThis.location,
-  storage = globalThis.sessionStorage
-} = {}) {
-  const params = new URLSearchParams(locationLike?.search ?? '');
-  const role = params.get('role') === 'player' ? 'player' : 'gm';
-  const actorId = params.get('actor') || (role === 'player' ? 'hero-ayla' : null);
+export function createBrowserRealtimeIdentity({ storage = globalThis.sessionStorage } = {}) {
   let clientId = storage?.getItem?.('fenix.realtime.clientId') ?? null;
   if (!clientId) {
     clientId = randomId();
     storage?.setItem?.('fenix.realtime.clientId', clientId);
   }
-  return Object.freeze({
-    clientId,
-    userId: clientId,
-    displayName: params.get('name') || (role === 'gm' ? 'Mestre' : 'Jogador'),
-    role,
-    actorId
-  });
+  return Object.freeze({ clientId });
 }
 
 export class FenixRealtimeClient {
@@ -70,10 +58,6 @@ export class FenixRealtimeClient {
     const url = new URL(this.baseUrl);
     url.searchParams.set('sessionId', id);
     url.searchParams.set('clientId', this.identity.clientId);
-    url.searchParams.set('userId', this.identity.userId);
-    url.searchParams.set('name', this.identity.displayName);
-    url.searchParams.set('role', this.identity.role);
-    if (this.identity.actorId) url.searchParams.set('actorId', this.identity.actorId);
 
     const socket = new this.WebSocketImpl(url.toString());
     this.socket = socket;
