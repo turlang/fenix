@@ -64,6 +64,20 @@ test('FenixApiClient expõe endpoints de autenticação e campanhas com cookie h
   assert.ok(calls.every((call) => call.options.credentials === 'include'));
 });
 
+test('FenixApiClient chama fetch com contexto global compatível com navegadores', async () => {
+  let observedThis = null;
+  const fetchImpl = async function () {
+    observedThis = this;
+    return jsonResponse({ bootstrapRequired: true });
+  };
+  const client = new FenixApiClient({ baseUrl: 'http://engine.test', fetchImpl });
+
+  const result = await client.authStatus();
+
+  assert.equal(observedThis, globalThis);
+  assert.deepEqual(result, { bootstrapRequired: true });
+});
+
 test('FenixApiClient preserva código e status retornados pelo Engine', async () => {
   const client = new FenixApiClient({
     fetchImpl: async () => jsonResponse({ code: 'AI_NOT_CONFIGURED', message: 'Groq ausente.' }, 503)
