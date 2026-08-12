@@ -35,7 +35,7 @@ export class FenixApiClient {
   constructor({ baseUrl = resolveFenixApiBaseUrl(), fetchImpl = globalThis.fetch, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
     if (typeof fetchImpl !== 'function') throw new TypeError('fetchImpl deve ser uma função.');
     this.baseUrl = trimTrailingSlash(baseUrl);
-    this.fetchImpl = fetchImpl;
+    this.fetchImpl = fetchImpl.bind(globalThis);
     this.timeoutMs = Math.max(1000, Number(timeoutMs) || DEFAULT_TIMEOUT_MS);
   }
 
