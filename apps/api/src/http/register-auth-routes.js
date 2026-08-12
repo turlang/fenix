@@ -15,12 +15,17 @@ function parseSessionToken(request) {
   return null;
 }
 
-export function serializeAuthSessionCookie(token, { expiresAt = null, secure = false, clear = false } = {}) {
+export function serializeAuthSessionCookie(token, {
+  expiresAt = null,
+  secure = false,
+  clear = false,
+  sameSite = 'Lax'
+} = {}) {
   const parts = [
     `${COOKIE_NAME}=${clear ? '' : encodeURIComponent(String(token ?? ''))}`,
     'Path=/',
     'HttpOnly',
-    'SameSite=Lax'
+    `SameSite=${sameSite}`
   ];
   if (secure) parts.push('Secure');
   if (clear) {
@@ -72,7 +77,8 @@ export function registerAuthRoutes(app, { authService, campaignService, config }
       const session = await authService.createSession(user.id);
       reply.header('Set-Cookie', serializeAuthSessionCookie(session.token, {
         expiresAt: session.expiresAt,
-        secure: config.isProduction
+        secure: config.isProduction,
+        sameSite: config.authCookieSameSite
       }));
       return { user: session.user, bootstrap: true };
     } catch (error) {
@@ -85,7 +91,8 @@ export function registerAuthRoutes(app, { authService, campaignService, config }
       const session = await authService.login(request.body ?? {});
       reply.header('Set-Cookie', serializeAuthSessionCookie(session.token, {
         expiresAt: session.expiresAt,
-        secure: config.isProduction
+        secure: config.isProduction,
+        sameSite: config.authCookieSameSite
       }));
       return { user: session.user };
     } catch (error) {
@@ -97,7 +104,11 @@ export function registerAuthRoutes(app, { authService, campaignService, config }
     try {
       const token = parseSessionToken(request);
       await authService.logout(token);
-      reply.header('Set-Cookie', serializeAuthSessionCookie('', { clear: true, secure: config.isProduction }));
+      reply.header('Set-Cookie', serializeAuthSessionCookie('', {
+        clear: true,
+        secure: config.isProduction,
+        sameSite: config.authCookieSameSite
+      }));
       return { authenticated: false };
     } catch (error) {
       return sendAuthError(reply, error);
