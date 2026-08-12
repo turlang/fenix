@@ -52,7 +52,8 @@ export class SessionDirector {
       await this.narrationOutput.publishNarration(opening, {
         type: 'SESSION_OPENING',
         sceneId: context.scene?.id ?? null,
-        sessionId
+        sessionId,
+        audio
       });
       this.session = { id: sessionId, context, opening, audio, startedAt: new Date().toISOString() };
       this.state = SessionState.COLLECTING_ACTIONS;
@@ -84,7 +85,8 @@ export class SessionDirector {
         type: 'ACTION_RESOLUTION',
         sceneId: context.scene?.id ?? null,
         sessionId: this.session.id,
-        actorId: input?.actorId ?? null
+        actorId: input?.actorId ?? null,
+        audio
       });
       this.state = SessionState.COLLECTING_ACTIONS;
       return { state: this.state, intent, rules, relationship, narration, audio };
@@ -125,7 +127,8 @@ export class SessionDirector {
         type: 'ROOM_ENTRY',
         sceneId: context.scene?.id ?? null,
         roomId: context.room.id,
-        sessionId: this.session.id
+        sessionId: this.session.id,
+        audio
       });
       return { state: this.state, sessionId: this.session.id, opening, audio, room: context.room };
     } catch (error) {
