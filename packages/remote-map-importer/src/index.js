@@ -31,7 +31,8 @@ function privateIpv4(address) {
     (a === 169 && b === 254) ||
     (a === 172 && b >= 16 && b <= 31) ||
     (a === 192 && (b === 0 || b === 168)) ||
-    (a === 198 && (b === 18 || b === 19)) ||
+    (a === 198 && (b === 18 || b === 19 || b === 51)) ||
+    (a === 203 && b === 0) ||
     a >= 224;
 }
 
@@ -209,7 +210,8 @@ export class RemoteMapImporter {
     this.fetchBinary = fetchBinary;
     this.timeoutMs = Math.max(1000, Number(timeoutMs) || 10000);
     this.maxBytes = Math.max(1024, Number(maxBytes) || 15 * 1024 * 1024);
-    this.maxRedirects = Math.min(5, Math.max(0, Number(maxRedirects) || 3));
+    const redirects = Number(maxRedirects);
+    this.maxRedirects = Number.isFinite(redirects) ? Math.min(5, Math.max(0, Math.floor(redirects))) : 3;
   }
 
   async importUrl(value) {
