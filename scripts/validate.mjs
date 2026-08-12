@@ -35,6 +35,7 @@ const required = [
   'packages/session-director/src/index.js',
   'packages/session-runtime/src/index.js',
   'packages/persistent-session-service/src/index.js',
+  'packages/campaign-runtime-registry/src/index.js',
   'packages/persistence-repository/src/index.js',
   'packages/auth-service/src/index.js',
   'packages/campaign-service/src/index.js',
@@ -58,6 +59,8 @@ const required = [
   'packages/ai-provider/src/system-prompt.js',
   'integration-tests/realtime-websocket.mjs',
   'integration-tests/auth-campaign-http.mjs',
+  'integration-tests/postgres-persistence.mjs',
+  'scripts/migrate-fenix-json-to-postgres.mjs',
   '.env.example',
   '.gitignore',
   '.gitattributes',
@@ -82,11 +85,15 @@ if (packageJson.version !== moduleJson.version || packageJson.version !== coreVe
   throw new Error(`Versões divergentes: engine=${packageJson.version}, foundry=${moduleJson.version}, core=${coreVersion}, vtt=${vttPackageJson.version}`);
 }
 if (!packageJson.scripts?.test || !packageJson.scripts?.check || !packageJson.scripts?.['build:vtt']
-  || !packageJson.scripts?.['test:realtime-integration'] || !packageJson.scripts?.['test:auth-integration']) {
-  throw new Error('Scripts de qualidade, autenticação, realtime ou build do VTT ausentes.');
+  || !packageJson.scripts?.['test:realtime-integration'] || !packageJson.scripts?.['test:auth-integration']
+  || !packageJson.scripts?.['test:postgres-integration'] || !packageJson.scripts?.['migrate:postgres']) {
+  throw new Error('Scripts de qualidade, autenticação, realtime, Postgres, migração ou build do VTT ausentes.');
 }
 if (!/^\^?15\./.test(vttPackageJson.dependencies?.next ?? '')) {
   throw new Error('apps/fenix-vtt deve permanecer no Next.js 15 durante este marco.');
+}
+if (!/^\^?8\./.test(packageJson.dependencies?.pg ?? '')) {
+  throw new Error('Engine deve declarar node-postgres 8.x neste marco.');
 }
 
 const standaloneUiFiles = [
@@ -127,8 +134,15 @@ const serverSource = await readFile(new URL('../apps/api/src/server.js', import.
 if (!serverSource.includes('createAuthenticatedPeerAuthorizer')) {
   throw new Error('Composition root deve usar identidade realtime autenticada.');
 }
+if (!serverSource.includes('CampaignRuntimeRegistry')) {
+  throw new Error('Composition root deve usar CampaignRuntimeRegistry para isolar campanhas.');
+}
 if (serverSource.includes('createDevelopmentPeerAuthorizer')) {
   throw new Error('Composition root de produção não pode usar authorizer realtime de desenvolvimento.');
+}
+const persistenceSource = await readFile(new URL('../packages/persistence-repository/src/index.js', import.meta.url), 'utf8');
+for (const marker of ['PostgresFenixRepository', 'FOR UPDATE', "import('pg')"]) {
+  if (!persistenceSource.includes(marker)) throw new Error(`Persistência PostgreSQL incompleta: ${marker}.`);
 }
 const realtimeClientSource = await readFile(new URL('../apps/fenix-vtt/lib/realtime-client.js', import.meta.url), 'utf8');
 if (/searchParams\.set\(['"](?:role|actorId|userId)['"]/.test(realtimeClientSource)) {
