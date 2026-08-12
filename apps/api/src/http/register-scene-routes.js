@@ -77,6 +77,23 @@ export function registerSceneRoutes(app, { authService, sceneService }) {
     }
   });
 
+  app.post('/v1/campaigns/:campaignId/scenes/:sceneId/grid', async (request, reply) => {
+    try {
+      const authenticated = requireAuthenticatedRequest(authService, request);
+      return await sceneService.updateGrid({
+        campaignId: request.params.campaignId,
+        userId: authenticated.user.id,
+        sceneId: request.params.sceneId,
+        size: request.body?.size,
+        offsetX: request.body?.offsetX,
+        offsetY: request.body?.offsetY,
+        visible: request.body?.visible
+      });
+    } catch (error) {
+      return sendError(reply, error, 'CAMPAIGN_SCENE_GRID_UPDATE_FAILED');
+    }
+  });
+
   app.post('/v1/campaigns/:campaignId/scenes/:sceneId/activate', async (request, reply) => {
     try {
       const authenticated = requireAuthenticatedRequest(authService, request);
