@@ -36,6 +36,7 @@ const required = [
   'packages/session-runtime/src/index.js',
   'packages/persistent-session-service/src/index.js',
   'packages/campaign-runtime-registry/src/index.js',
+  'packages/distributed-runtime-coordination/src/index.js',
   'packages/persistence-repository/src/index.js',
   'packages/auth-service/src/index.js',
   'packages/campaign-service/src/index.js',
@@ -60,6 +61,7 @@ const required = [
   'integration-tests/realtime-websocket.mjs',
   'integration-tests/auth-campaign-http.mjs',
   'integration-tests/postgres-persistence.mjs',
+  'integration-tests/distributed-runtime-coordination.mjs',
   'scripts/migrate-fenix-json-to-postgres.mjs',
   '.env.example',
   '.gitignore',
@@ -86,8 +88,9 @@ if (packageJson.version !== moduleJson.version || packageJson.version !== coreVe
 }
 if (!packageJson.scripts?.test || !packageJson.scripts?.check || !packageJson.scripts?.['build:vtt']
   || !packageJson.scripts?.['test:realtime-integration'] || !packageJson.scripts?.['test:auth-integration']
-  || !packageJson.scripts?.['test:postgres-integration'] || !packageJson.scripts?.['migrate:postgres']) {
-  throw new Error('Scripts de qualidade, autenticação, realtime, Postgres, migração ou build do VTT ausentes.');
+  || !packageJson.scripts?.['test:postgres-integration'] || !packageJson.scripts?.['test:coordination-integration']
+  || !packageJson.scripts?.['migrate:postgres']) {
+  throw new Error('Scripts de qualidade, autenticação, realtime, Postgres, coordenação, migração ou build do VTT ausentes.');
 }
 if (!/^\^?15\./.test(vttPackageJson.dependencies?.next ?? '')) {
   throw new Error('apps/fenix-vtt deve permanecer no Next.js 15 durante este marco.');
@@ -120,29 +123,36 @@ const forbiddenUiImports = [
 for (const file of standaloneUiFiles) {
   const source = await readFile(new URL(`../${file}`, import.meta.url), 'utf8');
   for (const forbiddenImport of forbiddenUiImports) {
-    if (source.includes(forbiddenImport)) {
-      throw new Error(`Fronteira UI violada: ${file} referencia ${forbiddenImport}.`);
-    }
+    if (source.includes(forbiddenImport)) throw new Error(`Fronteira UI violada: ${file} referencia ${forbiddenImport}.`);
   }
 }
 
 const authSource = await readFile(new URL('../packages/auth-service/src/index.js', import.meta.url), 'utf8');
-for (const marker of ['scrypt', 'randomBytes(32)', 'tokenHash']) {
-  if (!authSource.includes(marker)) throw new Error(`AuthService sem requisito criptográfico: ${marker}.`);
+for (const marker of ['scrypt', 'randomBytes(32)', 'tokenHash', 'refreshFromRepository']) {
+  if (!authSource.includes(marker)) throw new Error(`AuthService sem requisito: ${marker}.`);
+}
+const campaignSource = await readFile(new URL('../packages/campaign-service/src/index.js', import.meta.url), 'utf8');
+for (const marker of ['refreshFromRepository', 'listActiveSessions']) {
+  if (!campaignSource.includes(marker)) throw new Error(`CampaignService sem coordenação de cache: ${marker}.`);
 }
 const serverSource = await readFile(new URL('../apps/api/src/server.js', import.meta.url), 'utf8');
-if (!serverSource.includes('createAuthenticatedPeerAuthorizer')) {
-  throw new Error('Composition root deve usar identidade realtime autenticada.');
-}
-if (!serverSource.includes('CampaignRuntimeRegistry')) {
-  throw new Error('Composition root deve usar CampaignRuntimeRegistry para isolar campanhas.');
+for (const marker of ['createAuthenticatedPeerAuthorizer', 'CampaignRuntimeRegistry', 'PostgresRuntimeLeaseManager', 'PostgresStateBus']) {
+  if (!serverSource.includes(marker)) throw new Error(`Composition root distribuído incompleto: ${marker}.`);
 }
 if (serverSource.includes('createDevelopmentPeerAuthorizer')) {
   throw new Error('Composition root de produção não pode usar authorizer realtime de desenvolvimento.');
 }
 const persistenceSource = await readFile(new URL('../packages/persistence-repository/src/index.js', import.meta.url), 'utf8');
-for (const marker of ['PostgresFenixRepository', 'FOR UPDATE', "import('pg')"]) {
+for (const marker of ['PostgresFenixRepository', 'FOR UPDATE', "import('pg')", 'setChangePublisher']) {
   if (!persistenceSource.includes(marker)) throw new Error(`Persistência PostgreSQL incompleta: ${marker}.`);
+}
+const coordinationSource = await readFile(new URL('../packages/distributed-runtime-coordination/src/index.js', import.meta.url), 'utf8');
+for (const marker of ['fenix_runtime_leases', 'pg_notify', 'LISTEN', 'generation', 'lease_until', 'assertOwned']) {
+  if (!coordinationSource.includes(marker)) throw new Error(`Coordenação distribuída incompleta: ${marker}.`);
+}
+const directorSource = await readFile(new URL('../packages/session-director/src/index.js', import.meta.url), 'utf8');
+for (const forbidden of ['PostgresRuntimeLeaseManager', 'PostgresStateBus', 'fenix_runtime_leases', 'pg_notify']) {
+  if (directorSource.includes(forbidden)) throw new Error(`SessionDirector não pode conhecer coordenação distribuída: ${forbidden}.`);
 }
 const realtimeClientSource = await readFile(new URL('../apps/fenix-vtt/lib/realtime-client.js', import.meta.url), 'utf8');
 if (/searchParams\.set\(['"](?:role|actorId|userId)['"]/.test(realtimeClientSource)) {
