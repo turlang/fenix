@@ -62,6 +62,11 @@ O fluxo atual possui:
 
 - Next.js 15 + React 19 + Tailwind CSS 4;
 - renderer WebGL2 atrás de `MapRendererPort`;
+- upload de battlemap PNG/JPG/WEBP e importação segura por URL HTTP/HTTPS;
+- pan/zoom, fit de cena e calibração persistente de grid;
+- **Walls + Doors Authoring** persistente para o Mestre;
+- segmentos `wall` e `door` com estados `open`, `closed` e `locked`;
+- snap de paredes à grade, apagar, desfazer, cancelar e sincronização realtime;
 - autenticação com `scrypt` e token opaco;
 - campanhas/memberships/convites;
 - `CampaignRuntimeRegistry` com runtime isolado por campanha;
@@ -85,6 +90,30 @@ O fluxo atual possui:
 - `ROOM_ENTERED` e ações pelo mesmo Shared Core;
 - recuperação de sessões após restart/failover sem repetir aberturas;
 - JSON local ou PostgreSQL transacional como adapters de persistência.
+
+## Mapas, grade, paredes e portas
+
+O Scene Manager mantém o battlemap, dimensões, grid calibrado e `walls` como estado persistente da cena. O Mestre pode abrir **Paredes** na toolbar e editar a geometria diretamente sobre o mapa usando as mesmas coordenadas de mundo do renderer.
+
+```text
+Battlemap
+   ↓
+Pan / Zoom + Grid Calibration
+   ↓
+Walls + Doors Authoring
+   ├─ wall
+   └─ door → open | closed | locked
+   ↓
+CampaignSceneService
+   ↓
+persistência + SCENE_UPDATED realtime
+```
+
+O contrato puro está em `packages/scene-geometry`. Paredes e portas fechadas/trancadas são definidas como bloqueadoras de movimento e visão; portas abertas não bloqueiam. **Neste marco essa semântica ainda não é aplicada como colisão ou line-of-sight** — ela prepara a próxima etapa de Fog of War + Token Line of Sight sem acoplar o editor ao Shared Core narrativo.
+
+Alteração de paredes é GM-only no servidor. Jogadores recebem a geometria autoritativa da cena, mas não podem persistir `walls` nem publicar `SCENE_UPDATE` de Mestre.
+
+Detalhes do modelo e do editor: `docs/FENIX_WALLS_DOORS.md`.
 
 ## PostgreSQL, ownership e owner-aware ingress
 
@@ -192,7 +221,7 @@ O script recusa sobrescrever PostgreSQL que já contenha estado.
 - `npm run dev:vtt`: inicia o Fênix VTT.
 - `npm run build:vtt`: build standalone.
 - `npm test`: suíte `node:test`.
-- `npm run test:auth-integration`: auth/campanhas no Fastify real.
+- `npm run test:auth-integration`: auth/campanhas no Fastify real, incluindo cenas, grid, paredes e mapas remotos.
 - `npm run test:realtime-integration`: WebSocket real.
 - `npm run test:postgres-integration`: repository contra PostgreSQL real.
 - `npm run test:coordination-integration`: dois Engines, lease, LISTEN/NOTIFY, takeover e fencing.
@@ -209,6 +238,7 @@ O script recusa sobrescrever PostgreSQL que já contenha estado.
 - Cookies são `HttpOnly` e `Secure` em produção.
 - WebSocket valida `Origin`, payload e rate limit.
 - Jogador não escolhe `role`/`actorId` pela URL e não controla recursos de outra membership.
+- Alterações de grid, paredes e portas são autorizadas como GM no servidor, não apenas ocultadas pela UI.
 - O HTTP legado Foundry permanece disponível apenas conforme `FENIX_ALLOW_LEGACY_SESSION_HTTP`.
 - Apenas o owner de um lease válido pode processar uma campanha persistente.
 - Requisições internas precisam de HMAC válido, timestamp recente, `generation` e hop único.
@@ -222,7 +252,11 @@ O script recusa sobrescrever PostgreSQL que já contenha estado.
 
 A execução de comandos agora é deduplicada entre réplicas, inclusive após resposta perdida. Porém o broadcast realtime ainda é um efeito do owner em memória: se o processo cair depois de confirmar uma mutação, mas antes de todos os peers receberem o evento correspondente, o ledger impede duplicar o comando, porém não garante a entrega daquele broadcast para cada conexão.
 
-A próxima evolução deve introduzir **Durable Realtime Outbox + Event Delivery Guarantees**, separando confirmação do comando de entrega durável/replay de eventos aos peers.
+A evolução de infraestrutura para esse ponto continua sendo **Durable Realtime Outbox + Event Delivery Guarantees**, separando confirmação do comando de entrega durável/replay de eventos aos peers.
+
+### Limite atual do mapa: visão e colisão
+
+A geometria de paredes/portas já é persistente e autoritativa, mas ainda não recorta visão nem impede movimento de tokens. A próxima evolução do VTT é **Fog of War + Token Line of Sight**, consumindo o contrato `scene-geometry`; Dynamic Lighting vem depois sobre a mesma base.
 
 ## Módulo Foundry
 
@@ -246,6 +280,7 @@ Load Balancer
  qualquer Engine
        │
        ├── Auth / Membership
+       ├── Scene Manager → assets / grid / walls
        ├── resolve lease
        │
        ├─ local owner ───────────────┐
@@ -271,10 +306,10 @@ Load Balancer
                          /ready /metrics / logs
 ```
 
-`SessionDirector` continua sem conhecer Foundry, autenticação, banco, Fastify, WebSocket, React, WebGL, leases, `LISTEN/NOTIFY`, roteamento, command ledger ou observabilidade.
+`SessionDirector` continua sem conhecer Foundry, autenticação, banco, Fastify, WebSocket, React, WebGL, assets, scene authoring, `scene-geometry`, leases, `LISTEN/NOTIFY`, roteamento, command ledger ou observabilidade.
 
 ## CI
 
-A pipeline exige matriz Node 20/22/24, suíte unitária, PostgreSQL 16 real, concorrência de repository, leases/failover, idempotência distribuída de comandos, owner-aware HTTP/WebSocket routing entre dois Engines, auth/campanhas HTTP, WebSocket real, `npm ci` e build Next. O workflow permanece somente-leitura (`contents: read`).
+A pipeline exige matriz Node 20/22/24, suíte unitária, validação do contrato de paredes/portas, PostgreSQL 16 real, concorrência de repository, leases/failover, idempotência distribuída de comandos, owner-aware HTTP/WebSocket routing entre dois Engines, auth/campanhas/cenas HTTP, WebSocket real, `npm ci` e build Next. O workflow permanece somente-leitura (`contents: read`).
 
-Veja `docs/FENIX_AUTH_PERSISTENCE.md` para detalhes de persistência, coordenação, ingress, idempotência e observabilidade. Os `README-ALPHA*.md` preservam o histórico anterior.
+Veja `docs/FENIX_WALLS_DOORS.md` para o authoring de mapa e `docs/FENIX_AUTH_PERSISTENCE.md` para persistência, coordenação, ingress, idempotência e observabilidade. Os `README-ALPHA*.md` preservam o histórico anterior.
