@@ -220,6 +220,6 @@ Load Balancer
 
 ## CI
 
-A CI #212 validou o head deste marco com 102/102 testes no Node 24, matriz Node 20/22/24 verde, PostgreSQL 16 real, concorrência do repository, lease/failover, owner-aware HTTP/WebSocket routing entre dois Engines, tentativa de assinatura interna forjada, auth/campanhas HTTP, WebSocket base, `npm ci` e build Next. O workflow permanece somente-leitura (`contents: read`).
+O gate de código deste marco foi validado com 102/102 testes no Node 24, matriz Node 20/22/24 verde, PostgreSQL 16 real, concorrência do repository, lease/failover, owner-aware HTTP/WebSocket routing entre dois Engines, tentativa de assinatura interna forjada, auth/campanhas HTTP, WebSocket base, `npm ci` e build Next. O workflow permanece somente-leitura (`contents: read`).
 
 Veja `docs/FENIX_AUTH_PERSISTENCE.md` para detalhes de persistência, coordenação e ingress. Os `README-ALPHA*.md` preservam o histórico anterior.
