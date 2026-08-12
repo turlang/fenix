@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { createSessionRuntime } from '../../../packages/session-runtime/src/index.js';
 import { createNarrativeProviderFromEnv } from '../../../packages/ai-provider/src/index.js';
 import { createNarrationMemoryFromEnv } from '../../../packages/narration-memory/src/index.js';
@@ -11,6 +12,10 @@ import {
 } from '../../../packages/campaign-service/src/index.js';
 import { CampaignRuntimeRegistry } from '../../../packages/campaign-runtime-registry/src/index.js';
 import {
+  PostgresRuntimeLeaseManager,
+  PostgresStateBus
+} from '../../../packages/distributed-runtime-coordination/src/index.js';
+import {
   RealtimeSessionGateway,
   RealtimeSessionHub
 } from '../../../packages/realtime-session-gateway/src/index.js';
@@ -19,9 +24,29 @@ import { createApiApp } from './app.js';
 loadEnvFile();
 const config = createConfig();
 const logger = console;
+const instanceId = config.instanceId || randomUUID();
 
 const repository = createFenixRepositoryFromEnv({ logger });
 await repository.initialize();
+
+let coordinationBus = null;
+let leaseManager = null;
+if (repository.driver === 'postgres') {
+  coordinationBus = new PostgresStateBus({ pool: repository.pool, instanceId, logger });
+  await coordinationBus.initialize();
+  repository.setChangePublisher((metadata) => coordinationBus.publish('STATE_CHANGED', metadata));
+
+  leaseManager = new PostgresRuntimeLeaseManager({
+    pool: repository.pool,
+    instanceId,
+    instanceUrl: config.instancePublicUrl,
+    leaseTtlMs: config.runtimeLeaseTtlMs,
+    heartbeatIntervalMs: config.runtimeHeartbeatMs,
+    publishEvent: (type, payload) => coordinationBus.publish(type, payload),
+    logger
+  });
+  await leaseManager.initialize();
+}
 
 const authService = new AuthService({ repository, logger });
 await authService.initialize();
@@ -39,6 +64,8 @@ const realtimeHub = new RealtimeSessionHub({
 const sessionService = new CampaignRuntimeRegistry({
   campaignService,
   realtimeHub,
+  leaseManager,
+  reconcileIntervalMs: config.runtimeReconcileMs,
   logger,
   runtimeFactory: () => createSessionRuntime({
     narrator,
@@ -49,6 +76,24 @@ const sessionService = new CampaignRuntimeRegistry({
   })
 });
 await sessionService.initialize();
+
+let coordinationRefresh = Promise.resolve();
+const unsubscribeCoordination = coordinationBus?.subscribe((event) => {
+  if (!['STATE_CHANGED', 'RUNTIME_LEASE_RELEASED', 'RUNTIME_LEASE_LOST'].includes(event?.type)) return;
+  coordinationRefresh = coordinationRefresh.then(async () => {
+    await repository.refresh();
+    authService.refreshFromRepository();
+    campaignService.refreshFromRepository();
+    await sessionService.reconcile({ refreshRepository: false });
+  }).catch((error) => {
+    logger.error?.('[Fênix][Coordination] falha ao aplicar invalidação distribuída', {
+      type: event?.type,
+      message: error.message
+    });
+  });
+  return coordinationRefresh;
+}) ?? (() => undefined);
+sessionService.startCoordination();
 
 const authorizePeer = createAuthenticatedPeerAuthorizer({ authService, campaignService });
 const realtimeGateway = {
@@ -79,9 +124,12 @@ const app = await createApiApp({
 });
 
 async function shutdown(signal) {
-  app.log.info({ signal }, 'Encerrando servidor');
+  app.log.info({ signal, instanceId }, 'Encerrando servidor');
   await sessionService.persistRealtimeSessions().catch(() => undefined);
+  unsubscribeCoordination();
+  await sessionService.stopCoordination({ releaseLeases: true }).catch(() => undefined);
   await app.close();
+  await coordinationBus?.close?.();
   await repository.close?.();
 }
 
