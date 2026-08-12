@@ -6,12 +6,20 @@ const required = [
   'apps/api/src/http/session-schemas.js',
   'apps/api/src/http/register-session-routes.js',
   'apps/foundry-module/module.json',
+  'apps/fenix-vtt/package.json',
+  'apps/fenix-vtt/postcss.config.mjs',
+  'apps/fenix-vtt/.env.example',
   'apps/fenix-vtt/app/layout.js',
   'apps/fenix-vtt/app/page.js',
   'apps/fenix-vtt/app/globals.css',
+  'apps/fenix-vtt/app/live-bridge.css',
   'apps/fenix-vtt/components/vtt-shell.jsx',
   'apps/fenix-vtt/components/map-stage.jsx',
+  'apps/fenix-vtt/components/session-provider.jsx',
   'apps/fenix-vtt/lib/demo-scene.js',
+  'apps/fenix-vtt/lib/fenix-api-client.js',
+  'apps/fenix-vtt/lib/session-state.js',
+  'apps/fenix-vtt/lib/browser-audio-queue.js',
   'apps/fenix-vtt/next.config.mjs',
   'packages/core/src/index.js',
   'packages/vtt-contracts/src/index.js',
@@ -52,19 +60,30 @@ const required = [
 for (const file of required) await access(new URL(`../${file}`, import.meta.url));
 
 const packageJson = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
+const vttPackageJson = JSON.parse(await readFile(new URL('../apps/fenix-vtt/package.json', import.meta.url), 'utf8'));
 const moduleJson = JSON.parse(await readFile(new URL('../apps/foundry-module/module.json', import.meta.url), 'utf8'));
 const coreSource = await readFile(new URL('../packages/core/src/index.js', import.meta.url), 'utf8');
 const coreVersion = coreSource.match(/ENGINE_VERSION\s*=\s*['"]([^'"]+)['"]/)?.[1] ?? null;
-if (packageJson.version !== moduleJson.version || packageJson.version !== coreVersion) {
-  throw new Error(`Versões divergentes: engine=${packageJson.version}, foundry=${moduleJson.version}, core=${coreVersion}`);
+if (packageJson.version !== moduleJson.version || packageJson.version !== coreVersion || packageJson.version !== vttPackageJson.version) {
+  throw new Error(`Versões divergentes: engine=${packageJson.version}, foundry=${moduleJson.version}, core=${coreVersion}, vtt=${vttPackageJson.version}`);
 }
-if (!packageJson.scripts?.test || !packageJson.scripts?.check) throw new Error('Scripts de qualidade ausentes.');
+if (!packageJson.scripts?.test || !packageJson.scripts?.check || !packageJson.scripts?.['build:vtt']) {
+  throw new Error('Scripts de qualidade ou build do VTT ausentes.');
+}
+if (!/^\^?15\./.test(vttPackageJson.dependencies?.next ?? '')) {
+  throw new Error('apps/fenix-vtt deve permanecer no Next.js 15 durante este marco.');
+}
 
 const standaloneUiFiles = [
   'apps/fenix-vtt/app/layout.js',
   'apps/fenix-vtt/app/page.js',
   'apps/fenix-vtt/components/vtt-shell.jsx',
-  'apps/fenix-vtt/components/map-stage.jsx'
+  'apps/fenix-vtt/components/map-stage.jsx',
+  'apps/fenix-vtt/components/session-provider.jsx',
+  'apps/fenix-vtt/lib/demo-scene.js',
+  'apps/fenix-vtt/lib/fenix-api-client.js',
+  'apps/fenix-vtt/lib/session-state.js',
+  'apps/fenix-vtt/lib/browser-audio-queue.js'
 ];
 const forbiddenUiImports = [
   'RulesService',
