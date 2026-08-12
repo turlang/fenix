@@ -124,6 +124,14 @@ export class FenixApiClient {
     });
   }
 
+  importMapUrl(campaignId, url) {
+    return this.request(`/v1/campaigns/${encodeURIComponent(campaignId)}/assets/import-url`, {
+      method: 'POST',
+      timeoutMs: Math.max(this.timeoutMs, 60000),
+      body: { url }
+    });
+  }
+
   createScene(campaignId, input) {
     return this.request(`/v1/campaigns/${encodeURIComponent(campaignId)}/scenes`, {
       method: 'POST',
