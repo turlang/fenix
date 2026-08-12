@@ -1,10 +1,12 @@
 import Fastify from 'fastify';
+import websocket from '@fastify/websocket';
 import { ENGINE_VERSION } from '../../../packages/core/src/index.js';
 import { isOriginAllowed } from '../../../packages/config/src/index.js';
 import { createSessionController } from './http/session-controller.js';
 import { registerSessionRoutes } from './http/register-session-routes.js';
+import { registerRealtimeRoutes } from './realtime/register-realtime-routes.js';
 
-export function createApiApp({ config, sessionService, narrator, audioNarrationService }) {
+export function createApiApp({ config, sessionService, narrator, audioNarrationService, realtimeGateway = null }) {
   if (!config) throw new TypeError('config é obrigatório.');
   if (!sessionService) throw new TypeError('sessionService é obrigatório.');
 
@@ -13,6 +15,15 @@ export function createApiApp({ config, sessionService, narrator, audioNarrationS
     bodyLimit: config.bodyLimit,
     trustProxy: config.trustProxy
   });
+
+  if (realtimeGateway) {
+    app.register(websocket, {
+      options: {
+        maxPayload: 64 * 1024,
+        perMessageDeflate: false
+      }
+    });
+  }
 
   app.addHook('onRequest', async (request, reply) => {
     const origin = request.headers.origin;
@@ -32,8 +43,11 @@ export function createApiApp({ config, sessionService, narrator, audioNarrationS
     ai: narrator ? 'groq' : 'not-configured',
     narrativeMemory: 'persistent-file',
     audio: audioNarrationService?.enabled ? audioNarrationService.mode : 'disabled',
+    realtime: realtimeGateway ? 'websocket' : 'disabled',
     runtime: sessionService.getStatus()
   }));
+
+  if (realtimeGateway) registerRealtimeRoutes(app, { gateway: realtimeGateway });
 
   const controller = createSessionController({ sessionService });
   registerSessionRoutes(app, { controller });
