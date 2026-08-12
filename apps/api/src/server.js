@@ -59,7 +59,15 @@ if (repository.driver === 'postgres') {
     instanceUrl: config.instancePublicUrl,
     leaseTtlMs: config.runtimeLeaseTtlMs,
     heartbeatIntervalMs: config.runtimeHeartbeatMs,
-    publishEvent: (type, payload) => coordinationBus.publish(type, payload),
+    publishEvent: async (type, payload) => {
+      const isTakeover = type === 'RUNTIME_LEASE_ACQUIRED' && Number(payload?.generation) > 1;
+      runtimeObservability.record(isTakeover ? 'runtime_lease_takeover' : type.toLowerCase(), {
+        ownerId: payload?.ownerId ?? instanceId,
+        generation: payload?.generation ?? null,
+        outcome: type
+      });
+      return coordinationBus.publish(type, payload);
+    },
     logger
   });
   await leaseManager.initialize();
@@ -120,7 +128,7 @@ let coordinationRefresh = Promise.resolve();
 const unsubscribeCoordination = coordinationBus?.subscribe((event) => {
   if (!['STATE_CHANGED', 'RUNTIME_LEASE_RELEASED', 'RUNTIME_LEASE_LOST'].includes(event?.type)) return;
   runtimeObservability.record('coordination_event_received', {
-    sourceId: instanceId,
+    sourceId: event?.instanceId ?? null,
     outcome: event?.type,
     generation: event?.payload?.generation ?? null
   });
@@ -214,7 +222,7 @@ async function shutdown(signal) {
   await app.close();
   unsubscribeCoordination();
   await sessionService.stopCoordination({ releaseLeases: true }).catch(() => undefined);
-  await commandLedger.close?.().catch?.(() => undefined);
+  await Promise.resolve(commandLedger.close?.()).catch(() => undefined);
   await coordinationBus?.close?.();
   await repository.close?.();
 }
