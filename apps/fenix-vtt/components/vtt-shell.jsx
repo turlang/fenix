@@ -74,13 +74,15 @@ export function VttShell({ onExitCampaign = null, onLogout = null }) {
   const realtimeReady = state.realtime === 'connected';
   const mapScene = useMemo(() => {
     if (!activeScene) return demoScene;
+    const realtimeGrid = state.scene?.id === activeScene.id ? state.scene.grid : null;
     return {
       ...activeScene,
+      grid: realtimeGrid ? { ...activeScene.grid, ...realtimeGrid } : activeScene.grid,
       background: activeScene.backgroundAssetId
         ? resolveAssetUrl(activeScene.backgroundAssetId)
         : null
     };
-  }, [activeScene, resolveAssetUrl]);
+  }, [activeScene, resolveAssetUrl, state.scene]);
 
   async function handleSessionButton() {
     try {
