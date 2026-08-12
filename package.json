@@ -1,7 +1,7 @@
 {
   "name": "mestre-orc-engine",
   "version": "0.1.0-alpha.24",
-  "description": "Motor modular de narração para Foundry VTT com integração de IA e áudio.",
+  "description": "Fênix Shared Core para narração, Foundry VTT e cliente VTT standalone.",
   "private": true,
   "type": "module",
   "workspaces": [
@@ -11,6 +11,8 @@
   "scripts": {
     "dev": "node apps/api/src/server.js",
     "start": "node apps/api/src/server.js",
+    "dev:vtt": "npm --workspace @fenix/vtt run dev",
+    "build:vtt": "npm --workspace @fenix/vtt run build",
     "test": "node --test",
     "validate": "node scripts/validate.mjs",
     "check": "npm run validate && npm test"
