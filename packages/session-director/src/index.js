@@ -34,6 +34,39 @@ export class SessionDirector {
     };
   }
 
+  async restore({ sessionId, startedAt = null } = {}) {
+    try {
+      if (![SessionState.IDLE, SessionState.ENDED].includes(this.state)) {
+        throw new Error('Já existe uma sessão em andamento.');
+      }
+      const id = String(sessionId ?? '').trim();
+      if (!id) throw new TypeError('sessionId é obrigatório para restaurar a sessão.');
+      this.state = SessionState.SYNCING;
+      const raw = await this.contextPort.sync();
+      const context = this.contextBuilder.build(raw);
+      this.session = {
+        id,
+        context,
+        opening: null,
+        audio: null,
+        restored: true,
+        startedAt: startedAt || new Date().toISOString()
+      };
+      this.state = SessionState.COLLECTING_ACTIONS;
+      return {
+        state: this.state,
+        sessionId: id,
+        sceneId: context.scene?.id ?? null,
+        restored: true
+      };
+    } catch (error) {
+      this.session = null;
+      this.state = SessionState.IDLE;
+      this.logger.error?.('[Fênix][Session] falha ao restaurar', { message: error.message, stack: error.stack });
+      throw error;
+    }
+  }
+
   async start() {
     try {
       if (![SessionState.IDLE, SessionState.ENDED].includes(this.state)) {
