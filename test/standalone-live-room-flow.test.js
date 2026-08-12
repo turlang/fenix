@@ -15,7 +15,7 @@ const snapshot = {
     selectedPage: {
       name: 'Salão das Colunas',
       areaName: '02. Salão das Colunas',
-      extractionMode: 'STANDALONE_SCENE_READ_ALOUD',
+      extractionMode: 'DIRECT_JOURNAL_READ_ALOUD',
       content: 'Um salão amplo se estende entre colunas de pedra que sustentam o teto alto. A luz das tochas alcança o piso irregular, enquanto uma porta de madeira ocupa a parede norte.'
     }
   }
