@@ -15,9 +15,13 @@ Este projeto segue o formato do [Keep a Changelog](https://keepachangelog.com/pt
 - Diretrizes de arquitetura e UI/UX para o Fênix VTT standalone.
 - `StandaloneVttAdapter` com estado independente e tradução para os mesmos contratos consumidos pelo Shared Core.
 - `MapRendererPort` com renderer headless para testes, capability detection WebGPU/WebGL2 e baseline WebGL2 real.
-- Source scaffold `apps/fenix-vtt` no padrão App Router, com Map Stage, Scene Tree, Context Rail, Narration Timeline e Player Focus Mode.
+- Aplicação `apps/fenix-vtt` executável com Next.js 15, React 19, Tailwind CSS 4, Map Stage, Scene Tree, Context Rail, Narration Timeline e Player Focus Mode.
+- `FenixApiClient`, store de sessão standalone e fila Browser-TTS para conectar a interface ao Engine sem importar regras ou providers no React.
+- Movimento de tokens por drag no WebGL2 e zonas standalone capazes de emitir `ROOM_ENTERED` com deduplicação de transição.
+- Vertical slice automatizado `StandaloneVttAdapter → Shared Core → ROOM_ENTRY → NarrationOutput`.
 - Testes automatizados que executam o mesmo `createSessionRuntime` usando o adapter standalone, sem APIs do Foundry.
 - Validação arquitetural que impede a UI standalone de importar regras, Groq, `SessionDirector` ou código Foundry.
+- Normalizador/check de `package-lock.json` para impedir URLs de registry privado na distribuição.
 
 ### Alterado
 
@@ -25,7 +29,7 @@ Este projeto segue o formato do [Keep a Changelog](https://keepachangelog.com/pt
 - `server.js` passa a atuar somente como composition root; rotas, schemas, controller e criação do Fastify foram separados.
 - `/health` usa a versão centralizada do Engine em vez de valor hardcoded antigo.
 - Foundry Adapter normaliza o estado pelo contrato universal antes de entrar no Core.
-- CI separa a qualidade do Shared Core do smoke test de instalação de dependências, evitando que falhas internas do npm escondam regressões de domínio.
+- CI passa a exigir lockfile portátil, `npm ci` no registry público, import do runtime Fastify e build do VTT standalone, além da matriz de testes Node.js 20/22/24.
 
 ### Compatibilidade
 
