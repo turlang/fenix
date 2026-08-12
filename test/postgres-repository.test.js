@@ -11,13 +11,8 @@ class FakePgPool {
     this.ended = false;
   }
 
-  async query(sql, params = []) {
+  async query(sql) {
     const statement = String(sql).replace(/\s+/g, ' ').trim();
-    if (statement.startsWith('CREATE TABLE')) return { rows: [] };
-    if (statement.startsWith('INSERT INTO fenix_repository_state')) {
-      if (!this.state) this.state = JSON.parse(params[2]);
-      return { rows: [] };
-    }
     if (statement.startsWith('SELECT schema_version, state')) {
       return { rows: [{ schema_version: 1, state: structuredClone(this.state) }] };
     }
@@ -29,6 +24,12 @@ class FakePgPool {
       query: async (sql, params = []) => {
         const statement = String(sql).replace(/\s+/g, ' ').trim();
         if (statement === 'BEGIN' || statement === 'COMMIT' || statement === 'ROLLBACK') return { rows: [] };
+        if (statement.startsWith('SELECT pg_advisory_xact_lock')) return { rows: [{ pg_advisory_xact_lock: null }] };
+        if (statement.startsWith('CREATE TABLE')) return { rows: [] };
+        if (statement.startsWith('INSERT INTO fenix_repository_state')) {
+          if (!this.state) this.state = JSON.parse(params[2]);
+          return { rows: [] };
+        }
         if (statement.includes('FOR UPDATE')) return { rows: [{ state: structuredClone(this.state) }] };
         if (statement.startsWith('UPDATE fenix_repository_state')) {
           this.state = JSON.parse(params[2]);
