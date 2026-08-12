@@ -39,45 +39,37 @@ test('URL realtime deriva ws/wss do endpoint HTTP da API', () => {
   assert.equal(resolveFenixRealtimeUrl('https://fenix.example.com/api'), 'wss://fenix.example.com/v1/realtime');
 });
 
-test('identidade de navegador preserva clientId e permite modo player por query string', () => {
+test('identidade de navegador preserva apenas clientId e não aceita autoridade por URL', () => {
   const values = new Map();
   const storage = {
     getItem: (key) => values.get(key) ?? null,
     setItem: (key, value) => values.set(key, value)
   };
-  const first = createBrowserRealtimeIdentity({
-    locationLike: { search: '?role=player&actor=hero-ayla&name=Ana' },
-    storage
-  });
-  const second = createBrowserRealtimeIdentity({
-    locationLike: { search: '?role=player&actor=hero-ayla&name=Ana' },
-    storage
-  });
+  const first = createBrowserRealtimeIdentity({ storage });
+  const second = createBrowserRealtimeIdentity({ storage });
 
-  assert.equal(first.role, 'player');
-  assert.equal(first.actorId, 'hero-ayla');
-  assert.equal(first.displayName, 'Ana');
+  assert.deepEqual(Object.keys(first), ['clientId']);
   assert.equal(second.clientId, first.clientId);
+  assert.equal(first.role, undefined);
+  assert.equal(first.actorId, undefined);
 });
 
-test('cliente envia TOKEN_MOVE com posição e saída explícita de sala', async () => {
+test('cliente WebSocket envia somente sessionId e clientId na URL', async () => {
   FakeWebSocket.instances.length = 0;
   const client = new FenixRealtimeClient({
     apiBaseUrl: 'http://localhost:3001',
     webSocketImpl: FakeWebSocket,
-    identity: {
-      clientId: 'client-1',
-      userId: 'user-1',
-      displayName: 'Mestre',
-      role: 'gm',
-      actorId: null
-    }
+    identity: { clientId: 'client-1' }
   });
 
   await client.connect('session-1');
   const socket = FakeWebSocket.instances[0];
-  assert.match(socket.url, /sessionId=session-1/);
-  assert.match(socket.url, /role=gm/);
+  const url = new URL(socket.url);
+  assert.equal(url.searchParams.get('sessionId'), 'session-1');
+  assert.equal(url.searchParams.get('clientId'), 'client-1');
+  assert.equal(url.searchParams.has('role'), false);
+  assert.equal(url.searchParams.has('actorId'), false);
+  assert.equal(url.searchParams.has('userId'), false);
 
   client.moveToken({ id: 'hero-ayla', name: 'Ayla', x: 10, y: 20, size: 72 }, { roomId: null });
   const sent = JSON.parse(socket.sent[0]);
