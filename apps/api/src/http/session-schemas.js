@@ -10,6 +10,7 @@ export const actionSchema = {
     properties: {
       campaignId: { anyOf: [{ type: 'string', maxLength: 200 }, { type: 'null' }] },
       sessionId: { anyOf: [{ type: 'string', maxLength: 200 }, { type: 'null' }] },
+      commandId: { anyOf: [{ type: 'string', maxLength: 300 }, { type: 'null' }] },
       content: { type: 'string', minLength: 1, maxLength: 4000 },
       actorId: { anyOf: [{ type: 'string', maxLength: 200 }, { type: 'null' }] },
       messageId: { anyOf: [{ type: 'string', maxLength: 200 }, { type: 'null' }] }
@@ -25,6 +26,7 @@ export const roomEntrySchema = {
     properties: {
       campaignId: { anyOf: [{ type: 'string', maxLength: 200 }, { type: 'null' }] },
       sessionId: { anyOf: [{ type: 'string', maxLength: 200 }, { type: 'null' }] },
+      commandId: { anyOf: [{ type: 'string', maxLength: 300 }, { type: 'null' }] },
       room: {
         type: 'object',
         required: ['id', 'name'],
