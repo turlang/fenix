@@ -8,6 +8,8 @@ test('configuração aplica padrões seguros de desenvolvimento', () => {
   assert.equal(config.trustProxy, false);
   assert.equal(config.allowLegacySessionHttp, true);
   assert.equal(config.authCookieSameSite, 'Lax');
+  assert.equal(config.remoteMapTimeoutMs, 10000);
+  assert.equal(config.remoteMapMaxRedirects, 3);
   assert.equal(config.internalRoutingSecret, null);
   assert.equal(config.runtimeRoutingTimeoutMs, 5000);
   assert.equal(config.runtimeRoutingMaxRetries, 1);
@@ -41,7 +43,7 @@ test('CORS permite Foundry em rede local na porta padrão', () => {
   assert.equal(isOriginAllowed('https://example.com:30000', []), false);
 });
 
-test('configuração rejeita porta, SameSite, heartbeat, secret e ledger inválidos', () => {
+test('configuração rejeita porta, SameSite, heartbeat, secret, remote map e ledger inválidos', () => {
   assert.throws(() => createConfig({ PORT: '70000' }), /PORT/);
   assert.throws(
     () => createConfig({ FENIX_AUTH_COOKIE_SAME_SITE: 'insecure' }),
@@ -56,6 +58,14 @@ test('configuração rejeita porta, SameSite, heartbeat, secret e ledger inváli
     /FENIX_INTERNAL_ROUTING_SECRET/
   );
   assert.throws(
+    () => createConfig({ FENIX_REMOTE_MAP_TIMEOUT_MS: '100' }),
+    /FENIX_REMOTE_MAP_TIMEOUT_MS/
+  );
+  assert.throws(
+    () => createConfig({ FENIX_REMOTE_MAP_MAX_REDIRECTS: '9' }),
+    /FENIX_REMOTE_MAP_MAX_REDIRECTS/
+  );
+  assert.throws(
     () => createConfig({ FENIX_COMMAND_LEDGER_UNKNOWN_AFTER_MS: '1000' }),
     /FENIX_COMMAND_LEDGER_UNKNOWN_AFTER_MS/
   );
@@ -65,13 +75,15 @@ test('configuração rejeita porta, SameSite, heartbeat, secret e ledger inváli
   );
 });
 
-test('configuração interpreta origens, proxy, identidade, coordenação e ledger explicitamente', () => {
+test('configuração interpreta origens, proxy, identidade, remote map, coordenação e ledger explicitamente', () => {
   const config = createConfig({
     NODE_ENV: 'production',
     PORT: '8080',
     TRUST_PROXY: 'true',
     FENIX_ALLOW_LEGACY_SESSION_HTTP: 'true',
     FENIX_AUTH_COOKIE_SAME_SITE: 'Strict',
+    FENIX_REMOTE_MAP_TIMEOUT_MS: '15000',
+    FENIX_REMOTE_MAP_MAX_REDIRECTS: '2',
     FENIX_INSTANCE_ID: 'engine-a',
     FENIX_INSTANCE_PUBLIC_URL: 'https://engine-a.example',
     FENIX_INTERNAL_ROUTING_SECRET: '0123456789abcdef0123456789abcdef',
@@ -90,6 +102,8 @@ test('configuração interpreta origens, proxy, identidade, coordenação e ledg
   assert.equal(config.trustProxy, true);
   assert.equal(config.allowLegacySessionHttp, true);
   assert.equal(config.authCookieSameSite, 'Strict');
+  assert.equal(config.remoteMapTimeoutMs, 15000);
+  assert.equal(config.remoteMapMaxRedirects, 2);
   assert.equal(config.instanceId, 'engine-a');
   assert.equal(config.instancePublicUrl, 'https://engine-a.example');
   assert.equal(config.internalRoutingSecret, '0123456789abcdef0123456789abcdef');
