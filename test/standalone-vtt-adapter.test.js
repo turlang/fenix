@@ -54,7 +54,10 @@ test('mesmo Shared Core inicia sessão com StandaloneVttAdapter', async () => {
   const adapter = new StandaloneVttAdapter({ initialSnapshot: standaloneSnapshot, logger: {} });
   const runtime = createSessionRuntime({
     vttContextPort: adapter,
-    narrationOutputPort: new NarrationOutput({ deliver: async (message) => delivered.push(message), logger: {} }),
+    narrationOutputPort: new NarrationOutput({
+      publish: async (content, metadata) => delivered.push({ content, metadata }),
+      logger: {}
+    }),
     narrator,
     logger: {}
   });
@@ -62,5 +65,6 @@ test('mesmo Shared Core inicia sessão com StandaloneVttAdapter', async () => {
   const result = await runtime.start();
   assert.equal(result.state, 'COLLECTING_ACTIONS');
   assert.equal(delivered.length, 1);
+  assert.equal(delivered[0].metadata.type, 'SESSION_OPENING');
   assert.match(result.opening, /O que vocês fazem\?$/);
 });
