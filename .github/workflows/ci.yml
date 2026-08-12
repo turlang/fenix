@@ -8,13 +8,45 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  lock-sync:
+    name: Refresh portable lockfile
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+
+      - name: Configure Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      - name: Regenerate lockfile
+        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund --registry=https://registry.npmjs.org
+
+      - name: Commit lockfile when changed
+        run: |
+          if git diff --quiet -- package-lock.json; then
+            echo "package-lock.json already current"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package-lock.json
+          git commit -m "build: refresh lockfile for pg"
+          git push origin HEAD:${{ github.head_ref }}
+
   quality:
     name: Core / Node.js ${{ matrix.node-version }}
     runs-on: ubuntu-latest
@@ -40,9 +72,23 @@ jobs:
         run: node --test
 
   integration-build:
-    name: Portable install + auth + realtime + VTT build / Node.js 24
+    name: Portable install + Postgres + auth + realtime + VTT build / Node.js 24
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: fenix
+          POSTGRES_PASSWORD: fenix_test
+          POSTGRES_DB: fenix_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U fenix -d fenix_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
 
     steps:
       - name: Checkout
@@ -60,8 +106,13 @@ jobs:
       - name: Install dependencies
         run: npm ci --ignore-scripts --no-audit --no-fund --registry=https://registry.npmjs.org
 
-      - name: Import Fastify runtimes
-        run: node -e "Promise.all([import('fastify'), import('@fastify/websocket')]).then(() => console.log('Fastify realtime runtime OK'))"
+      - name: Import API runtimes
+        run: node -e "Promise.all([import('fastify'), import('@fastify/websocket'), import('pg')]).then(() => console.log('Fastify + PostgreSQL runtimes OK'))"
+
+      - name: Test PostgreSQL repository
+        env:
+          DATABASE_URL: postgres://fenix:fenix_test@127.0.0.1:5432/fenix_test
+        run: npm run test:postgres-integration
 
       - name: Test auth and campaign HTTP
         run: npm run test:auth-integration
