@@ -108,6 +108,20 @@ export function registerSceneRoutes(app, { authService, sceneService }) {
     }
   });
 
+  app.post('/v1/campaigns/:campaignId/scenes/:sceneId/walls', async (request, reply) => {
+    try {
+      const authenticated = requireAuthenticatedRequest(authService, request);
+      return await sceneService.updateWalls({
+        campaignId: request.params.campaignId,
+        userId: authenticated.user.id,
+        sceneId: request.params.sceneId,
+        walls: request.body?.walls
+      });
+    } catch (error) {
+      return sendError(reply, error, 'CAMPAIGN_SCENE_WALLS_UPDATE_FAILED');
+    }
+  });
+
   app.post('/v1/campaigns/:campaignId/scenes/:sceneId/activate', async (request, reply) => {
     try {
       const authenticated = requireAuthenticatedRequest(authService, request);
