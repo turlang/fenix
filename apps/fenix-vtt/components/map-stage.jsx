@@ -17,17 +17,18 @@ export function MapStage() {
     if (!canvas) return undefined;
 
     const detected = detectBrowserRendererBackend({ navigatorLike: navigator, canvas });
-    setBackend(detected);
     if (detected === 'headless') {
+      setBackend('unavailable');
       setError('Este navegador não oferece WebGL2 para o mapa do Fênix.');
       return undefined;
     }
 
     let renderer;
     try {
-      // WebGPU será implementado como outro adapter do mesmo MapRendererPort.
-      // Até lá, WebGL2 permanece como baseline de produção mesmo em navegadores com WebGPU.
+      // WebGPU será outro adapter do mesmo MapRendererPort. Nesta entrega,
+      // WebGL2 é o backend ativo e WebGPU é apenas uma capability detectada.
       renderer = new WebGlMapRenderer({ canvas });
+      setBackend(detected === 'webgpu' ? 'webgl2 · WebGPU ready' : 'webgl2');
       rendererRef.current = renderer;
       renderer.loadScene(demoScene);
       renderer.setViewport({ x: 230, y: 160, zoom: 0.82 });
@@ -39,6 +40,7 @@ export function MapStage() {
       };
       frameRef.current = requestAnimationFrame(loop);
     } catch (cause) {
+      setBackend('error');
       setError(cause.message || 'Falha ao iniciar o renderer do mapa.');
     }
 
