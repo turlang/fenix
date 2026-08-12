@@ -15,11 +15,13 @@ import {
   PostgresRuntimeLeaseManager,
   PostgresStateBus
 } from '../../../packages/distributed-runtime-coordination/src/index.js';
+import { OwnerAwareRuntimeRouter } from '../../../packages/owner-aware-runtime-router/src/index.js';
 import {
   RealtimeSessionGateway,
   RealtimeSessionHub
 } from '../../../packages/realtime-session-gateway/src/index.js';
 import { createApiApp } from './app.js';
+import { createOwnerAwareWebSocketProxy } from './realtime/owner-aware-websocket-proxy.js';
 
 loadEnvFile();
 const config = createConfig();
@@ -52,6 +54,26 @@ const authService = new AuthService({ repository, logger });
 await authService.initialize();
 const campaignService = new CampaignService({ repository, authService, logger });
 await campaignService.initialize();
+
+const runtimeRouter = leaseManager && config.internalRoutingSecret
+  ? new OwnerAwareRuntimeRouter({
+      instanceId,
+      instancePublicUrl: config.instancePublicUrl,
+      leaseManager,
+      resolveCampaignIdBySessionId: (sessionId) => campaignService.findCampaignBySessionId?.(sessionId)?.id ?? null,
+      routingSecret: config.internalRoutingSecret,
+      requestTimeoutMs: config.runtimeRoutingTimeoutMs,
+      maxRetries: config.runtimeRoutingMaxRetries,
+      logger
+    })
+  : null;
+const realtimeProxy = runtimeRouter?.enabled
+  ? createOwnerAwareWebSocketProxy({
+      ownerRouter: runtimeRouter,
+      maxRouteRetries: config.runtimeRoutingMaxRetries,
+      logger
+    })
+  : null;
 
 const narrator = createNarrativeProviderFromEnv({ logger });
 const narrationMemory = createNarrationMemoryFromEnv({ logger });
@@ -104,12 +126,31 @@ const realtimeGateway = {
       processAction: (payload) => sessionService.processAction({ ...payload, sessionId }),
       describeRoom: (payload) => sessionService.describeRoom({ ...payload, sessionId })
     };
-    return new RealtimeSessionGateway({
+    const gateway = new RealtimeSessionGateway({
       hub: realtimeHub,
       sessionService: scopedSessionService,
       authorizePeer,
       logger
-    }).openPeer(input);
+    });
+    const peer = gateway.openPeer(input);
+    return {
+      ...peer,
+      receive: async (raw) => {
+        await sessionService.assertOwnership({ sessionId });
+        return peer.receive(raw);
+      }
+    };
+  },
+  sendError(sessionId, clientId, error, commandId = null) {
+    return realtimeHub.sendTo(sessionId, clientId, {
+      type: 'ERROR',
+      commandId,
+      payload: {
+        code: error?.code || 'REALTIME_ERROR',
+        message: error?.message || 'Falha realtime.',
+        status: Number(error?.statusCode) || 500
+      }
+    });
   }
 };
 
@@ -120,7 +161,9 @@ const app = await createApiApp({
   audioNarrationService,
   realtimeGateway,
   authService,
-  campaignService
+  campaignService,
+  runtimeRouter,
+  realtimeProxy
 });
 
 async function shutdown(signal) {
