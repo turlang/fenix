@@ -9,7 +9,7 @@ import {
   CampaignService,
   createAuthenticatedPeerAuthorizer
 } from '../../../packages/campaign-service/src/index.js';
-import { PersistentSessionService } from '../../../packages/persistent-session-service/src/index.js';
+import { CampaignRuntimeRegistry } from '../../../packages/campaign-runtime-registry/src/index.js';
 import {
   RealtimeSessionGateway,
   RealtimeSessionHub
@@ -35,26 +35,38 @@ const realtimeHub = new RealtimeSessionHub({
   logger,
   persistSnapshot: (sessionId, snapshot) => campaignService.saveRealtimeSnapshot(sessionId, snapshot)
 });
-const runtime = createSessionRuntime({
-  narrator,
-  narrationMemory,
-  audioNarrationService,
-  narrationOutputPort: realtimeHub,
-  logger
-});
-const sessionService = new PersistentSessionService({ runtime, campaignService, logger });
-const restoredSession = await sessionService.initialize();
-if (restoredSession.restored && restoredSession.sessionId) {
-  const realtimeSnapshot = campaignService.loadRealtimeSnapshot(restoredSession.sessionId);
-  if (realtimeSnapshot) realtimeHub.hydrateSession(restoredSession.sessionId, realtimeSnapshot);
-}
 
-const realtimeGateway = new RealtimeSessionGateway({
-  hub: realtimeHub,
-  sessionService,
-  authorizePeer: createAuthenticatedPeerAuthorizer({ authService, campaignService }),
-  logger
+const sessionService = new CampaignRuntimeRegistry({
+  campaignService,
+  realtimeHub,
+  logger,
+  runtimeFactory: () => createSessionRuntime({
+    narrator,
+    narrationMemory,
+    audioNarrationService,
+    narrationOutputPort: realtimeHub,
+    logger
+  })
 });
+await sessionService.initialize();
+
+const authorizePeer = createAuthenticatedPeerAuthorizer({ authService, campaignService });
+const realtimeGateway = {
+  openPeer(input) {
+    const sessionId = String(input?.sessionId ?? '');
+    const scopedSessionService = {
+      getStatus: () => sessionService.getStatus({ sessionId }),
+      processAction: (payload) => sessionService.processAction({ ...payload, sessionId }),
+      describeRoom: (payload) => sessionService.describeRoom({ ...payload, sessionId })
+    };
+    return new RealtimeSessionGateway({
+      hub: realtimeHub,
+      sessionService: scopedSessionService,
+      authorizePeer,
+      logger
+    }).openPeer(input);
+  }
+};
 
 const app = await createApiApp({
   config,
@@ -68,9 +80,9 @@ const app = await createApiApp({
 
 async function shutdown(signal) {
   app.log.info({ signal }, 'Encerrando servidor');
-  const status = sessionService.getStatus();
-  if (status.sessionId) await realtimeHub.persistSession(status.sessionId).catch(() => undefined);
+  await sessionService.persistRealtimeSessions().catch(() => undefined);
   await app.close();
+  await repository.close?.();
 }
 
 for (const signal of ['SIGINT', 'SIGTERM']) {
