@@ -50,14 +50,14 @@ export function createSessionController({ sessionService, authorizeRequest = asy
     },
     end(request, reply) {
       return execute(reply, async () => {
-        await authorizeRequest(request, 'end');
-        return sessionService.end();
+        const input = await authorizeRequest(request, 'end');
+        return sessionService.end(input);
       }, 'SESSION_END_FAILED');
     },
     status(request, reply) {
       return execute(reply, async () => {
-        await authorizeRequest(request, 'status');
-        return sessionService.getStatus();
+        const input = await authorizeRequest(request, 'status');
+        return sessionService.getStatus(input);
       }, 'SESSION_STATUS_FAILED');
     }
   };
