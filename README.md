@@ -24,18 +24,25 @@ FENIX_PERSISTENCE_DRIVER=json
 FENIX_STATE_FILE=./data/fenix-state.json
 ```
 
-Para PostgreSQL:
+Para PostgreSQL distribuído:
 
 ```env
 FENIX_PERSISTENCE_DRIVER=postgres
 DATABASE_URL=postgres://usuario:senha@host:5432/fenix
 FENIX_POSTGRES_POOL_MAX=10
+FENIX_INSTANCE_ID=engine-a
+FENIX_INSTANCE_PUBLIC_URL=https://engine-a.internal.example.com
+FENIX_INTERNAL_ROUTING_SECRET=troque-por-um-segredo-compartilhado-com-32-ou-mais-caracteres
 FENIX_RUNTIME_LEASE_TTL_MS=15000
 FENIX_RUNTIME_HEARTBEAT_MS=5000
 FENIX_RUNTIME_RECONCILE_MS=5000
+FENIX_RUNTIME_ROUTING_TIMEOUT_MS=5000
+FENIX_RUNTIME_ROUTING_MAX_RETRIES=1
 ```
 
-Cada réplica pode receber `FENIX_INSTANCE_ID` único e `FENIX_INSTANCE_PUBLIC_URL` opcional. Se `FENIX_INSTANCE_ID` for omitido, o Engine gera um UUID no boot. Também configure `GROQ_API_KEY`, `GROQ_MODEL`, CORS e autenticação conforme `.env.example`.
+`FENIX_INSTANCE_ID` deve ser único por réplica. `FENIX_INSTANCE_PUBLIC_URL` precisa ser alcançável pelas demais réplicas. O mesmo `FENIX_INTERNAL_ROUTING_SECRET` deve ser compartilhado somente entre os Engines autorizados. Sem o secret, o Engine continua em modo local-only mesmo usando PostgreSQL.
+
+Também configure `GROQ_API_KEY`, `GROQ_MODEL`, CORS e autenticação conforme `.env.example`.
 
 ## Fênix VTT standalone
 
@@ -60,19 +67,68 @@ O fluxo atual possui:
 - heartbeat, expiração e takeover da mesma `sessionId` após perda do owner;
 - `PostgresStateBus` com `LISTEN/NOTIFY` para invalidar caches entre Engines;
 - refresh de `AuthService` e `CampaignService` sem reiniciar processo;
+- `OwnerAwareRuntimeRouter` para encaminhar HTTP ao owner atual do lease;
+- proxy WebSocket transparente entre o ingress escolhido pelo balanceador e o owner;
+- HMAC interno, timestamp, generation e hop único para autenticar Engine→Engine e impedir loops;
+- retry limitado quando o owner muda antes da conclusão do comando;
+- fencing antes de cada comando realtime, inclusive movimento de token e troca de cena;
+- reconnect automático do browser após `1012 Runtime owner changed`;
 - `RealtimeSessionHub` isolado por `sessionId`;
-- WebSocket `/v1/realtime` com autoridade GM/Player;
 - `ROOM_ENTERED` e ações pelo mesmo Shared Core;
 - recuperação das sessões persistidas após restart/failover sem repetir aberturas;
 - JSON local ou PostgreSQL transacional como adapters de persistência.
 
-## PostgreSQL, coordenação e migração
+## PostgreSQL, ownership e owner-aware ingress
 
 `PostgresFenixRepository` preserva o contrato dos serviços atuais e usa pool, transação, advisory lock de inicialização e `SELECT ... FOR UPDATE` nas mutações. O estado continua em uma linha JSONB versionada nesta fase de transição.
 
-Quando PostgreSQL está ativo, o Engine também cria `fenix_runtime_leases`. Um lease registra campanha, owner, `sessionId`, geração e prazo de validade. A geração funciona como fencing token: uma instância que perdeu ownership não consegue continuar processando ações com um token antigo.
+Quando PostgreSQL está ativo, o Engine também cria `fenix_runtime_leases`. Um lease registra campanha, owner, `sessionId`, `generation` e prazo de validade. A geração funciona como fencing token: uma instância que perdeu ownership não consegue continuar processando comandos com uma geração antiga.
 
 O `PostgresStateBus` mantém uma conexão dedicada em `LISTEN fenix_state_changed`. Alterações persistidas publicam notificações best-effort depois do `COMMIT`; uma falha do canal de notificação não desfaz uma gravação já confirmada. A reconciliação periódica continua como proteção contra notificações perdidas.
+
+### Roteamento HTTP
+
+Uma requisição pode cair em qualquer Engine:
+
+```text
+Browser / Foundry
+       ↓
+Load Balancer
+       ↓
+Engine B
+       ↓
+resolve lease no PostgreSQL
+       ↓
+owner = Engine A
+       ↓
+proxy interno assinado
+       ↓
+Engine A
+       ↓
+CampaignRuntime
+```
+
+O proxy preserva a autenticação original do usuário. O owner executa novamente as mesmas regras de auth/membership; a assinatura interna não substitui autorização de usuário.
+
+Cada hop interno transporta HMAC-SHA256 sobre origem, `generation`, timestamp, método, path e hash do body. O hop aceito é exatamente `1`, impedindo cadeias de proxy entre Engines. Se a geração mudou durante o encaminhamento, o ingress re-resolve o lease e pode repetir uma vez para o novo owner conforme configuração.
+
+### Roteamento WebSocket
+
+O navegador continua conectado ao endpoint público que recebeu o upgrade. Se essa réplica não for owner, ela cria um WebSocket interno assinado para o owner e encaminha frames nos dois sentidos.
+
+```text
+Browser
+   ⇅ WebSocket público
+Engine B / ingress
+   ⇅ WebSocket interno HMAC
+Engine A / owner
+   ⇅
+RealtimeSessionGateway
+```
+
+Cada comando recebido pelo owner passa novamente por `assertOwnership()`. Se o lease for perdido, o socket antigo é encerrado com `1012`; o cliente standalone faz reconnect limitado no mesmo endpoint público, que resolve novamente o owner atual.
+
+## Migração JSON → PostgreSQL
 
 Para migrar um estado JSON existente para um banco vazio:
 
@@ -92,6 +148,7 @@ O script recusa sobrescrever PostgreSQL que já contenha estado.
 - `npm run test:realtime-integration`: WebSocket real.
 - `npm run test:postgres-integration`: duas instâncias concorrentes do repository contra PostgreSQL real.
 - `npm run test:coordination-integration`: dois Engines, lease, LISTEN/NOTIFY, takeover e fencing contra PostgreSQL real.
+- `npm run test:routing-integration`: dois Engines reais; HTTP e WebSocket chegam ao não-owner e são encaminhados ao owner.
 - `npm run migrate:postgres`: migra JSON para PostgreSQL vazio.
 - `npm run validate`: valida fronteiras/estrutura.
 - `npm run check`: validação + Core tests.
@@ -105,13 +162,17 @@ O script recusa sobrescrever PostgreSQL que já contenha estado.
 - Jogador não escolhe `role`/`actorId` pela URL e não controla recursos de outra membership.
 - O HTTP legado Foundry permanece disponível apenas conforme `FENIX_ALLOW_LEGACY_SESSION_HTTP`.
 - PostgreSQL protege mutações concorrentes do repository.
-- Apenas o owner de um lease válido pode processar action/room/end de uma campanha persistente.
+- Apenas o owner de um lease válido pode processar uma campanha persistente.
+- Requisições internas precisam de HMAC válido, timestamp recente, `generation` e hop único.
+- Cabeçalhos internos forjados são recusados; o proxy não cria cadeias recursivas.
 - O shutdown fecha o ingress antes de liberar leases, reduzindo a janela de split-brain durante desligamento normal.
-- `LISTEN/NOTIFY` acelera invalidação, mas a reconciliação periódica é a fonte de recuperação quando uma notificação for perdida.
+- `LISTEN/NOTIFY` acelera invalidação, mas a reconciliação periódica é a recuperação para notificações perdidas.
 
-### Limite de roteamento
+### Limite atual: idempotência em falha ambígua
 
-Ownership/failover distribuído está implementado, mas **roteamento transparente para o owner ainda não está**. Se uma requisição HTTP/WebSocket cair em uma réplica que não possui o runtime, ela não é automaticamente proxyada para a réplica dona. Em produção horizontal, use afinidade/roteamento owner-aware até existir a camada de ingress distribuído do Fênix.
+O roteamento owner-aware evita executar deliberadamente no owner errado e só faz retry automático quando recebe um erro explícito de ownership antes da conclusão. Ainda não existe um ledger distribuído de idempotência que permita repetir cegamente uma mutação quando a rede cai **depois** de o owner processar a ação, mas **antes** de o proxy receber a resposta.
+
+Por isso timeouts/unreachability não são tratados como garantia de “não processado”. A próxima evolução deve introduzir `commandId`/idempotency records persistentes e observabilidade de roteamento antes de qualquer política mais agressiva de retry.
 
 ## Módulo Foundry
 
@@ -126,35 +187,39 @@ A lógica alpha.24 permanece no módulo: correlação por número da sala, Journ
 ## Arquitetura validada
 
 ```text
-Foundry VTT --------------------------┐
-                                     ├→ VTT Contracts → Shared Core → NarrationOutput
-Conta → Campaign Membership → VTT ---┘                       │
-               │                                             ├→ texto
-               ↓                                             └→ áudio
-       RealtimeSessionGateway                                     ↓
-               ↓                                            peers da sessão
-       RealtimeSessionHub
-               ↓
-      CampaignRuntimeRegistry
-               │
-        assert lease/fence
-               ↓
-   PostgresRuntimeLeaseManager
-               │
-       ┌───────┴────────┐
-       │   PostgreSQL   │
-       │ leases + JSONB │
-       └───────┬────────┘
-               │ LISTEN/NOTIFY
-       PostgresStateBus
-        ↙             ↘
-    Engine A       Engine B
+Browser / Foundry
+       │
+       ↓
+Load Balancer
+       │
+       ↓
+ qualquer Engine
+       │
+       ├── Auth / Membership
+       ├── resolve lease
+       │
+       ├─ local owner ───────────────┐
+       │                             │
+       └─ remote owner → HMAC proxy ─┤
+                                     ↓
+                          CampaignRuntimeRegistry
+                                     │
+                              assert lease/fence
+                                     ↓
+                               Shared Core
+                                     │
+                           NarrationOutput / Hub
+                                     │
+                    ┌────────────────┴──────────────┐
+                    │ PostgreSQL                    │
+                    │ state + leases + LISTEN       │
+                    └───────────────────────────────┘
 ```
 
-`SessionDirector` continua sem conhecer Foundry, autenticação, banco, Fastify, WebSocket, React, WebGL, leases ou `LISTEN/NOTIFY`.
+`SessionDirector` continua sem conhecer Foundry, autenticação, banco, Fastify, WebSocket, React, WebGL, leases, `LISTEN/NOTIFY` ou roteamento entre Engines.
 
 ## CI
 
-A pipeline exige matriz Node 20/22/24, suíte unitária, PostgreSQL 16 real, concorrência do repository, integração distribuída de dois Engines com takeover/fencing/cache invalidation, auth/campanhas HTTP, WebSocket real, `npm ci` e build Next. O workflow permanece somente-leitura (`contents: read`).
+A pipeline exige matriz Node 20/22/24, suíte unitária, PostgreSQL 16 real, concorrência do repository, coordenação distribuída, roteamento real de HTTP/WebSocket entre dois Engines, tentativa de assinatura interna forjada, auth/campanhas HTTP, WebSocket base, `npm ci` e build Next. O workflow permanece somente-leitura (`contents: read`).
 
-Veja `docs/FENIX_AUTH_PERSISTENCE.md` para detalhes de persistência e coordenação. Os `README-ALPHA*.md` preservam o histórico anterior.
+Veja `docs/FENIX_AUTH_PERSISTENCE.md` para detalhes de persistência, coordenação e ingress. Os `README-ALPHA*.md` preservam o histórico anterior.
