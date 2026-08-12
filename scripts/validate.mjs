@@ -68,7 +68,8 @@ const required = [
   'SECURITY.md',
   'README.md',
   'docs/FENIX_SHARED_CORE.md',
-  'docs/FENIX_VTT_UI_UX.md'
+  'docs/FENIX_VTT_UI_UX.md',
+  'docs/FENIX_AUTH_PERSISTENCE.md'
 ];
 for (const file of required) await access(new URL(`../${file}`, import.meta.url));
 
