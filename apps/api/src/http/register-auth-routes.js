@@ -15,7 +15,7 @@ function parseSessionToken(request) {
   return null;
 }
 
-function sessionCookie(token, { expiresAt = null, secure = false, clear = false } = {}) {
+export function serializeAuthSessionCookie(token, { expiresAt = null, secure = false, clear = false } = {}) {
   const parts = [
     `${COOKIE_NAME}=${clear ? '' : encodeURIComponent(String(token ?? ''))}`,
     'Path=/',
@@ -70,7 +70,7 @@ export function registerAuthRoutes(app, { authService, campaignService, config }
     try {
       const user = await authService.bootstrapOwner(request.body ?? {});
       const session = await authService.createSession(user.id);
-      reply.header('Set-Cookie', sessionCookie(session.token, {
+      reply.header('Set-Cookie', serializeAuthSessionCookie(session.token, {
         expiresAt: session.expiresAt,
         secure: config.isProduction
       }));
@@ -83,7 +83,7 @@ export function registerAuthRoutes(app, { authService, campaignService, config }
   app.post('/v1/auth/login', async (request, reply) => {
     try {
       const session = await authService.login(request.body ?? {});
-      reply.header('Set-Cookie', sessionCookie(session.token, {
+      reply.header('Set-Cookie', serializeAuthSessionCookie(session.token, {
         expiresAt: session.expiresAt,
         secure: config.isProduction
       }));
@@ -97,7 +97,7 @@ export function registerAuthRoutes(app, { authService, campaignService, config }
     try {
       const token = parseSessionToken(request);
       await authService.logout(token);
-      reply.header('Set-Cookie', sessionCookie('', { clear: true, secure: config.isProduction }));
+      reply.header('Set-Cookie', serializeAuthSessionCookie('', { clear: true, secure: config.isProduction }));
       return { authenticated: false };
     } catch (error) {
       return sendAuthError(reply, error);
