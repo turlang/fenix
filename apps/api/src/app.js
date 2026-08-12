@@ -18,7 +18,9 @@ export async function createApiApp({
   authService = null,
   campaignService = null,
   runtimeRouter = null,
-  realtimeProxy = null
+  realtimeProxy = null,
+  commandLedger = null,
+  runtimeObservability = null
 }) {
   if (!config) throw new TypeError('config é obrigatório.');
   if (!sessionService) throw new TypeError('sessionService é obrigatório.');
@@ -45,7 +47,7 @@ export async function createApiApp({
       reply.header('Access-Control-Allow-Credentials', 'true');
       reply.header('Vary', 'Origin');
     }
-    reply.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    reply.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Idempotency-Key');
     reply.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     if (request.method === 'OPTIONS') return reply.code(204).send();
   });
@@ -61,8 +63,34 @@ export async function createApiApp({
     audio: audioNarrationService?.enabled ? audioNarrationService.mode : 'disabled',
     realtime: realtimeGateway ? 'websocket' : 'disabled',
     routing: runtimeRouter?.enabled ? 'owner-aware' : 'local-only',
+    idempotency: commandLedger?.driver ?? 'disabled',
     runtime: sessionService.getStatus()
   }));
+
+  app.get('/ready', { logLevel: 'silent' }, async (_request, reply) => {
+    try {
+      await commandLedger?.health?.();
+      return {
+        status: 'ready',
+        routing: runtimeRouter?.enabled ? 'owner-aware' : 'local-only',
+        idempotency: commandLedger?.driver ?? 'disabled',
+        runtime: sessionService.getStatus()
+      };
+    } catch {
+      return reply.code(503).send({
+        status: 'not-ready',
+        code: 'COMMAND_LEDGER_UNAVAILABLE'
+      });
+    }
+  });
+
+  if (runtimeObservability) {
+    app.get('/metrics', { logLevel: 'silent' }, async (_request, reply) => {
+      reply.type('text/plain; version=0.0.4; charset=utf-8');
+      return runtimeObservability.toPrometheus();
+    });
+    app.get('/v1/runtime/observability', { logLevel: 'silent' }, async () => runtimeObservability.snapshot());
+  }
 
   if (authService && campaignService) {
     registerAuthRoutes(app, { authService, campaignService, config });
@@ -89,7 +117,8 @@ export async function createApiApp({
   const controller = createSessionController({
     sessionService,
     authorizeRequest,
-    requestRouter: runtimeRouter
+    requestRouter: runtimeRouter,
+    commandLedger
   });
   registerSessionRoutes(app, { controller });
 
