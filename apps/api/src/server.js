@@ -84,8 +84,8 @@ const assetStorage = createAssetStorageFromEnv();
 await assetStorage.initialize();
 const remoteMapImporter = new RemoteMapImporter({
   maxBytes: assetStorage.maxBytes,
-  timeoutMs: Number(process.env.FENIX_REMOTE_MAP_TIMEOUT_MS) || 10000,
-  maxRedirects: Number(process.env.FENIX_REMOTE_MAP_MAX_REDIRECTS) || 3
+  timeoutMs: config.remoteMapTimeoutMs,
+  maxRedirects: config.remoteMapMaxRedirects
 });
 const sceneService = new CampaignSceneService({
   campaignService,
