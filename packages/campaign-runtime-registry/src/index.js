@@ -34,6 +34,7 @@ export class CampaignRuntimeRegistry {
     this.logger = logger;
     this.entriesByCampaign = new Map();
     this.campaignBySession = new Map();
+    this.pendingStarts = new Set();
   }
 
   async initialize() {
@@ -107,28 +108,33 @@ export class CampaignRuntimeRegistry {
     const campaignId = text(input.campaignId ?? input.snapshot?.metadata?.campaignId);
     const key = campaignId || LEGACY_KEY;
     const existing = this.entriesByCampaign.get(key);
-    if (existing?.runtime.getStatus()?.sessionId) {
-      throw registryError('Esta campanha já possui uma sessão ativa.', 'SESSION_ALREADY_ACTIVE', 409);
+    if (existing?.runtime.getStatus()?.sessionId || this.pendingStarts.has(key)) {
+      throw registryError('Esta campanha já possui uma sessão ativa ou em inicialização.', 'SESSION_ALREADY_ACTIVE', 409);
     }
 
     if (campaignId && !this.campaignService.getRaw(campaignId)) {
       throw registryError('Campanha não encontrada.', 'CAMPAIGN_NOT_FOUND', 404);
     }
 
-    const runtime = this.#createRuntime(key, null);
-    const snapshot = input.snapshot ?? input;
-    const result = await runtime.start({ snapshot });
+    this.pendingStarts.add(key);
+    try {
+      const runtime = this.#createRuntime(key, null);
+      const snapshot = input.snapshot ?? input;
+      const result = await runtime.start({ snapshot });
 
-    if (campaignId) {
-      await this.campaignService.setActiveSession(campaignId, {
-        sessionId: result.sessionId,
-        snapshot,
-        startedAt: new Date().toISOString()
-      });
+      if (campaignId) {
+        await this.campaignService.setActiveSession(campaignId, {
+          sessionId: result.sessionId,
+          snapshot,
+          startedAt: new Date().toISOString()
+        });
+      }
+
+      this.#register(key, runtime, result.sessionId, Boolean(campaignId));
+      return { ...result, campaignId: campaignId || null };
+    } finally {
+      this.pendingStarts.delete(key);
     }
-
-    this.#register(key, runtime, result.sessionId, Boolean(campaignId));
-    return { ...result, campaignId: campaignId || null };
   }
 
   processAction(input = {}) {
