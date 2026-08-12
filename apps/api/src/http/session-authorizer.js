@@ -7,6 +7,15 @@ function authorizationError(message, code, statusCode = 403) {
   return error;
 }
 
+function requestedCampaignId(request, body = {}) {
+  return String(
+    body.campaignId
+    ?? body.snapshot?.metadata?.campaignId
+    ?? request.query?.campaignId
+    ?? ''
+  ).trim();
+}
+
 export function createSessionRequestAuthorizer({
   authService,
   campaignService,
@@ -27,27 +36,31 @@ export function createSessionRequestAuthorizer({
       throw authorizationError('Autenticação obrigatória.', 'AUTH_REQUIRED', 401);
     }
 
-    if (operation === 'status') return body;
+    const campaignId = requestedCampaignId(request, body);
+    if (!campaignId) throw authorizationError('campaignId é obrigatório.', 'CAMPAIGN_REQUIRED', 400);
 
     if (operation === 'start') {
-      const campaignId = String(body.campaignId ?? body.snapshot?.metadata?.campaignId ?? '').trim();
-      if (!campaignId) throw authorizationError('campaignId é obrigatório.', 'CAMPAIGN_REQUIRED', 400);
       campaignService.requireRole(campaignId, authenticated.user.id, 'gm');
       return { ...body, campaignId };
     }
 
-    const sessionId = sessionService.getStatus().sessionId;
-    if (!sessionId) throw authorizationError('Não existe sessão ativa.', 'SESSION_NOT_ACTIVE', 409);
-    const { membership } = campaignService.resolveMembershipForSession(sessionId, authenticated.user.id);
+    const { membership } = campaignService.requireRole(campaignId, authenticated.user.id);
+    const status = sessionService.getStatus({ campaignId });
+
+    if (operation === 'status') {
+      return { campaignId };
+    }
+
+    if (!status.sessionId) throw authorizationError('Não existe sessão ativa nesta campanha.', 'SESSION_NOT_ACTIVE', 409);
 
     if (operation === 'end' && membership.role !== 'gm') {
       throw authorizationError('Somente o mestre pode encerrar a sessão.', 'SESSION_END_FORBIDDEN', 403);
     }
 
     if (operation === 'action' && membership.role === 'player') {
-      return { ...body, actorId: membership.actorId };
+      return { ...body, campaignId, sessionId: status.sessionId, actorId: membership.actorId };
     }
 
-    return body;
+    return { ...body, campaignId, sessionId: status.sessionId };
   };
 }
