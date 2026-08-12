@@ -16,18 +16,25 @@ const actors = [
   { id: 'npc-warden', name: 'Guardião', role: 'NPC', hp: 'Oculto' }
 ];
 
-export function VttShell() {
+export function VttShell({ onExitCampaign = null, onLogout = null }) {
   const [leftOpen, setLeftOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(true);
   const [focusMode, setFocusMode] = useState(false);
   const [actionText, setActionText] = useState('');
+  const [inviteActorId, setInviteActorId] = useState('hero-dorian');
+  const [inviteUrl, setInviteUrl] = useState(null);
   const {
     state,
     identity,
+    campaign,
+    currentUser,
+    membership,
+    isGm,
     connect,
     submitAction,
     moveToken,
     endSession,
+    createInvite,
     selectActor,
     clearError,
     replayAudio
@@ -43,10 +50,10 @@ export function VttShell() {
 
   async function handleSessionButton() {
     try {
-      if (sessionActive) await endSession();
+      if (sessionActive && isGm) await endSession();
       else await connect();
     } catch {
-      // O provider já publicou o erro operacional no estado da UI.
+      // provider já publicou o erro operacional.
     }
   }
 
@@ -58,7 +65,19 @@ export function VttShell() {
       await submitAction(text);
       setActionText('');
     } catch {
-      // O provider já publicou o erro operacional no estado da UI.
+      // provider já publicou o erro operacional.
+    }
+  }
+
+  async function handleInvite() {
+    try {
+      const result = await createInvite(inviteActorId);
+      const base = `${window.location.origin}${window.location.pathname}`;
+      const url = `${base}#invite=${encodeURIComponent(result.token)}`;
+      setInviteUrl(url);
+      await navigator.clipboard?.writeText?.(url);
+    } catch {
+      // provider/API já expõe o erro quando aplicável.
     }
   }
 
@@ -68,8 +87,8 @@ export function VttShell() {
         <div className="brand-lockup">
           <span className="brand-mark">F</span>
           <div>
-            <span className="eyebrow">Projeto Fênix</span>
-            <strong>Mestre Orc VTT</strong>
+            <span className="eyebrow">{campaign.title}</span>
+            <strong>Fênix VTT</strong>
           </div>
         </div>
 
@@ -81,18 +100,16 @@ export function VttShell() {
         </div>
 
         <div className="topbar-actions">
-          <button type="button" className="ghost-button" onClick={() => setLeftOpen((value) => !value)}>
-            Cenas
-          </button>
-          <button type="button" className="ghost-button" onClick={() => setRightOpen((value) => !value)}>
-            Contexto
-          </button>
+          <button type="button" className="ghost-button" onClick={() => setLeftOpen((value) => !value)}>Cenas</button>
+          <button type="button" className="ghost-button" onClick={() => setRightOpen((value) => !value)}>Contexto</button>
           <button type="button" className="ghost-button" disabled={state.busy} onClick={handleSessionButton}>
-            {sessionActive ? 'Encerrar sessão' : 'Iniciar sessão'}
+            {isGm ? (sessionActive ? 'Encerrar sessão' : 'Iniciar sessão') : (sessionActive ? 'Reconectar sessão' : 'Aguardar Mestre')}
           </button>
           <button type="button" className="primary-button" onClick={() => setFocusMode((value) => !value)}>
-            {focusMode ? 'Modo mestre' : 'Foco jogador'}
+            {focusMode ? 'Painéis' : 'Foco jogador'}
           </button>
+          <button type="button" className="ghost-button" onClick={onExitCampaign}>Campanhas</button>
+          <button type="button" className="ghost-button" onClick={onLogout}>Sair</button>
         </div>
       </header>
 
@@ -116,11 +133,25 @@ export function VttShell() {
             </nav>
 
             <div className="panel-section">
-              <span className="eyebrow">Camadas</span>
-              <div className="layer-row"><span>Grid</span><span className="mini-toggle active" /></div>
-              <div className="layer-row"><span>Iluminação</span><span className="mini-toggle active" /></div>
-              <div className="layer-row"><span>Fog of War</span><span className="mini-toggle" /></div>
+              <span className="eyebrow">Identidade</span>
+              <div className="identity-card">
+                <strong>{currentUser.displayName}</strong>
+                <small>{membership?.role === 'gm' ? 'Mestre da campanha' : `Jogador · ${membership?.actorId}`}</small>
+              </div>
             </div>
+
+            {isGm ? (
+              <div className="panel-section invite-panel">
+                <span className="eyebrow">Convite seguro</span>
+                <select value={inviteActorId} onChange={(event) => setInviteActorId(event.target.value)}>
+                  {actors.filter((actor) => actor.id.startsWith('hero-')).map((actor) => (
+                    <option key={actor.id} value={actor.id}>{actor.name}</option>
+                  ))}
+                </select>
+                <button type="button" className="ghost-button" onClick={handleInvite}>Gerar e copiar convite</button>
+                {inviteUrl ? <small className="invite-link-preview">Link copiado · token de uso único</small> : null}
+              </div>
+            ) : null}
           </aside>
         ) : null}
 
@@ -130,6 +161,8 @@ export function VttShell() {
             authoritativeTokens={state.tokens}
             onTokenMoved={moveToken}
             onSelectedActor={selectActor}
+            canMoveAny={isGm}
+            movableActorId={membership?.actorId ?? null}
           />
         </section>
 
@@ -152,21 +185,22 @@ export function VttShell() {
             </div>
 
             <div className="actor-stack">
-              {actors.map((actor) => (
-                <button
-                  type="button"
-                  className={`actor-card ${state.selectedActorId === actor.id ? 'selected' : ''}`}
-                  key={actor.id}
-                  onClick={() => selectActor(actor.id)}
-                >
-                  <div className="actor-avatar">{actor.name.slice(0, 1)}</div>
-                  <div className="actor-copy">
-                    <strong>{actor.name}</strong>
-                    <small>{actor.role}</small>
-                  </div>
-                  <span className="actor-hp">{actor.hp}</span>
-                </button>
-              ))}
+              {actors.map((actor) => {
+                const selectable = isGm || actor.id === membership?.actorId;
+                return (
+                  <button
+                    type="button"
+                    className={`actor-card ${state.selectedActorId === actor.id ? 'selected' : ''}`}
+                    key={actor.id}
+                    disabled={!selectable}
+                    onClick={() => selectActor(actor.id)}
+                  >
+                    <div className="actor-avatar">{actor.name.slice(0, 1)}</div>
+                    <div className="actor-copy"><strong>{actor.name}</strong><small>{actor.role}</small></div>
+                    <span className="actor-hp">{actor.hp}</span>
+                  </button>
+                );
+              })}
             </div>
 
             <div className="ai-card">
@@ -177,13 +211,9 @@ export function VttShell() {
                   <strong>{state.busy ? 'Processando evento' : sessionActive ? 'Narrador pronto' : 'Aguardando sessão'}</strong>
                 </div>
               </div>
-              <p>
-                Shared Core conectado ao Session Gateway. Tokens, presença e narração são sincronizados por sessão sem acoplar WebSocket às regras.
-              </p>
+              <p>Shared Core conectado ao Session Gateway. Identidade, tokens e campanha são autorizados no servidor.</p>
               <div className="ai-status-grid">
-                <span>Safety <b>ON</b></span>
-                <span>Quality <b>ON</b></span>
-                <span>Novelty <b>ON</b></span>
+                <span>Safety <b>ON</b></span><span>Quality <b>ON</b></span><span>Novelty <b>ON</b></span>
               </div>
               <div className="realtime-meta">
                 <span>{identity?.role === 'player' ? 'PLAYER' : 'GM'} CLIENT</span>
@@ -196,38 +226,21 @@ export function VttShell() {
 
       <footer className="timeline-shell">
         <div className="timeline-heading">
-          <div>
-            <span className="eyebrow">Narration Timeline</span>
-            <strong>{timeline[0]?.title ?? 'Aguardando narrativa do Engine'}</strong>
-          </div>
+          <div><span className="eyebrow">Narration Timeline</span><strong>{timeline[0]?.title ?? 'Aguardando narrativa do Engine'}</strong></div>
           <span className="audio-state">● {state.busy ? 'processing' : timeline[0]?.audioState ?? 'standby'}</span>
         </div>
 
         <div className="timeline-list" aria-live="polite">
           {timeline.length ? timeline.map((entry) => (
             <article className="timeline-entry" key={entry.id}>
-              <div>
-                <span>{entry.title}</span>
-                <small>{entry.type}</small>
-              </div>
+              <div><span>{entry.title}</span><small>{entry.type}</small></div>
               <p>{entry.text}</p>
-              {entry.audio ? (
-                <button type="button" className="timeline-audio-button" onClick={() => replayAudio(entry.audio)}>
-                  Reproduzir áudio
-                </button>
-              ) : null}
+              {entry.audio ? <button type="button" className="timeline-audio-button" onClick={() => replayAudio(entry.audio)}>Reproduzir áudio</button> : null}
             </article>
-          )) : (
-            <p className="timeline-empty">Inicie a sessão ou mova um token para sincronizar o primeiro evento realtime.</p>
-          )}
+          )) : <p className="timeline-empty">{isGm ? 'Inicie a sessão para abrir a narrativa persistente.' : 'Aguarde o mestre iniciar a sessão.'}</p>}
         </div>
 
-        {state.error ? (
-          <div className="engine-error" role="alert">
-            <span>{state.error}</span>
-            <button type="button" onClick={clearError}>Fechar</button>
-          </div>
-        ) : null}
+        {state.error ? <div className="engine-error" role="alert"><span>{state.error}</span><button type="button" onClick={clearError}>Fechar</button></div> : null}
 
         <form className="command-row" onSubmit={handleSubmit}>
           <span className="command-prompt">›</span>
@@ -235,10 +248,10 @@ export function VttShell() {
             aria-label="Ação do personagem"
             placeholder={`Ação de ${selectedActor.name}…`}
             value={actionText}
-            disabled={state.busy}
+            disabled={state.busy || (!sessionActive && !isGm)}
             onChange={(event) => setActionText(event.target.value)}
           />
-          <button type="submit" className="send-button" disabled={state.busy || !actionText.trim()}>
+          <button type="submit" className="send-button" disabled={state.busy || !actionText.trim() || (!sessionActive && !isGm)}>
             {state.busy ? 'Processando…' : 'Enviar ação'}
           </button>
         </form>
