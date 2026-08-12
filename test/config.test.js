@@ -8,6 +8,9 @@ test('configuração aplica padrões seguros de desenvolvimento', () => {
   assert.equal(config.trustProxy, false);
   assert.equal(config.allowLegacySessionHttp, true);
   assert.equal(config.authCookieSameSite, 'Lax');
+  assert.equal(config.internalRoutingSecret, null);
+  assert.equal(config.runtimeRoutingTimeoutMs, 5000);
+  assert.equal(config.runtimeRoutingMaxRetries, 1);
   assert.equal(config.runtimeLeaseTtlMs, 15000);
   assert.equal(config.runtimeHeartbeatMs, 5000);
   assert.equal(config.runtimeReconcileMs, 5000);
@@ -34,7 +37,7 @@ test('CORS permite Foundry em rede local na porta padrão', () => {
   assert.equal(isOriginAllowed('https://example.com:30000', []), false);
 });
 
-test('configuração rejeita porta, SameSite e heartbeat inválidos', () => {
+test('configuração rejeita porta, SameSite, heartbeat e secret de roteamento inválidos', () => {
   assert.throws(() => createConfig({ PORT: '70000' }), /PORT/);
   assert.throws(
     () => createConfig({ FENIX_AUTH_COOKIE_SAME_SITE: 'insecure' }),
@@ -43,6 +46,10 @@ test('configuração rejeita porta, SameSite e heartbeat inválidos', () => {
   assert.throws(
     () => createConfig({ FENIX_RUNTIME_LEASE_TTL_MS: '5000', FENIX_RUNTIME_HEARTBEAT_MS: '5000' }),
     /HEARTBEAT/
+  );
+  assert.throws(
+    () => createConfig({ FENIX_INTERNAL_ROUTING_SECRET: 'curto' }),
+    /FENIX_INTERNAL_ROUTING_SECRET/
   );
 });
 
@@ -55,6 +62,9 @@ test('configuração interpreta origens, proxy, identidade e coordenação expli
     FENIX_AUTH_COOKIE_SAME_SITE: 'Strict',
     FENIX_INSTANCE_ID: 'engine-a',
     FENIX_INSTANCE_PUBLIC_URL: 'https://engine-a.example',
+    FENIX_INTERNAL_ROUTING_SECRET: '0123456789abcdef0123456789abcdef',
+    FENIX_RUNTIME_ROUTING_TIMEOUT_MS: '4000',
+    FENIX_RUNTIME_ROUTING_MAX_RETRIES: '2',
     FENIX_RUNTIME_LEASE_TTL_MS: '20000',
     FENIX_RUNTIME_HEARTBEAT_MS: '4000',
     FENIX_RUNTIME_RECONCILE_MS: '3000',
@@ -66,6 +76,9 @@ test('configuração interpreta origens, proxy, identidade e coordenação expli
   assert.equal(config.authCookieSameSite, 'Strict');
   assert.equal(config.instanceId, 'engine-a');
   assert.equal(config.instancePublicUrl, 'https://engine-a.example');
+  assert.equal(config.internalRoutingSecret, '0123456789abcdef0123456789abcdef');
+  assert.equal(config.runtimeRoutingTimeoutMs, 4000);
+  assert.equal(config.runtimeRoutingMaxRetries, 2);
   assert.equal(config.runtimeLeaseTtlMs, 20000);
   assert.equal(config.runtimeHeartbeatMs, 4000);
   assert.equal(config.runtimeReconcileMs, 3000);
