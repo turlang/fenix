@@ -130,3 +130,37 @@ test('duas campanhas novas podem iniciar sessões simultâneas independentes', a
   assert.equal(registry.getStatus({ campaignId: 'campaign-a' }).sessionId, first.sessionId);
   assert.equal(registry.getStatus({ campaignId: 'campaign-b' }).sessionId, second.sessionId);
 });
+
+test('duas inicializações concorrentes da mesma campanha não criam sessões duplicadas', async () => {
+  const campaignService = createCampaignService();
+  campaignService.repository.snapshot = () => ({ campaigns: [] });
+  let starts = 0;
+  const registry = new CampaignRuntimeRegistry({
+    campaignService,
+    logger: {},
+    runtimeFactory: ({ campaignId }) => {
+      let sessionId = null;
+      return {
+        async start() {
+          starts += 1;
+          await new Promise((resolve) => setTimeout(resolve, 20));
+          sessionId = `session-${campaignId}`;
+          return { state: 'COLLECTING_ACTIONS', sessionId, opening: 'Abertura.' };
+        },
+        async restore(input) { sessionId = input.sessionId; return { state: 'COLLECTING_ACTIONS', sessionId }; },
+        async processAction() { return { state: 'COLLECTING_ACTIONS' }; },
+        async describeRoom() { return { state: 'COLLECTING_ACTIONS' }; },
+        async end() { sessionId = null; return { state: 'ENDED', sessionId }; },
+        getStatus() { return { state: sessionId ? 'COLLECTING_ACTIONS' : 'IDLE', sessionId }; }
+      };
+    }
+  });
+
+  const first = registry.start({ campaignId: 'campaign-c', snapshot: { activeScene: { id: 'c' } } });
+  await assert.rejects(
+    () => registry.start({ campaignId: 'campaign-c', snapshot: { activeScene: { id: 'c' } } }),
+    (error) => error.code === 'SESSION_ALREADY_ACTIVE' && error.statusCode === 409
+  );
+  await first;
+  assert.equal(starts, 1);
+});
