@@ -6,6 +6,10 @@ function trimTrailingSlash(value) {
   return String(value || DEFAULT_BASE_URL).trim().replace(/\/+$/, '');
 }
 
+function randomCommandId() {
+  return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
 export class FenixApiError extends Error {
   constructor(message, { status = 0, code = 'FENIX_API_ERROR', retryAfter = null, cause = null } = {}) {
     super(message, { cause });
@@ -96,23 +100,24 @@ export class FenixApiClient {
     const suffix = campaignId ? `?campaignId=${encodeURIComponent(campaignId)}` : '';
     return this.request(`/v1/session/status${suffix}`);
   }
-  start(snapshot, campaignId = null) {
-    return this.request('/v1/session/start', { method: 'POST', body: { snapshot, campaignId } });
+  start(snapshot, campaignId = null, commandId = randomCommandId()) {
+    return this.request('/v1/session/start', { method: 'POST', body: { snapshot, campaignId, commandId } });
   }
-  action({ content, actorId = null, messageId = null, campaignId = null } = {}) {
+  action({ content, actorId = null, messageId = null, commandId = null, campaignId = null } = {}) {
+    const id = commandId || messageId || randomCommandId();
     return this.request('/v1/session/action', {
       method: 'POST',
-      body: { content, actorId, messageId, campaignId }
+      body: { content, actorId, messageId: messageId || id, commandId: id, campaignId }
     });
   }
-  roomEntry(event, campaignId = null) {
+  roomEntry(event, campaignId = null, commandId = randomCommandId()) {
     return this.request('/v1/session/room-entry', {
       method: 'POST',
-      body: { ...event, campaignId: event?.campaignId ?? campaignId }
+      body: { ...event, campaignId: event?.campaignId ?? campaignId, commandId: event?.commandId ?? commandId }
     });
   }
-  end(campaignId = null) {
-    return this.request('/v1/session/end', { method: 'POST', body: { campaignId } });
+  end(campaignId = null, commandId = randomCommandId()) {
+    return this.request('/v1/session/end', { method: 'POST', body: { campaignId, commandId } });
   }
 }
 
