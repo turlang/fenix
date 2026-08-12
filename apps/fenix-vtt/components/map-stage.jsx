@@ -10,7 +10,23 @@ import {
   findRoomZone
 } from '../lib/demo-scene.js';
 
+function fitViewport(canvas, scene) {
+  if (scene.id === demoScene.id) return demoViewport;
+  const cssWidth = Math.max(1, canvas.clientWidth || scene.width || 1);
+  const cssHeight = Math.max(1, canvas.clientHeight || scene.height || 1);
+  const zoom = Math.min(cssWidth / scene.width, cssHeight / scene.height);
+  const safeZoom = Math.min(4, Math.max(0.05, Number.isFinite(zoom) ? zoom : 1));
+  const visibleWidth = cssWidth / safeZoom;
+  const visibleHeight = cssHeight / safeZoom;
+  return {
+    x: Math.max(0, (scene.width - visibleWidth) / 2),
+    y: Math.max(0, (scene.height - visibleHeight) / 2),
+    zoom: safeZoom
+  };
+}
+
 export function MapStage({
+  scene = demoScene,
   authoritativeTokens = [],
   onTokenMoved = null,
   onSelectedActor = null,
@@ -26,6 +42,8 @@ export function MapStage({
   const [backend, setBackend] = useState('detecting');
   const [selected, setSelected] = useState('Ayla');
   const [error, setError] = useState(null);
+  const [viewport, setViewport] = useState(scene.id === demoScene.id ? demoViewport : { x: 0, y: 0, zoom: 1 });
+  const demoZonesEnabled = scene.id === demoScene.id;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -43,8 +61,10 @@ export function MapStage({
       renderer = new WebGlMapRenderer({ canvas });
       setBackend(detected === 'webgpu' ? 'webgl2 · WebGPU ready' : 'webgl2');
       rendererRef.current = renderer;
-      renderer.loadScene(demoScene);
-      renderer.setViewport(demoViewport);
+      renderer.loadScene(scene);
+      const nextViewport = fitViewport(canvas, scene);
+      setViewport(nextViewport);
+      renderer.setViewport(nextViewport);
       for (const token of tokensRef.current.values()) renderer.upsertToken(token);
 
       const loop = () => {
@@ -62,7 +82,7 @@ export function MapStage({
       renderer?.destroy();
       rendererRef.current = null;
     };
-  }, []);
+  }, [scene]);
 
   useEffect(() => {
     const renderer = rendererRef.current;
@@ -75,6 +95,10 @@ export function MapStage({
     }
   }, [authoritativeTokens]);
 
+  function roomZoneAt(point) {
+    return demoZonesEnabled ? findRoomZone(point) : null;
+  }
+
   function handlePointerDown(event) {
     if (busy) return;
     const hit = rendererRef.current?.hitTest(event);
@@ -84,7 +108,7 @@ export function MapStage({
       setSelected(`${hit.token.name} · somente visualização`);
       return;
     }
-    const currentZone = findRoomZone({ x: hit.token.x, y: hit.token.y });
+    const currentZone = roomZoneAt({ x: hit.token.x, y: hit.token.y });
     dragRef.current = {
       tokenId: hit.token.id,
       roomId: currentZone?.room?.id ?? null,
@@ -108,7 +132,7 @@ export function MapStage({
     tokensRef.current.set(moved.id, moved);
     renderer.upsertToken(moved);
 
-    const zone = findRoomZone(hit.world);
+    const zone = roomZoneAt(hit.world);
     drag.roomId = zone?.room?.id ?? null;
     drag.roomEntry = zone ? createDemoRoomEnteredEvent(zone) : null;
   }
@@ -128,25 +152,30 @@ export function MapStage({
     })).catch(() => undefined);
   }
 
-  const backgroundStyle = demoScene.background ? {
+  const backgroundStyle = scene.background ? {
     position: 'absolute',
     left: 0,
     top: 0,
-    width: `${demoScene.width}px`,
-    height: `${demoScene.height}px`,
-    backgroundImage: `url("${demoScene.background}")`,
+    width: `${scene.width}px`,
+    height: `${scene.height}px`,
+    backgroundImage: `url("${scene.background}")`,
     backgroundSize: '100% 100%',
     backgroundPosition: '0 0',
     backgroundRepeat: 'no-repeat',
     transformOrigin: 'top left',
-    transform: `translate(${-demoViewport.x * demoViewport.zoom}px, ${-demoViewport.y * demoViewport.zoom}px) scale(${demoViewport.zoom})`,
+    transform: `translate(${-viewport.x * viewport.zoom}px, ${-viewport.y * viewport.zoom}px) scale(${viewport.zoom})`,
     pointerEvents: 'none',
     zIndex: 0
   } : undefined;
+  const gridSize = Math.max(8, Number(scene.grid?.size) || 70) * viewport.zoom;
+  const gridStyle = {
+    backgroundSize: `${gridSize}px ${gridSize}px`,
+    backgroundPosition: `${-viewport.x * viewport.zoom}px ${-viewport.y * viewport.zoom}px`
+  };
 
   return (
     <section className="map-stage" aria-label="Mapa tático">
-      {demoScene.background ? (
+      {scene.background ? (
         <div className="map-background-layer" style={backgroundStyle} aria-hidden="true" />
       ) : null}
 
@@ -160,7 +189,7 @@ export function MapStage({
       <canvas
         ref={canvasRef}
         className="map-canvas"
-        aria-label="Canvas do Salão das Colunas"
+        aria-label={`Canvas de ${scene.name}`}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
@@ -168,10 +197,10 @@ export function MapStage({
       />
 
       <div className="map-atmosphere" aria-hidden="true" />
-      <div className="map-grid-overlay" aria-hidden="true" />
+      <div className="map-grid-overlay" style={gridStyle} aria-hidden="true" />
       <div className="map-room-label">
         <span className="eyebrow">Cena ativa</span>
-        <strong>Salão das Colunas</strong>
+        <strong>{scene.name}</strong>
         <small>{canMoveAny ? 'Mestre · controle de todos os tokens' : `Jogador · controle de ${movableActorId || 'nenhum token'}`}</small>
       </div>
 
@@ -180,10 +209,12 @@ export function MapStage({
         <strong>{selected}</strong>
       </div>
 
-      <div className="room-zone-hint" aria-hidden="true">
-        <span>03</span>
-        <strong>Câmara Norte</strong>
-      </div>
+      {demoZonesEnabled ? (
+        <div className="room-zone-hint" aria-hidden="true">
+          <span>03</span>
+          <strong>Câmara Norte</strong>
+        </div>
+      ) : null}
 
       {error ? <div className="map-error" role="status">{error}</div> : null}
     </section>

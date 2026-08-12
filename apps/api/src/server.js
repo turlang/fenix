@@ -5,11 +5,13 @@ import { createNarrationMemoryFromEnv } from '../../../packages/narration-memory
 import { createAudioNarrationServiceFromEnv } from '../../../packages/audio-narration-service/src/index.js';
 import { createConfig, loadEnvFile } from '../../../packages/config/src/index.js';
 import { createFenixRepositoryFromEnv } from '../../../packages/persistence-repository/src/index.js';
+import { createAssetStorageFromEnv } from '../../../packages/asset-storage/src/index.js';
 import { AuthService } from '../../../packages/auth-service/src/index.js';
 import {
   CampaignService,
   createAuthenticatedPeerAuthorizer
 } from '../../../packages/campaign-service/src/index.js';
+import { CampaignSceneService } from '../../../packages/campaign-scene-service/src/index.js';
 import { CampaignRuntimeRegistry } from '../../../packages/campaign-runtime-registry/src/index.js';
 import {
   PostgresRuntimeLeaseManager,
@@ -77,6 +79,13 @@ const authService = new AuthService({ repository, logger });
 await authService.initialize();
 const campaignService = new CampaignService({ repository, authService, logger });
 await campaignService.initialize();
+const assetStorage = createAssetStorageFromEnv();
+await assetStorage.initialize();
+const sceneService = new CampaignSceneService({
+  campaignService,
+  repository,
+  assetStorage
+});
 
 const runtimeRouter = leaseManager && config.internalRoutingSecret
   ? new OwnerAwareRuntimeRouter({
@@ -210,6 +219,7 @@ const app = await createApiApp({
   realtimeGateway,
   authService,
   campaignService,
+  sceneService,
   runtimeRouter,
   realtimeProxy,
   commandLedger,

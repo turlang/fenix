@@ -6,6 +6,7 @@ import { createSessionController } from './http/session-controller.js';
 import { registerSessionRoutes } from './http/register-session-routes.js';
 import { registerAuthRoutes } from './http/register-auth-routes.js';
 import { registerCampaignRoutes } from './http/register-campaign-routes.js';
+import { registerSceneRoutes } from './http/register-scene-routes.js';
 import { createSessionRequestAuthorizer } from './http/session-authorizer.js';
 import { registerRealtimeRoutes } from './realtime/register-realtime-routes.js';
 
@@ -17,6 +18,7 @@ export async function createApiApp({
   realtimeGateway = null,
   authService = null,
   campaignService = null,
+  sceneService = null,
   runtimeRouter = null,
   realtimeProxy = null,
   commandLedger = null,
@@ -62,6 +64,7 @@ export async function createApiApp({
     auth: authService ? 'opaque-session' : 'disabled',
     audio: audioNarrationService?.enabled ? audioNarrationService.mode : 'disabled',
     realtime: realtimeGateway ? 'websocket' : 'disabled',
+    sceneManager: sceneService ? 'enabled' : 'disabled',
     routing: runtimeRouter?.enabled ? 'owner-aware' : 'local-only',
     idempotency: commandLedger?.driver ?? 'disabled',
     runtime: sessionService.getStatus()
@@ -102,6 +105,7 @@ export async function createApiApp({
   if (authService && campaignService) {
     registerAuthRoutes(app, { authService, campaignService, config });
     registerCampaignRoutes(app, { authService, campaignService, config });
+    if (sceneService) registerSceneRoutes(app, { authService, sceneService });
   }
 
   if (realtimeGateway) {

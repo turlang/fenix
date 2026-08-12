@@ -1,8 +1,13 @@
 import assert from 'node:assert/strict';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { createConfig } from '../packages/config/src/index.js';
 import { InMemoryFenixRepository } from '../packages/persistence-repository/src/index.js';
+import { LocalAssetStorage } from '../packages/asset-storage/src/index.js';
 import { AuthService } from '../packages/auth-service/src/index.js';
 import { CampaignService } from '../packages/campaign-service/src/index.js';
+import { CampaignSceneService } from '../packages/campaign-scene-service/src/index.js';
 import { createApiApp } from '../apps/api/src/app.js';
 
 function cookieFrom(response) {
@@ -11,12 +16,16 @@ function cookieFrom(response) {
   return String(value).split(';')[0];
 }
 
+const assetRoot = await mkdtemp(join(tmpdir(), 'fenix-http-assets-'));
 const repository = new InMemoryFenixRepository();
 await repository.initialize();
 const authService = new AuthService({ repository, logger: {} });
 await authService.initialize();
 const campaignService = new CampaignService({ repository, authService, logger: {} });
 await campaignService.initialize();
+const assetStorage = new LocalAssetStorage({ rootDir: assetRoot, maxBytes: 1024 * 1024 });
+await assetStorage.initialize();
+const sceneService = new CampaignSceneService({ campaignService, repository, assetStorage });
 
 let sessionStartCalls = 0;
 const sessionService = {
@@ -39,7 +48,8 @@ const app = await createApiApp({
   narrator: null,
   audioNarrationService: null,
   authService,
-  campaignService
+  campaignService,
+  sceneService
 });
 
 try {
@@ -84,6 +94,56 @@ try {
   const campaign = createdCampaign.json().campaign;
   assert.equal(campaign.membership.role, 'gm');
 
+  const mapBytes = Buffer.from('fake-map-image');
+  const uploadedMap = await app.inject({
+    method: 'POST',
+    url: `/v1/campaigns/${campaign.id}/assets`,
+    headers: { cookie: gmCookie },
+    payload: {
+      fileName: 'templo.webp',
+      mimeType: 'image/webp',
+      dataBase64: mapBytes.toString('base64')
+    }
+  });
+  assert.equal(uploadedMap.statusCode, 200);
+  const asset = uploadedMap.json().asset;
+  assert.equal(asset.mimeType, 'image/webp');
+
+  const createdScene = await app.inject({
+    method: 'POST',
+    url: `/v1/campaigns/${campaign.id}/scenes`,
+    headers: { cookie: gmCookie },
+    payload: {
+      name: 'Templo em Ruínas',
+      description: 'Um templo de pedra com altar quebrado e duas colunas.',
+      assetId: asset.id,
+      width: 1920,
+      height: 1080,
+      gridSize: 70
+    }
+  });
+  assert.equal(createdScene.statusCode, 200);
+  const scene = createdScene.json().scene;
+  assert.equal(scene.backgroundAssetId, asset.id);
+
+  const readAsset = await app.inject({
+    method: 'GET',
+    url: `/v1/campaigns/${campaign.id}/assets/${asset.id}`,
+    headers: { cookie: gmCookie }
+  });
+  assert.equal(readAsset.statusCode, 200);
+  assert.equal(readAsset.headers['content-type'], 'image/webp');
+  assert.equal(readAsset.rawPayload.toString(), mapBytes.toString());
+
+  const sceneCatalog = await app.inject({
+    method: 'GET',
+    url: `/v1/campaigns/${campaign.id}/scenes`,
+    headers: { cookie: gmCookie }
+  });
+  assert.equal(sceneCatalog.statusCode, 200);
+  assert.equal(sceneCatalog.json().scenes[0].name, 'Templo em Ruínas');
+  assert.equal(sceneCatalog.json().activeSceneId, scene.id);
+
   const inviteResponse = await app.inject({
     method: 'POST',
     url: `/v1/campaigns/${campaign.id}/invites`,
@@ -109,6 +169,26 @@ try {
   const playerCookie = cookieFrom(playerRegistration);
   assert.equal(playerRegistration.json().campaign.membership.role, 'player');
   assert.equal(playerRegistration.json().campaign.membership.actorId, 'hero-ayla');
+
+  const playerSceneCatalog = await app.inject({
+    method: 'GET',
+    url: `/v1/campaigns/${campaign.id}/scenes`,
+    headers: { cookie: playerCookie }
+  });
+  assert.equal(playerSceneCatalog.statusCode, 200);
+  assert.equal(playerSceneCatalog.json().scenes.length, 1);
+
+  const playerMapUpload = await app.inject({
+    method: 'POST',
+    url: `/v1/campaigns/${campaign.id}/assets`,
+    headers: { cookie: playerCookie },
+    payload: {
+      fileName: 'nao-autorizado.png',
+      mimeType: 'image/png',
+      dataBase64: Buffer.from('x').toString('base64')
+    }
+  });
+  assert.equal(playerMapUpload.statusCode, 403);
 
   const inviteReplay = await app.inject({
     method: 'POST',
@@ -147,7 +227,8 @@ try {
   assert.equal(playerStart.statusCode, 403);
   assert.equal(sessionStartCalls, 0);
 
-  console.log('Auth + campaign HTTP integration OK');
+  console.log('Auth + campaign + scene HTTP integration OK');
 } finally {
   await app.close();
+  await rm(assetRoot, { recursive: true, force: true });
 }
