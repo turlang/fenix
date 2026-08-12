@@ -15,8 +15,11 @@ import {
   PostgresRuntimeLeaseManager,
   PostgresStateBus
 } from '../../../packages/distributed-runtime-coordination/src/index.js';
+import { createCommandLedger } from '../../../packages/distributed-command-ledger/src/index.js';
+import { RuntimeObservability } from '../../../packages/runtime-observability/src/index.js';
 import { OwnerAwareRuntimeRouter } from '../../../packages/owner-aware-runtime-router/src/index.js';
 import {
+  parseRealtimeMessage,
   RealtimeSessionGateway,
   RealtimeSessionHub
 } from '../../../packages/realtime-session-gateway/src/index.js';
@@ -27,9 +30,21 @@ loadEnvFile();
 const config = createConfig();
 const logger = console;
 const instanceId = config.instanceId || randomUUID();
+const runtimeObservability = new RuntimeObservability({ instanceId, logger });
 
 const repository = createFenixRepositoryFromEnv({ logger });
 await repository.initialize();
+
+const commandLedger = createCommandLedger({
+  pool: repository.driver === 'postgres' ? repository.pool : null,
+  waitTimeoutMs: config.commandLedgerWaitMs,
+  unknownAfterMs: config.commandLedgerUnknownAfterMs,
+  retentionHours: config.commandLedgerRetentionHours,
+  resultMaxBytes: config.commandLedgerResultMaxBytes,
+  observability: runtimeObservability,
+  logger
+});
+await commandLedger.initialize();
 
 let coordinationBus = null;
 let leaseManager = null;
@@ -64,6 +79,7 @@ const runtimeRouter = leaseManager && config.internalRoutingSecret
       routingSecret: config.internalRoutingSecret,
       requestTimeoutMs: config.runtimeRoutingTimeoutMs,
       maxRetries: config.runtimeRoutingMaxRetries,
+      observability: runtimeObservability,
       logger
     })
   : null;
@@ -71,6 +87,7 @@ const realtimeProxy = runtimeRouter?.enabled
   ? createOwnerAwareWebSocketProxy({
       ownerRouter: runtimeRouter,
       maxRouteRetries: config.runtimeRoutingMaxRetries,
+      observability: runtimeObservability,
       logger
     })
   : null;
@@ -102,6 +119,11 @@ await sessionService.initialize();
 let coordinationRefresh = Promise.resolve();
 const unsubscribeCoordination = coordinationBus?.subscribe((event) => {
   if (!['STATE_CHANGED', 'RUNTIME_LEASE_RELEASED', 'RUNTIME_LEASE_LOST'].includes(event?.type)) return;
+  runtimeObservability.record('coordination_event_received', {
+    sourceId: instanceId,
+    outcome: event?.type,
+    generation: event?.payload?.generation ?? null
+  });
   coordinationRefresh = coordinationRefresh.then(async () => {
     await repository.refresh();
     authService.refreshFromRepository();
@@ -121,6 +143,7 @@ const authorizePeer = createAuthenticatedPeerAuthorizer({ authService, campaignS
 const realtimeGateway = {
   openPeer(input) {
     const sessionId = String(input?.sessionId ?? '');
+    const clientId = String(input?.clientId ?? '');
     const scopedSessionService = {
       getStatus: () => sessionService.getStatus({ sessionId }),
       processAction: (payload) => sessionService.processAction({ ...payload, sessionId }),
@@ -136,8 +159,25 @@ const realtimeGateway = {
     return {
       ...peer,
       receive: async (raw) => {
-        await sessionService.assertOwnership({ sessionId });
-        return peer.receive(raw);
+        const ownership = await sessionService.assertOwnership({ sessionId });
+        const message = parseRealtimeMessage(raw);
+        return commandLedger.execute({
+          campaignId: ownership.campaignId,
+          sessionId,
+          commandId: message.commandId,
+          commandType: `ws:${message.type}`,
+          request: message,
+          ownerId: instanceId,
+          generation: ownership.leaseGeneration,
+          onReplay: async () => {
+            realtimeHub.sendTo(sessionId, clientId, {
+              type: 'ACK',
+              commandId: message.commandId,
+              payload: { type: message.type, replayed: true }
+            });
+          },
+          execute: () => peer.receive(raw)
+        });
       }
     };
   },
@@ -163,7 +203,9 @@ const app = await createApiApp({
   authService,
   campaignService,
   runtimeRouter,
-  realtimeProxy
+  realtimeProxy,
+  commandLedger,
+  runtimeObservability
 });
 
 async function shutdown(signal) {
@@ -172,6 +214,7 @@ async function shutdown(signal) {
   await app.close();
   unsubscribeCoordination();
   await sessionService.stopCoordination({ releaseLeases: true }).catch(() => undefined);
+  await commandLedger.close?.().catch?.(() => undefined);
   await coordinationBus?.close?.();
   await repository.close?.();
 }
