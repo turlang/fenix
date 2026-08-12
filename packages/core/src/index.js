@@ -1,3 +1,5 @@
+export const ENGINE_VERSION = '0.1.0-alpha.24';
+
 export const SessionState = Object.freeze({
   IDLE: 'IDLE',
   SYNCING: 'SYNCING',

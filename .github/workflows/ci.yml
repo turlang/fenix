@@ -16,9 +16,9 @@ concurrency:
 
 jobs:
   quality:
-    name: Node.js ${{ matrix.node-version }}
+    name: Core / Node.js ${{ matrix.node-version }}
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 5
     strategy:
       fail-fast: false
       matrix:
@@ -32,11 +32,78 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
-          cache: npm
+
+      - name: Validate structure
+        run: node scripts/validate.mjs
+
+      - name: Run tests
+        run: node --test
+
+  integration-build:
+    name: Portable install + Postgres + leases + idempotency + routing + realtime + VTT build / Node.js 24
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: fenix
+          POSTGRES_PASSWORD: fenix_test
+          POSTGRES_DB: fenix_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U fenix -d fenix_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      - name: Verify portable lockfile
+        run: node scripts/normalize-package-lock-registry.mjs --check
 
       - name: Install dependencies
-        run: npm ci --ignore-scripts
+        run: npm ci --ignore-scripts --no-audit --no-fund --registry=https://registry.npmjs.org
 
-      - name: Validate and test
-        run: npm run check
+      - name: Import API runtimes
+        run: node -e "Promise.all([import('fastify'), import('@fastify/websocket'), import('pg'), import('ws')]).then(() => console.log('Fastify + PostgreSQL + WebSocket runtimes OK'))"
 
+      - name: Test PostgreSQL repository
+        env:
+          DATABASE_URL: postgres://fenix:fenix_test@127.0.0.1:5432/fenix_test
+        run: npm run test:postgres-integration
+
+      - name: Test distributed runtime coordination
+        env:
+          DATABASE_URL: postgres://fenix:fenix_test@127.0.0.1:5432/fenix_test
+        run: npm run test:coordination-integration
+
+      - name: Test distributed command idempotency
+        env:
+          DATABASE_URL: postgres://fenix:fenix_test@127.0.0.1:5432/fenix_test
+        run: npm run test:idempotency-integration
+
+      - name: Test owner-aware runtime routing
+        env:
+          DATABASE_URL: postgres://fenix:fenix_test@127.0.0.1:5432/fenix_test
+        run: npm run test:routing-integration
+
+      - name: Test auth and campaign HTTP
+        run: npm run test:auth-integration
+
+      - name: Test realtime WebSocket adapter
+        run: npm run test:realtime-integration
+
+      - name: Build standalone VTT
+        env:
+          NEXT_PUBLIC_FENIX_API_URL: http://localhost:3001
+        run: npm run build:vtt

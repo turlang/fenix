@@ -1,16 +1,14 @@
-# Mestre Orc Engine
+# Mestre Orc / Fênix Engine
 
-Versão `0.1.0-alpha.24` — Node.js 20–24 e Foundry VTT 13.
+Versão base `0.1.0-alpha.24` — Node.js 20–24, Foundry VTT 13 e Fênix VTT standalone.
 
 ## Preview
 
 ![Preview do Mestre Orc Engine](docs/preview.svg)
 
-O fluxo atual localiza a Scene ativa, procura o Journal correspondente no diretório do Foundry, extrai exclusivamente a caixa `.ve-rd__b-inset--readaloud`, interpreta a âncora canônica com Groq, valida qualidade e novidade, publica no chat e reproduz a narração em áudio.
+O projeto mantém um Shared Core VTT-agnóstico para contexto, intenção, regras, relacionamentos, narração e áudio. O Foundry VTT continua como adapter de primeira classe, enquanto `apps/fenix-vtt` executa o mesmo Core como cliente standalone com Next.js, WebGL2, contas, campanhas, multiplayer e infraestrutura distribuída opcional sobre PostgreSQL.
 
 ## Engine
-
-Instale as dependências e crie a configuração local:
 
 ```powershell
 npm ci
@@ -19,86 +17,264 @@ npm run check
 npm run dev
 ```
 
-Preencha o `.env` sem versionar chaves:
+Desenvolvimento pode permanecer em JSON:
 
 ```env
-PORT=3001
-HOST=0.0.0.0
-NODE_ENV=development
-CORS_ALLOWED_ORIGINS=http://localhost:30000,http://127.0.0.1:30000,http://localhost:3000,http://localhost:3001
-GROQ_API_KEY=sua_chave
-GROQ_MODEL=seu_modelo_disponivel
-MESTRE_ORC_NARRATION_MEMORY_FILE=./data/narration-history.json
-MESTRE_ORC_AUDIO_ENABLED=true
-MESTRE_ORC_AUDIO_MODE=browser-tts
-MESTRE_ORC_AUDIO_LANGUAGE=pt-BR
-MESTRE_ORC_AUDIO_RATE=0.90
-MESTRE_ORC_AUDIO_PITCH=0.85
-MESTRE_ORC_AUDIO_VOLUME=1.00
+FENIX_PERSISTENCE_DRIVER=json
+FENIX_STATE_FILE=./data/fenix-state.json
 ```
 
-Abra `http://localhost:3001/health`. Os campos esperados são `"ai":"groq"` e `"audio":"browser-tts"`.
+Para PostgreSQL distribuído:
+
+```env
+FENIX_PERSISTENCE_DRIVER=postgres
+DATABASE_URL=postgres://usuario:senha@host:5432/fenix
+FENIX_POSTGRES_POOL_MAX=10
+FENIX_INSTANCE_ID=engine-a
+FENIX_INSTANCE_PUBLIC_URL=https://engine-a.internal.example.com
+FENIX_INTERNAL_ROUTING_SECRET=troque-por-um-segredo-compartilhado-com-32-ou-mais-caracteres
+FENIX_RUNTIME_LEASE_TTL_MS=15000
+FENIX_RUNTIME_HEARTBEAT_MS=5000
+FENIX_RUNTIME_RECONCILE_MS=5000
+FENIX_RUNTIME_ROUTING_TIMEOUT_MS=5000
+FENIX_RUNTIME_ROUTING_MAX_RETRIES=1
+FENIX_COMMAND_LEDGER_WAIT_MS=1500
+FENIX_COMMAND_LEDGER_UNKNOWN_AFTER_MS=60000
+FENIX_COMMAND_LEDGER_RETENTION_HOURS=168
+FENIX_COMMAND_LEDGER_RESULT_MAX_BYTES=524288
+```
+
+`FENIX_INSTANCE_ID` deve ser único por réplica. `FENIX_INSTANCE_PUBLIC_URL` precisa ser alcançável pelas demais réplicas. O mesmo `FENIX_INTERNAL_ROUTING_SECRET` deve ser compartilhado somente entre Engines autorizados. Sem o secret, o Engine continua em modo local-only mesmo usando PostgreSQL.
+
+Também configure `GROQ_API_KEY`, `GROQ_MODEL`, CORS e autenticação conforme `.env.example`.
+
+## Fênix VTT standalone
+
+```powershell
+npm run dev:vtt
+```
+
+Na primeira abertura, o VTT oferece o bootstrap único do primeiro Mestre. Depois disso, a entrada usa login persistente. O GM cria campanhas e convites one-time ligados a um `actorId`; jogadores controlam apenas o personagem atribuído pelo servidor.
+
+O browser envia somente `sessionId` e `clientId` no WebSocket. `userId`, papel GM/Player e `actorId` são derivados do cookie HttpOnly e da membership.
+
+O fluxo atual possui:
+
+- Next.js 15 + React 19 + Tailwind CSS 4;
+- renderer WebGL2 atrás de `MapRendererPort`;
+- autenticação com `scrypt` e token opaco;
+- campanhas/memberships/convites;
+- `CampaignRuntimeRegistry` com runtime isolado por campanha;
+- várias campanhas ativas simultaneamente;
+- `PostgresRuntimeLeaseManager` com um único dono por campanha;
+- fencing token monotônico por `generation`;
+- heartbeat, expiração e takeover da mesma `sessionId`;
+- `PostgresStateBus` com `LISTEN/NOTIFY` para invalidar caches entre Engines;
+- `OwnerAwareRuntimeRouter` para encaminhar HTTP ao owner atual;
+- proxy WebSocket transparente entre ingress e owner;
+- HMAC interno, timestamp, generation e hop único para autenticar Engine→Engine;
+- `DistributedCommandLedger` para deduplicar comandos por `commandId` entre réplicas;
+- replay do resultado já confirmado após timeout/resposta perdida;
+- bloqueio fail-closed de resultados ambíguos com `COMMAND_OUTCOME_UNKNOWN`;
+- retry de timeout/unreachability apenas quando a requisição possui idempotency key;
+- fencing antes de cada comando realtime;
+- reconnect automático do browser após `1012 Runtime owner changed`;
+- métricas de routing, dedupe, retry e failover;
+- readiness dependente do ledger distribuído;
+- `RealtimeSessionHub` isolado por `sessionId`;
+- `ROOM_ENTERED` e ações pelo mesmo Shared Core;
+- recuperação de sessões após restart/failover sem repetir aberturas;
+- JSON local ou PostgreSQL transacional como adapters de persistência.
+
+## PostgreSQL, ownership e owner-aware ingress
+
+`PostgresFenixRepository` preserva o contrato dos serviços atuais e usa pool, transação, advisory lock de inicialização e `SELECT ... FOR UPDATE` nas mutações. O estado principal continua em uma linha JSONB versionada nesta fase de transição.
+
+Quando PostgreSQL está ativo, o Engine também cria `fenix_runtime_leases`. Um lease registra campanha, owner, `sessionId`, `generation` e prazo de validade. A geração funciona como fencing token: uma instância que perdeu ownership não consegue continuar processando comandos com uma geração antiga.
+
+O `PostgresStateBus` mantém uma conexão dedicada em `LISTEN fenix_state_changed`. Alterações persistidas publicam notificações best-effort depois do `COMMIT`; a reconciliação periódica continua como proteção contra notificações perdidas.
+
+### Roteamento HTTP
+
+```text
+Browser / Foundry
+       ↓
+Load Balancer
+       ↓
+Engine B
+       ↓ resolve lease
+owner = Engine A
+       ↓ HMAC proxy
+Engine A
+       ↓ auth + membership + fence
+DistributedCommandLedger
+       ↓
+CampaignRuntime
+```
+
+O proxy preserva a autenticação original do usuário. O owner executa novamente as regras de auth/membership; a assinatura interna nunca substitui autorização de usuário.
+
+Cada hop interno transporta HMAC-SHA256 sobre origem, `generation`, timestamp, método, path e hash do body. O hop aceito é exatamente `1`, impedindo cadeias de proxy entre Engines.
+
+### Roteamento WebSocket
+
+O navegador permanece conectado ao endpoint público que recebeu o upgrade. Se essa réplica não for owner, ela cria um WebSocket interno assinado para o owner e encaminha frames nos dois sentidos.
+
+```text
+Browser
+   ⇅ WebSocket público
+Engine B / ingress
+   ⇅ WebSocket interno HMAC
+Engine A / owner
+   ⇅
+Command Ledger → RealtimeSessionGateway
+```
+
+Cada comando recebido pelo owner passa por `assertOwnership()` e, quando possui `commandId`, pelo ledger. Se o lease for perdido, o socket antigo é encerrado com `1012`; o cliente standalone faz reconnect limitado no mesmo endpoint público, que resolve novamente o owner atual.
+
+## Idempotência distribuída de comandos
+
+O PostgreSQL mantém `fenix_command_ledger`, cujo par `(scope_key, command_id)` é único. O payload da requisição não é persistido no ledger; fica apenas seu SHA-256 para detectar reutilização incompatível do mesmo `commandId`. O resultado confirmado é persistido em JSONB para replay seguro.
+
+Estados:
+
+```text
+novo commandId
+     ↓
+IN_PROGRESS
+  ┌──┴─────────────────┐
+  │                    │
+sucesso             resultado incerto
+  │                    │
+COMPLETED             UNKNOWN
+  │                    │
+replay exato       nunca auto-reexecutar
+```
+
+Regras principais:
+
+- mesmo `commandId` + mesmo payload + `COMPLETED` → devolve o resultado anterior;
+- mesmo `commandId` + payload diferente → `COMMAND_ID_CONFLICT`;
+- comando já sendo processado → aguarda brevemente ou retorna `COMMAND_IN_PROGRESS`;
+- execução cujo resultado não pode ser confirmado → `UNKNOWN` e `COMMAND_OUTCOME_UNKNOWN`;
+- `UNKNOWN` não é reaproveitado para uma segunda execução automática;
+- inicialização concorrente da tabela é serializada com advisory transaction lock;
+- registros antigos são removidos conforme `FENIX_COMMAND_LEDGER_RETENTION_HOURS`.
+
+O cliente standalone gera `commandId` nas mutações de sessão. Clientes externos também podem usar `X-Idempotency-Key`. Requisições legadas sem chave continuam aceitas, mas não recebem retry automático para falhas ambíguas de transporte.
+
+## Observabilidade e readiness
+
+A infraestrutura registra contadores e latência para resolução de owner, proxy HTTP/WS, retry, dedupe, replay, conflitos e failover.
+
+Endpoints operacionais:
+
+- `GET /health`: liveness e capacidades configuradas;
+- `GET /ready`: readiness; falha com 503 quando o ledger não responde;
+- `GET /metrics`: métricas agregadas em formato Prometheus;
+- `GET /v1/runtime/observability`: somente contadores e latências agregadas.
+
+Os detalhes recentes de `ownerId`, `generation` e tentativa permanecem nos logs estruturados do servidor e não são expostos pelo endpoint JSON agregado.
+
+## Migração JSON → PostgreSQL
+
+Para migrar um estado JSON existente para um banco vazio:
+
+```powershell
+npm run migrate:postgres
+```
+
+O script recusa sobrescrever PostgreSQL que já contenha estado.
 
 ## Comandos
 
-- `npm run dev`: inicia a API.
-- `npm test`: executa os testes automatizados.
-- `npm run validate`: valida a estrutura e as versões.
-- `npm run check`: executa a validação completa antes de entrega.
+- `npm run dev`: inicia API/Engine.
+- `npm run dev:vtt`: inicia o Fênix VTT.
+- `npm run build:vtt`: build standalone.
+- `npm test`: suíte `node:test`.
+- `npm run test:auth-integration`: auth/campanhas no Fastify real.
+- `npm run test:realtime-integration`: WebSocket real.
+- `npm run test:postgres-integration`: repository contra PostgreSQL real.
+- `npm run test:coordination-integration`: dois Engines, lease, LISTEN/NOTIFY, takeover e fencing.
+- `npm run test:routing-integration`: HTTP e WebSocket chegam ao não-owner e são encaminhados ao owner.
+- `npm run test:idempotency-integration`: dois ledgers PostgreSQL disputam o mesmo `commandId` e provam execução única/replay.
+- `npm run migrate:postgres`: migra JSON para PostgreSQL vazio.
+- `npm run validate`: valida fronteiras/estrutura.
+- `npm run check`: validação + Core tests.
 
 ## Segurança e operação
 
-- Nunca inclua `.env`, `node_modules` ou dados gerados em commits e releases.
-- Em produção, configure `NODE_ENV=production` e informe somente origens confiáveis em `CORS_ALLOWED_ORIGINS`.
-- A API limita o corpo das requisições e valida a ação recebida.
-- Erros internos não expõem detalhes em produção; cada resposta inclui um identificador de requisição.
-- O servidor encerra conexões corretamente ao receber `SIGINT` ou `SIGTERM`.
+- Nunca versione `.env`, estado persistido ou `node_modules`.
+- Senhas usam `scrypt` + salt; tokens reutilizáveis de sessão/convite não ficam em texto puro.
+- Cookies são `HttpOnly` e `Secure` em produção.
+- WebSocket valida `Origin`, payload e rate limit.
+- Jogador não escolhe `role`/`actorId` pela URL e não controla recursos de outra membership.
+- O HTTP legado Foundry permanece disponível apenas conforme `FENIX_ALLOW_LEGACY_SESSION_HTTP`.
+- Apenas o owner de um lease válido pode processar uma campanha persistente.
+- Requisições internas precisam de HMAC válido, timestamp recente, `generation` e hop único.
+- Cabeçalhos internos forjados são recusados; o proxy não cria cadeias recursivas.
+- `commandId` nunca autoriza usuário; auth/membership continuam obrigatórias no owner.
+- O ledger grava hash da requisição e resultado necessário ao replay, não o body original do comando.
+- O shutdown fecha o ingress antes de liberar leases.
+- `LISTEN/NOTIFY` acelera invalidação, mas a reconciliação periódica cobre eventos perdidos.
+
+### Limite atual: entrega durável de eventos realtime
+
+A execução de comandos agora é deduplicada entre réplicas, inclusive após resposta perdida. Porém o broadcast realtime ainda é um efeito do owner em memória: se o processo cair depois de confirmar uma mutação, mas antes de todos os peers receberem o evento correspondente, o ledger impede duplicar o comando, porém não garante a entrega daquele broadcast para cada conexão.
+
+A próxima evolução deve introduzir **Durable Realtime Outbox + Event Delivery Guarantees**, separando confirmação do comando de entrega durável/replay de eventos aos peers.
 
 ## Módulo Foundry
 
-Copie o conteúdo de `apps/foundry-module` para:
+Copie `apps/foundry-module` para:
 
 ```text
 FoundryVTT/Data/modules/mestre-orc/
 ```
 
-A pasta precisa conter diretamente `module.json`, `scripts/main.js` e `styles/mestre-orc.css`.
+A lógica alpha.24 permanece no módulo: correlação por número da sala, Journal relacionado e read-aloud seguro. Essa regra não foi movida para o Shared Core.
 
-O botão **Áudio ligado/desligado** aparece junto ao chat para cada usuário. Nas configurações do módulo é possível ajustar voz, velocidade, tom e volume. O mestre pode desativar a transmissão para os demais clientes.
-
-Depois que a sessão é iniciada, o módulo acompanha os tokens e identifica o número da sala mais próxima. Esse número é usado para procurar a seção correspondente no Journal relacionado à cena; o vínculo individual do marcador não é usado. O módulo extrai somente o read-aloud seguro e publica uma descrição curta com áudio. Cada sala é narrada uma vez por sessão e mantém histórico próprio entre sessões.
-
-Durante uma sessão ativa, mensagens de jogadores no chat são classificadas como ações sociais, combate, investigação, movimento ou ação geral. O Engine identifica o alvo, produz o resultado básico de regras e relacionamento e devolve a consequência narrada em texto e áudio. Comandos iniciados por `/`, mensagens do GM e mensagens do próprio Mestre Orc são ignorados.
-
-## Pipeline validado
+## Arquitetura validada
 
 ```text
-Scene ativa
-→ Journal de mesmo nome
-→ área inicial
-→ caixa read-aloud
-→ Groq
-→ SafetyGuard
-→ NarrationQualityGuard
-→ NoveltyGuard
-→ chat
-→ AudioNarrationService
-→ TTS local e transmissão pelo socket do Foundry
+Browser / Foundry
+       │
+       ↓
+Load Balancer
+       │
+       ↓
+ qualquer Engine
+       │
+       ├── Auth / Membership
+       ├── resolve lease
+       │
+       ├─ local owner ───────────────┐
+       │                             │
+       └─ remote owner → HMAC proxy ─┤
+                                     ↓
+                           DistributedCommandLedger
+                                     │
+                          CampaignRuntimeRegistry
+                                     │
+                              assert lease/fence
+                                     ↓
+                               Shared Core
+                                     │
+                           NarrationOutput / Hub
+                                     │
+                    ┌────────────────┴──────────────┐
+                    │ PostgreSQL                    │
+                    │ state + leases + ledger       │
+                    └───────────────┬───────────────┘
+                                    │
+                         RuntimeObservability
+                         /ready /metrics / logs
 ```
 
-Os arquivos `README-ALPHA*.md` preservam o histórico de evolução das versões anteriores.
+`SessionDirector` continua sem conhecer Foundry, autenticação, banco, Fastify, WebSocket, React, WebGL, leases, `LISTEN/NOTIFY`, roteamento, command ledger ou observabilidade.
 
-## Publicação no GitHub
+## CI
 
-Crie um repositório vazio no GitHub e execute na raiz do projeto:
+A pipeline exige matriz Node 20/22/24, suíte unitária, PostgreSQL 16 real, concorrência de repository, leases/failover, idempotência distribuída de comandos, owner-aware HTTP/WebSocket routing entre dois Engines, auth/campanhas HTTP, WebSocket real, `npm ci` e build Next. O workflow permanece somente-leitura (`contents: read`).
 
-```powershell
-git init
-git branch -M main
-git add .
-git commit -m "chore: prepare Mestre Orc Engine alpha.17"
-git remote add origin https://github.com/SEU-USUARIO/SEU-REPOSITORIO.git
-git push -u origin main
-```
-
-Antes do primeiro push, confirme com `git status` que `.env`, `node_modules` e `data/narration-history.json` não aparecem na lista.
+Veja `docs/FENIX_AUTH_PERSISTENCE.md` para detalhes de persistência, coordenação, ingress, idempotência e observabilidade. Os `README-ALPHA*.md` preservam o histórico anterior.
