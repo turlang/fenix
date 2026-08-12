@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { Pool } from 'pg';
 import { PostgresFenixRepository } from '../packages/persistence-repository/src/index.js';
+import { AuthService } from '../packages/auth-service/src/index.js';
 import { CampaignService } from '../packages/campaign-service/src/index.js';
 import { CampaignRuntimeRegistry } from '../packages/campaign-runtime-registry/src/index.js';
 import {
@@ -83,19 +84,34 @@ try {
   await Promise.all([busA.initialize(), busB.initialize()]);
   await Promise.all([leaseA.initialize(), leaseB.initialize()]);
 
+  const authCacheB = new AuthService({ repository: repositoryB, logger: {} });
+  const campaignCacheB = new CampaignService({ repository: repositoryB, logger: {} });
+  authCacheB.refreshFromRepository();
+  campaignCacheB.refreshFromRepository();
+
   repositoryA.setChangePublisher((metadata) => busA.publish('STATE_CHANGED', metadata));
   let invalidations = 0;
   unsubscribeB = busB.subscribe(async (event) => {
     if (event.type !== 'STATE_CHANGED') return;
     await repositoryB.refresh();
+    authCacheB.refreshFromRepository();
+    campaignCacheB.refreshFromRepository();
     invalidations += 1;
   });
 
   await repositoryA.mutate((draft) => {
-    draft.users.push({ id: 'shared-user', email: 'shared@example.com' });
+    draft.users.push({
+      id: 'shared-user',
+      email: 'shared@example.com',
+      displayName: 'Shared User',
+      password: { algorithm: 'scrypt', salt: 'unused', hash: 'unused' },
+      createdAt: '2026-08-12T12:00:00.000Z',
+      updatedAt: '2026-08-12T12:00:00.000Z'
+    });
   });
-  await waitFor(() => invalidations > 0 && repositoryB.snapshot().users.some((user) => user.id === 'shared-user'));
+  await waitFor(() => invalidations > 0 && authCacheB.getUserById('shared-user')?.email === 'shared@example.com');
   assert.equal(repositoryB.snapshot().users[0].id, 'shared-user');
+  assert.equal(authCacheB.getUserById('shared-user').displayName, 'Shared User');
 
   const firstLease = await leaseA.acquire({ campaignId: 'campaign-lock', sessionId: 'session-lock' });
   await assert.rejects(
@@ -132,13 +148,12 @@ try {
       updatedAt: activeSession.startedAt
     });
   });
-  await waitFor(() => repositoryB.snapshot().campaigns.some((campaign) => campaign.id === 'campaign-failover'));
+  await waitFor(() => campaignCacheB.getRaw('campaign-failover')?.activeSession?.sessionId === 'session-failover');
   await repositoryA.refresh();
 
   const campaignA = new CampaignService({ repository: repositoryA, logger: {} });
-  const campaignB = new CampaignService({ repository: repositoryB, logger: {} });
   campaignA.refreshFromRepository();
-  campaignB.refreshFromRepository();
+  const campaignB = campaignCacheB;
   const calls = [];
   const registryA = new CampaignRuntimeRegistry({
     campaignService: campaignA,
