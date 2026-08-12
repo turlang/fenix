@@ -1,5 +1,6 @@
 const DEFAULT_BASE_URL = 'http://localhost:3001';
 const DEFAULT_TIMEOUT_MS = 12000;
+const CONFIGURED_BASE_URL = process.env.NEXT_PUBLIC_FENIX_API_URL || DEFAULT_BASE_URL;
 
 function trimTrailingSlash(value) {
   return String(value || DEFAULT_BASE_URL).trim().replace(/\/+$/, '');
@@ -15,8 +16,8 @@ export class FenixApiError extends Error {
   }
 }
 
-export function resolveFenixApiBaseUrl(env = globalThis.process?.env ?? {}) {
-  return trimTrailingSlash(env.NEXT_PUBLIC_FENIX_API_URL || DEFAULT_BASE_URL);
+export function resolveFenixApiBaseUrl(env = null) {
+  return trimTrailingSlash(env?.NEXT_PUBLIC_FENIX_API_URL || CONFIGURED_BASE_URL);
 }
 
 async function readPayload(response) {
