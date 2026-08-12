@@ -3,6 +3,11 @@ import { createNarrativeProviderFromEnv } from '../../../packages/ai-provider/sr
 import { createNarrationMemoryFromEnv } from '../../../packages/narration-memory/src/index.js';
 import { createAudioNarrationServiceFromEnv } from '../../../packages/audio-narration-service/src/index.js';
 import { createConfig, loadEnvFile } from '../../../packages/config/src/index.js';
+import {
+  createDevelopmentPeerAuthorizer,
+  RealtimeSessionGateway,
+  RealtimeSessionHub
+} from '../../../packages/realtime-session-gateway/src/index.js';
 import { createApiApp } from './app.js';
 
 loadEnvFile();
@@ -12,10 +17,18 @@ const logger = console;
 const narrator = createNarrativeProviderFromEnv({ logger });
 const narrationMemory = createNarrationMemoryFromEnv({ logger });
 const audioNarrationService = createAudioNarrationServiceFromEnv({ logger });
+const realtimeHub = new RealtimeSessionHub({ logger });
 const sessionService = createSessionRuntime({
   narrator,
   narrationMemory,
   audioNarrationService,
+  narrationOutputPort: realtimeHub,
+  logger
+});
+const realtimeGateway = new RealtimeSessionGateway({
+  hub: realtimeHub,
+  sessionService,
+  authorizePeer: createDevelopmentPeerAuthorizer({ isProduction: config.isProduction }),
   logger
 });
 
@@ -23,7 +36,8 @@ const app = createApiApp({
   config,
   sessionService,
   narrator,
-  audioNarrationService
+  audioNarrationService,
+  realtimeGateway
 });
 
 async function shutdown(signal) {
