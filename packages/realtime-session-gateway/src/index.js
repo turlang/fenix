@@ -111,9 +111,10 @@ function createSessionRecord(sessionId) {
 }
 
 export class RealtimeSessionHub {
-  constructor({ maxPeersPerSession = 32, historyLimit = 50, logger = console } = {}) {
+  constructor({ maxPeersPerSession = 32, historyLimit = 50, persistSnapshot = null, logger = console } = {}) {
     this.maxPeersPerSession = Math.max(2, Number(maxPeersPerSession) || 32);
     this.historyLimit = Math.max(1, Number(historyLimit) || 50);
+    this.persistSnapshot = typeof persistSnapshot === 'function' ? persistSnapshot : null;
     this.logger = logger;
     this.sessions = new Map();
   }
@@ -123,6 +124,21 @@ export class RealtimeSessionHub {
     if (!id) throw gatewayError('sessionId é obrigatório.', 'REALTIME_SESSION_ID_REQUIRED');
     if (!this.sessions.has(id)) this.sessions.set(id, createSessionRecord(id));
     return this.sessions.get(id);
+  }
+
+  hydrateSession(sessionId, snapshot = {}) {
+    const session = this.ensureSession(sessionId);
+    session.revision = Math.max(0, Number(snapshot.revision) || 0);
+    session.scene = snapshot.scene ? structuredClone(snapshot.scene) : null;
+    session.tokens = new Map((snapshot.tokens ?? []).map((token) => {
+      const normalized = normalizeRealtimeToken(token);
+      return [normalized.id, normalized];
+    }));
+    session.tokenRooms = new Map(Object.entries(snapshot.tokenRooms ?? {}).map(([tokenId, roomId]) => [tokenId, String(roomId)]));
+    session.narrations = Array.isArray(snapshot.narrations)
+      ? snapshot.narrations.slice(-this.historyLimit).map((item) => structuredClone(item))
+      : [];
+    return this.getSnapshot(sessionId);
   }
 
   connect({ sessionId, identity, send, close = null }) {
@@ -222,6 +238,24 @@ export class RealtimeSessionHub {
     };
   }
 
+  getPersistentSnapshot(sessionId) {
+    const session = this.ensureSession(sessionId);
+    return {
+      sessionId: session.id,
+      revision: session.revision,
+      scene: session.scene ? structuredClone(session.scene) : null,
+      tokens: [...session.tokens.values()].map((token) => structuredClone(token)),
+      tokenRooms: Object.fromEntries(session.tokenRooms.entries()),
+      narrations: session.narrations.slice(-this.historyLimit).map((item) => structuredClone(item))
+    };
+  }
+
+  async persistSession(sessionId) {
+    if (!this.persistSnapshot) return false;
+    await this.persistSnapshot(String(sessionId), this.getPersistentSnapshot(sessionId));
+    return true;
+  }
+
   applyTokenMove(sessionId, identity, input = {}) {
     const session = this.ensureSession(sessionId);
     const token = normalizeRealtimeToken(input.token ?? input);
@@ -314,6 +348,7 @@ export class RealtimeSessionHub {
       type: RealtimeEventType.NARRATION,
       payload: narration
     });
+    await this.persistSession(sessionId);
     return { published: delivered > 0, delivered, content: narration.content, metadata };
   }
 }
@@ -355,7 +390,7 @@ export class RealtimeSessionGateway {
     if (!status?.sessionId || status.sessionId !== sessionId || status.state !== 'COLLECTING_ACTIONS') {
       throw gatewayError('Sessão narrativa não está ativa para este WebSocket.', 'REALTIME_SESSION_NOT_ACTIVE', 409);
     }
-    const identity = this.authorizePeer(identityInput);
+    const identity = this.authorizePeer({ sessionId, ...identityInput });
     if (identity && typeof identity.then === 'function') {
       throw new TypeError('authorizePeer precisa ser síncrono nesta camada.');
     }
@@ -391,8 +426,10 @@ export class RealtimeSessionGateway {
           if (moved.shouldNarrate) {
             await this.sessionService.describeRoom(moved.roomEntry);
           }
+          await this.hub.persistSession(sessionId);
         } catch (error) {
           this.hub.restoreTokenRoom(sessionId, moved.token.id, moved.previousRoomId);
+          await this.hub.persistSession(sessionId).catch(() => undefined);
           throw error;
         }
         this.#ack(sessionId, identity.clientId, commandId, {
@@ -405,6 +442,7 @@ export class RealtimeSessionGateway {
       }
       case RealtimeCommandType.SCENE_UPDATE: {
         const scene = this.hub.applySceneUpdate(sessionId, identity, message.payload.scene);
+        await this.hub.persistSession(sessionId);
         this.#ack(sessionId, identity.clientId, commandId, { type: message.type, sceneId: scene.id });
         return scene;
       }
