@@ -49,6 +49,15 @@ export class CampaignService {
   }
 
   async initialize() {
+    this.refreshFromRepository();
+    const now = this.now();
+    await this.repository.mutate((draft) => {
+      draft.invites = draft.invites.filter((invite) => invite.usedAt || Date.parse(invite.expiresAt) > now);
+    });
+    return this.refreshFromRepository();
+  }
+
+  refreshFromRepository() {
     const state = this.repository.snapshot();
     this.campaigns.clear();
     this.invites.clear();
@@ -57,10 +66,13 @@ export class CampaignService {
     for (const invite of state.invites ?? []) {
       if (!invite.usedAt && Date.parse(invite.expiresAt) > now) this.invites.set(invite.tokenHash, invite);
     }
-    await this.repository.mutate((draft) => {
-      draft.invites = draft.invites.filter((invite) => invite.usedAt || Date.parse(invite.expiresAt) > now);
-    });
     return { campaigns: this.campaigns.size, activeInvites: this.invites.size };
+  }
+
+  listActiveSessions() {
+    return [...this.campaigns.values()]
+      .filter((campaign) => campaign.activeSession?.sessionId)
+      .map((campaign) => ({ campaignId: campaign.id, ...structuredClone(campaign.activeSession) }));
   }
 
   listForUser(userId) {
