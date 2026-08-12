@@ -17,6 +17,22 @@ function dimension(value, fallback, { min = 64, max = 20000 } = {}) {
   return Math.min(max, Math.max(min, Math.round(number)));
 }
 
+function coordinate(value, fallback = 0, { min = -20000, max = 20000 } = {}) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  return Math.min(max, Math.max(min, Math.round(number * 100) / 100));
+}
+
+function normalizeGrid(grid = {}) {
+  return {
+    size: dimension(grid.size, 70, { min: 8, max: 500 }),
+    type: 'square',
+    offsetX: coordinate(grid.offsetX, 0),
+    offsetY: coordinate(grid.offsetY, 0),
+    visible: grid.visible !== false
+  };
+}
+
 function publicAsset(asset) {
   return asset ? Object.freeze({ ...asset }) : null;
 }
@@ -29,7 +45,7 @@ function publicScene(scene, assets = []) {
     description: scene.description ?? '',
     width: scene.width,
     height: scene.height,
-    grid: structuredClone(scene.grid),
+    grid: Object.freeze(normalizeGrid(scene.grid)),
     backgroundAssetId: scene.backgroundAssetId ?? null,
     backgroundAsset: publicAsset(asset),
     createdAt: scene.createdAt,
@@ -41,6 +57,7 @@ function ensureCollections(campaign) {
   if (!Array.isArray(campaign.assets)) campaign.assets = [];
   if (!Array.isArray(campaign.scenes)) campaign.scenes = [];
   if (campaign.activeSceneId === undefined) campaign.activeSceneId = null;
+  for (const scene of campaign.scenes) scene.grid = normalizeGrid(scene.grid);
   return campaign;
 }
 
@@ -117,15 +134,34 @@ export class CampaignSceneService {
       width: dimension(width, 1600),
       height: dimension(height, 1000),
       backgroundAssetId: asset.id,
-      grid: {
-        size: dimension(gridSize, 70, { min: 8, max: 500 }),
-        type: 'square'
-      },
+      grid: normalizeGrid({ size: gridSize }),
       createdAt: now,
       updatedAt: now
     };
     campaign.scenes.push(scene);
     if (!campaign.activeSceneId) campaign.activeSceneId = scene.id;
+    campaign.updatedAt = now;
+    await this.#persistCampaign(campaign);
+    return {
+      scene: publicScene(scene, campaign.assets),
+      activeSceneId: campaign.activeSceneId
+    };
+  }
+
+  async updateGrid({ campaignId, userId, sceneId, size, offsetX, offsetY, visible } = {}) {
+    const { campaign } = this.campaignService.requireRole(campaignId, userId, 'gm');
+    ensureCollections(campaign);
+    const scene = campaign.scenes.find((item) => item.id === String(sceneId));
+    if (!scene) throw sceneError('Cena não encontrada.', 'CAMPAIGN_SCENE_NOT_FOUND', 404);
+    const now = new Date(this.now()).toISOString();
+    scene.grid = normalizeGrid({
+      ...scene.grid,
+      size: size ?? scene.grid?.size,
+      offsetX: offsetX ?? scene.grid?.offsetX,
+      offsetY: offsetY ?? scene.grid?.offsetY,
+      visible: visible ?? scene.grid?.visible
+    });
+    scene.updatedAt = now;
     campaign.updatedAt = now;
     await this.#persistCampaign(campaign);
     return {

@@ -125,6 +125,22 @@ try {
   assert.equal(createdScene.statusCode, 200);
   const scene = createdScene.json().scene;
   assert.equal(scene.backgroundAssetId, asset.id);
+  assert.deepEqual(scene.grid, { size: 70, type: 'square', offsetX: 0, offsetY: 0, visible: true });
+
+  const calibratedGrid = await app.inject({
+    method: 'POST',
+    url: `/v1/campaigns/${campaign.id}/scenes/${scene.id}/grid`,
+    headers: { cookie: gmCookie },
+    payload: { size: 68, offsetX: 14, offsetY: -9, visible: true }
+  });
+  assert.equal(calibratedGrid.statusCode, 200);
+  assert.deepEqual(calibratedGrid.json().scene.grid, {
+    size: 68,
+    type: 'square',
+    offsetX: 14,
+    offsetY: -9,
+    visible: true
+  });
 
   const readAsset = await app.inject({
     method: 'GET',
@@ -142,6 +158,7 @@ try {
   });
   assert.equal(sceneCatalog.statusCode, 200);
   assert.equal(sceneCatalog.json().scenes[0].name, 'Templo em Ruínas');
+  assert.equal(sceneCatalog.json().scenes[0].grid.offsetX, 14);
   assert.equal(sceneCatalog.json().activeSceneId, scene.id);
 
   const inviteResponse = await app.inject({
@@ -190,6 +207,14 @@ try {
   });
   assert.equal(playerMapUpload.statusCode, 403);
 
+  const playerGridChange = await app.inject({
+    method: 'POST',
+    url: `/v1/campaigns/${campaign.id}/scenes/${scene.id}/grid`,
+    headers: { cookie: playerCookie },
+    payload: { size: 10, offsetX: 999, offsetY: 999, visible: false }
+  });
+  assert.equal(playerGridChange.statusCode, 403);
+
   const inviteReplay = await app.inject({
     method: 'POST',
     url: '/v1/invites/register',
@@ -227,7 +252,7 @@ try {
   assert.equal(playerStart.statusCode, 403);
   assert.equal(sessionStartCalls, 0);
 
-  console.log('Auth + campaign + scene HTTP integration OK');
+  console.log('Auth + campaign + scene + grid HTTP integration OK');
 } finally {
   await app.close();
   await rm(assetRoot, { recursive: true, force: true });

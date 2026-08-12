@@ -131,6 +131,13 @@ export class FenixApiClient {
     });
   }
 
+  updateSceneGrid(campaignId, sceneId, grid) {
+    return this.request(`/v1/campaigns/${encodeURIComponent(campaignId)}/scenes/${encodeURIComponent(sceneId)}/grid`, {
+      method: 'POST',
+      body: grid
+    });
+  }
+
   activateScene(campaignId, sceneId) {
     return this.request(`/v1/campaigns/${encodeURIComponent(campaignId)}/scenes/${encodeURIComponent(sceneId)}/activate`, {
       method: 'POST'
