@@ -34,7 +34,7 @@ test('LocalAssetStorage persiste e lê mapa de campanha sem permitir segmentos i
 test('LocalAssetStorage rejeita formato e tamanho inválidos', async () => {
   const rootDir = await mkdtemp(join(tmpdir(), 'fenix-assets-'));
   try {
-    const storage = new LocalAssetStorage({ rootDir, maxBytes: 4 });
+    const storage = new LocalAssetStorage({ rootDir, maxBytes: 1024 });
     await storage.initialize();
     await assert.rejects(
       () => storage.saveImage({
@@ -50,7 +50,7 @@ test('LocalAssetStorage rejeita formato e tamanho inválidos', async () => {
         campaignId: 'campaign-1',
         fileName: 'mapa.png',
         mimeType: 'image/png',
-        dataBase64: Buffer.from('12345').toString('base64')
+        dataBase64: Buffer.alloc(1025, 1).toString('base64')
       }),
       (error) => error.code === 'ASSET_TOO_LARGE' && error.statusCode === 413
     );
