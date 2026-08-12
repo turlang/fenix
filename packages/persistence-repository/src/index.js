@@ -60,6 +60,7 @@ export class InMemoryFenixRepository {
     this.queue = Promise.resolve();
     this.driver = 'memory';
     this.changePublisher = null;
+    this.logger = console;
   }
 
   async initialize() {
@@ -94,8 +95,16 @@ export class InMemoryFenixRepository {
 
   async publishChange(metadata = {}) {
     if (!this.changePublisher) return false;
-    await this.changePublisher({ driver: this.driver, ...metadata });
-    return true;
+    try {
+      await this.changePublisher({ driver: this.driver, ...metadata });
+      return true;
+    } catch (error) {
+      this.logger?.warn?.('[Fênix][Persistence] estado persistiu, mas invalidação não foi publicada', {
+        driver: this.driver,
+        message: error.message
+      });
+      return false;
+    }
   }
 
   async persist() {
@@ -219,6 +228,7 @@ export class PostgresFenixRepository extends InMemoryFenixRepository {
     if (typeof mutator !== 'function') throw new TypeError('mutator deve ser função.');
     const operation = this.queue.then(async () => {
       const client = await this.pool.connect();
+      let output;
       try {
         await client.query('BEGIN');
         const locked = await client.query(
@@ -236,14 +246,15 @@ export class PostgresFenixRepository extends InMemoryFenixRepository {
         );
         await client.query('COMMIT');
         this.state = nextState;
-        await this.publishChange();
-        return clone(result);
+        output = clone(result);
       } catch (error) {
         await client.query('ROLLBACK').catch(() => undefined);
         throw error;
       } finally {
         client.release();
       }
+      await this.publishChange();
+      return output;
     });
     this.queue = operation.catch(() => undefined);
     return operation;
