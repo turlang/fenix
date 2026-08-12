@@ -59,6 +59,7 @@ export class InMemoryFenixRepository {
     this.state = normalizeState(initialState);
     this.queue = Promise.resolve();
     this.driver = 'memory';
+    this.changePublisher = null;
   }
 
   async initialize() {
@@ -73,6 +74,10 @@ export class InMemoryFenixRepository {
     return clone(selector(this.state));
   }
 
+  setChangePublisher(publisher) {
+    this.changePublisher = typeof publisher === 'function' ? publisher : null;
+  }
+
   mutate(mutator) {
     if (typeof mutator !== 'function') throw new TypeError('mutator deve ser função.');
     const operation = this.queue.then(async () => {
@@ -80,10 +85,17 @@ export class InMemoryFenixRepository {
       const result = await mutator(draft);
       this.state = normalizeState(draft);
       await this.persist(this.state);
+      await this.publishChange();
       return clone(result);
     });
     this.queue = operation.catch(() => undefined);
     return operation;
+  }
+
+  async publishChange(metadata = {}) {
+    if (!this.changePublisher) return false;
+    await this.changePublisher({ driver: this.driver, ...metadata });
+    return true;
   }
 
   async persist() {
@@ -192,6 +204,7 @@ export class PostgresFenixRepository extends InMemoryFenixRepository {
   }
 
   async refresh() {
+    await this.queue.catch(() => undefined);
     const result = await this.pool.query(
       'SELECT schema_version, state FROM fenix_repository_state WHERE id = $1',
       [POSTGRES_ROW_ID]
@@ -223,6 +236,7 @@ export class PostgresFenixRepository extends InMemoryFenixRepository {
         );
         await client.query('COMMIT');
         this.state = nextState;
+        await this.publishChange();
         return clone(result);
       } catch (error) {
         await client.query('ROLLBACK').catch(() => undefined);
