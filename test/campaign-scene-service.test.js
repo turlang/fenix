@@ -72,6 +72,7 @@ test('CampaignSceneService persiste asset, cria cena e ativa cena da campanha', 
   assert.equal(created.scene.grid.offsetX, 0);
   assert.equal(created.scene.grid.offsetY, 0);
   assert.equal(created.scene.grid.visible, true);
+  assert.deepEqual(created.scene.walls, []);
 
   const catalog = service.list({ campaignId: campaign.id, userId: 'gm-1' });
   assert.equal(catalog.scenes.length, 1);
@@ -144,7 +145,28 @@ test('CampaignSceneService persiste tamanho, offset e visibilidade da grade cali
   assert.deepEqual(persisted.grid, updated.scene.grid);
 });
 
-test('CampaignSceneService bloqueia criação, importação e calibração de cena por jogador', async () => {
+test('CampaignSceneService persiste paredes e portas normalizadas na cena', async () => {
+  const { repository, campaign, service } = await createServiceFixture('Paredes');
+  const created = await createMapScene(service, campaign.id);
+  const updated = await service.updateWalls({
+    campaignId: campaign.id,
+    userId: 'gm-1',
+    sceneId: created.scene.id,
+    walls: [
+      { id: 'wall-1', kind: 'wall', a: { x: 0, y: 0 }, b: { x: 400, y: 0 } },
+      { id: 'door-1', kind: 'door', doorState: 'locked', a: { x: 400, y: 0 }, b: { x: 480, y: 0 } }
+    ]
+  });
+
+  assert.equal(updated.scene.walls.length, 2);
+  assert.equal(updated.scene.walls[0].kind, 'wall');
+  assert.equal(updated.scene.walls[1].kind, 'door');
+  assert.equal(updated.scene.walls[1].doorState, 'locked');
+  const persisted = repository.snapshot().campaigns.find((item) => item.id === campaign.id).scenes[0];
+  assert.deepEqual(persisted.walls, updated.scene.walls);
+});
+
+test('CampaignSceneService bloqueia criação, importação, calibração e paredes por jogador', async () => {
   const remoteMapImporter = { async importUrl() { throw new Error('não deveria executar'); } };
   const { repository, campaignService, campaign, service } = await createServiceFixture('Permissões', { remoteMapImporter });
   const created = await createMapScene(service, campaign.id);
@@ -182,6 +204,16 @@ test('CampaignSceneService bloqueia criação, importação e calibração de ce
       userId: 'player-1',
       sceneId: created.scene.id,
       size: 60
+    }),
+    (error) => error.code === 'CAMPAIGN_ROLE_FORBIDDEN' && error.statusCode === 403
+  );
+
+  await assert.rejects(
+    () => service.updateWalls({
+      campaignId: campaign.id,
+      userId: 'player-1',
+      sceneId: created.scene.id,
+      walls: [{ id: 'forbidden', kind: 'wall', a: { x: 0, y: 0 }, b: { x: 100, y: 0 } }]
     }),
     (error) => error.code === 'CAMPAIGN_ROLE_FORBIDDEN' && error.statusCode === 403
   );
