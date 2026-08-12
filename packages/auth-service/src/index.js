@@ -78,6 +78,7 @@ export class AuthService {
     this.usersById = new Map();
     this.usersByEmail = new Map();
     this.sessionsByHash = new Map();
+    this.bootstrapInProgress = false;
   }
 
   async initialize() {
@@ -108,8 +109,16 @@ export class AuthService {
   }
 
   async bootstrapOwner(input = {}) {
-    if (this.hasUsers()) throw authError('Bootstrap já foi concluído.', 'AUTH_BOOTSTRAP_CLOSED', 409);
-    return this.createUser(input);
+    if (this.hasUsers() || this.bootstrapInProgress) {
+      throw authError('Bootstrap já foi concluído.', 'AUTH_BOOTSTRAP_CLOSED', 409);
+    }
+    this.bootstrapInProgress = true;
+    try {
+      if (this.hasUsers()) throw authError('Bootstrap já foi concluído.', 'AUTH_BOOTSTRAP_CLOSED', 409);
+      return await this.createUser(input);
+    } finally {
+      this.bootstrapInProgress = false;
+    }
   }
 
   async createUser({ email, displayName, password } = {}) {
@@ -136,6 +145,22 @@ export class AuthService {
     this.usersById.set(user.id, user);
     this.usersByEmail.set(user.email, user);
     return publicUser(user);
+  }
+
+  async deleteUser(userId) {
+    const id = String(userId ?? '');
+    const user = this.usersById.get(id);
+    if (!user) return false;
+    this.usersById.delete(id);
+    this.usersByEmail.delete(user.email);
+    for (const [hash, session] of this.sessionsByHash.entries()) {
+      if (session.userId === id) this.sessionsByHash.delete(hash);
+    }
+    await this.repository.mutate((draft) => {
+      draft.users = draft.users.filter((item) => item.id !== id);
+      draft.authSessions = draft.authSessions.filter((session) => session.userId !== id);
+    });
+    return true;
   }
 
   async login({ email, password } = {}) {
