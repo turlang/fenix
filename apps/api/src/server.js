@@ -126,9 +126,9 @@ const app = await createApiApp({
 async function shutdown(signal) {
   app.log.info({ signal, instanceId }, 'Encerrando servidor');
   await sessionService.persistRealtimeSessions().catch(() => undefined);
+  await app.close();
   unsubscribeCoordination();
   await sessionService.stopCoordination({ releaseLeases: true }).catch(() => undefined);
-  await app.close();
   await coordinationBus?.close?.();
   await repository.close?.();
 }
