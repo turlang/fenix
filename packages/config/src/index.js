@@ -65,6 +65,10 @@ export function createConfig(env = process.env) {
   if (runtimeHeartbeatMs >= runtimeLeaseTtlMs) {
     throw new RangeError('FENIX_RUNTIME_HEARTBEAT_MS deve ser menor que FENIX_RUNTIME_LEASE_TTL_MS.');
   }
+  const internalRoutingSecret = env.FENIX_INTERNAL_ROUTING_SECRET?.trim() || null;
+  if (internalRoutingSecret && internalRoutingSecret.length < 32) {
+    throw new RangeError('FENIX_INTERNAL_ROUTING_SECRET deve ter pelo menos 32 caracteres.');
+  }
   return Object.freeze({
     nodeEnv,
     isProduction,
@@ -80,6 +84,17 @@ export function createConfig(env = process.env) {
     authCookieSameSite: parseSameSite(env.FENIX_AUTH_COOKIE_SAME_SITE, isProduction ? 'None' : 'Lax'),
     instanceId: env.FENIX_INSTANCE_ID?.trim() || null,
     instancePublicUrl: env.FENIX_INSTANCE_PUBLIC_URL?.trim() || null,
+    internalRoutingSecret,
+    runtimeRoutingTimeoutMs: parseInteger(env.FENIX_RUNTIME_ROUTING_TIMEOUT_MS, 5000, {
+      min: 500,
+      max: 30000,
+      name: 'FENIX_RUNTIME_ROUTING_TIMEOUT_MS'
+    }),
+    runtimeRoutingMaxRetries: parseInteger(env.FENIX_RUNTIME_ROUTING_MAX_RETRIES, 1, {
+      min: 0,
+      max: 3,
+      name: 'FENIX_RUNTIME_ROUTING_MAX_RETRIES'
+    }),
     runtimeLeaseTtlMs,
     runtimeHeartbeatMs,
     runtimeReconcileMs: parseInteger(env.FENIX_RUNTIME_RECONCILE_MS, 5000, {
