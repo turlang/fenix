@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { normalizeSceneWalls } from '../../scene-geometry/src/index.js';
 
 function sceneError(message, code, statusCode = 400) {
   const error = new Error(message);
@@ -33,6 +34,13 @@ function normalizeGrid(grid = {}) {
   };
 }
 
+function sceneWalls(scene) {
+  return normalizeSceneWalls(scene.walls ?? [], {
+    sceneWidth: scene.width,
+    sceneHeight: scene.height
+  });
+}
+
 function publicAsset(asset) {
   return asset ? Object.freeze({ ...asset }) : null;
 }
@@ -46,6 +54,7 @@ function publicScene(scene, assets = []) {
     width: scene.width,
     height: scene.height,
     grid: Object.freeze(normalizeGrid(scene.grid)),
+    walls: sceneWalls(scene),
     backgroundAssetId: scene.backgroundAssetId ?? null,
     backgroundAsset: publicAsset(asset),
     createdAt: scene.createdAt,
@@ -57,7 +66,10 @@ function ensureCollections(campaign) {
   if (!Array.isArray(campaign.assets)) campaign.assets = [];
   if (!Array.isArray(campaign.scenes)) campaign.scenes = [];
   if (campaign.activeSceneId === undefined) campaign.activeSceneId = null;
-  for (const scene of campaign.scenes) scene.grid = normalizeGrid(scene.grid);
+  for (const scene of campaign.scenes) {
+    scene.grid = normalizeGrid(scene.grid);
+    if (!Array.isArray(scene.walls)) scene.walls = [];
+  }
   return campaign;
 }
 
@@ -141,6 +153,7 @@ export class CampaignSceneService {
       height: dimension(height, asset.height ?? 1000),
       backgroundAssetId: asset.id,
       grid: normalizeGrid({ size: gridSize }),
+      walls: [],
       createdAt: now,
       updatedAt: now
     };
@@ -167,6 +180,27 @@ export class CampaignSceneService {
       offsetY: offsetY ?? scene.grid?.offsetY,
       visible: visible ?? scene.grid?.visible
     });
+    scene.updatedAt = now;
+    campaign.updatedAt = now;
+    await this.#persistCampaign(campaign);
+    return {
+      scene: publicScene(scene, campaign.assets),
+      activeSceneId: campaign.activeSceneId
+    };
+  }
+
+  async updateWalls({ campaignId, userId, sceneId, walls } = {}) {
+    const { campaign } = this.campaignService.requireRole(campaignId, userId, 'gm');
+    ensureCollections(campaign);
+    const scene = campaign.scenes.find((item) => item.id === String(sceneId));
+    if (!scene) throw sceneError('Cena não encontrada.', 'CAMPAIGN_SCENE_NOT_FOUND', 404);
+    const normalized = normalizeSceneWalls(walls, {
+      sceneWidth: scene.width,
+      sceneHeight: scene.height,
+      idFactory: randomUUID
+    });
+    const now = new Date(this.now()).toISOString();
+    scene.walls = normalized.map((wall) => structuredClone(wall));
     scene.updatedAt = now;
     campaign.updatedAt = now;
     await this.#persistCampaign(campaign);

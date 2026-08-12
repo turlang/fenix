@@ -61,6 +61,7 @@ export function VttShell({ onExitCampaign = null, onLogout = null }) {
     createRemoteMapScene,
     activateScene,
     updateSceneGrid,
+    updateSceneWalls,
     resolveAssetUrl,
     selectActor,
     clearError,
@@ -76,10 +77,11 @@ export function VttShell({ onExitCampaign = null, onLogout = null }) {
   const realtimeReady = state.realtime === 'connected';
   const mapScene = useMemo(() => {
     if (!activeScene) return demoScene;
-    const realtimeGrid = state.scene?.id === activeScene.id ? state.scene.grid : null;
+    const realtimeScene = state.scene?.id === activeScene.id ? state.scene : null;
     return {
       ...activeScene,
-      grid: realtimeGrid ? { ...activeScene.grid, ...realtimeGrid } : activeScene.grid,
+      grid: realtimeScene?.grid ? { ...activeScene.grid, ...realtimeScene.grid } : activeScene.grid,
+      walls: Array.isArray(realtimeScene?.walls) ? realtimeScene.walls : (activeScene.walls ?? []),
       background: activeScene.backgroundAssetId
         ? resolveAssetUrl(activeScene.backgroundAssetId)
         : null
@@ -234,7 +236,7 @@ export function VttShell({ onExitCampaign = null, onLogout = null }) {
                     <span className="scene-index">{String(index + 1).padStart(2, '0')}</span>
                     <span>
                       <strong>{scene.name}</strong>
-                      <small>{active ? 'Cena ativa' : `${scene.width} × ${scene.height}`}</small>
+                      <small>{active ? `Cena ativa · ${(scene.walls ?? []).length} paredes` : `${scene.width} × ${scene.height}`}</small>
                     </span>
                   </button>
                 );
@@ -281,6 +283,7 @@ export function VttShell({ onExitCampaign = null, onLogout = null }) {
             onTokenMoved={moveToken}
             onSelectedActor={selectActor}
             onGridCalibrated={updateSceneGrid}
+            onWallsChanged={updateSceneWalls}
             canMoveAny={isGm}
             movableActorId={membership?.actorId ?? null}
           />

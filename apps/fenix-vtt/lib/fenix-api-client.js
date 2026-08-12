@@ -146,6 +146,13 @@ export class FenixApiClient {
     });
   }
 
+  updateSceneWalls(campaignId, sceneId, walls) {
+    return this.request(`/v1/campaigns/${encodeURIComponent(campaignId)}/scenes/${encodeURIComponent(sceneId)}/walls`, {
+      method: 'POST',
+      body: { walls }
+    });
+  }
+
   activateScene(campaignId, sceneId) {
     return this.request(`/v1/campaigns/${encodeURIComponent(campaignId)}/scenes/${encodeURIComponent(sceneId)}/activate`, {
       method: 'POST'

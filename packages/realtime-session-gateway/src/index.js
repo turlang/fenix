@@ -1,3 +1,5 @@
+import { normalizeSceneWalls } from '../../scene-geometry/src/index.js';
+
 const MAX_COORDINATE = 1_000_000;
 
 export const RealtimeRole = Object.freeze({
@@ -309,12 +311,15 @@ export class RealtimeSessionHub {
     if (identity.role !== RealtimeRole.GM) {
       throw gatewayError('Somente o mestre pode trocar a cena autoritativa.', 'REALTIME_SCENE_FORBIDDEN', 403);
     }
+    const width = Math.max(1, Number(scene?.width) || 1);
+    const height = Math.max(1, Number(scene?.height) || 1);
     const normalized = {
       id: boundedText(scene?.id, 200),
       name: boundedText(scene?.name, 300),
-      width: Math.max(1, Number(scene?.width) || 1),
-      height: Math.max(1, Number(scene?.height) || 1),
-      grid: scene?.grid ?? null
+      width,
+      height,
+      grid: scene?.grid ?? null,
+      walls: normalizeSceneWalls(scene?.walls ?? [], { sceneWidth: width, sceneHeight: height })
     };
     if (!normalized.id) throw gatewayError('Cena sem id.', 'REALTIME_SCENE_ID_REQUIRED');
     const session = this.ensureSession(sessionId);
