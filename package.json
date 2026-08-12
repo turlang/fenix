@@ -15,6 +15,7 @@
     "build:vtt": "npm --workspace @fenix/vtt run build",
     "test": "node --test",
     "test:realtime-integration": "node integration-tests/realtime-websocket.mjs",
+    "test:auth-integration": "node integration-tests/auth-campaign-http.mjs",
     "validate": "node scripts/validate.mjs",
     "check": "npm run validate && npm test"
   },
