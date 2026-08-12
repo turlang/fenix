@@ -43,6 +43,20 @@ export function registerSceneRoutes(app, { authService, sceneService }) {
     }
   });
 
+  app.post('/v1/campaigns/:campaignId/assets/import-url', async (request, reply) => {
+    try {
+      const authenticated = requireAuthenticatedRequest(authService, request);
+      const asset = await sceneService.importMapUrl({
+        campaignId: request.params.campaignId,
+        userId: authenticated.user.id,
+        url: request.body?.url
+      });
+      return { asset };
+    } catch (error) {
+      return sendError(reply, error, 'CAMPAIGN_REMOTE_MAP_IMPORT_FAILED');
+    }
+  });
+
   app.get('/v1/campaigns/:campaignId/assets/:assetId', async (request, reply) => {
     try {
       const authenticated = requireAuthenticatedRequest(authService, request);

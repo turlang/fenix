@@ -393,6 +393,30 @@ export function FenixSessionProvider({ children, campaign, currentUser }) {
     }
   }, [campaign.id, client, isGm, refreshScenes]);
 
+  const createRemoteMapScene = useCallback(async ({ url, name, description, gridSize }) => {
+    if (!isGm) throw new Error('Somente o mestre pode criar cenas.');
+    dispatch({ type: 'REQUEST_BEGIN' });
+    try {
+      const imported = await client.importMapUrl(campaign.id, url);
+      const asset = imported.asset;
+      const created = await client.createScene(campaign.id, {
+        name,
+        description,
+        assetId: asset.id,
+        width: asset.width,
+        height: asset.height,
+        gridSize
+      });
+      await refreshScenes();
+      return created;
+    } catch (error) {
+      dispatch({ type: 'CONNECTION_ERROR', disconnected: false, error: errorMessage(error) });
+      throw error;
+    } finally {
+      dispatch({ type: 'REQUEST_END' });
+    }
+  }, [campaign.id, client, isGm, refreshScenes]);
+
   const activateScene = useCallback(async (sceneId) => {
     if (!isGm) return false;
     dispatch({ type: 'REQUEST_BEGIN' });
@@ -449,6 +473,7 @@ export function FenixSessionProvider({ children, campaign, currentUser }) {
     endSession,
     createInvite,
     createMapScene,
+    createRemoteMapScene,
     activateScene,
     updateSceneGrid,
     resolveAssetUrl: (assetId) => client.assetUrl(campaign.id, assetId),
@@ -457,7 +482,7 @@ export function FenixSessionProvider({ children, campaign, currentUser }) {
     },
     clearError: () => dispatch({ type: 'CLEAR_ERROR' }),
     replayAudio: (audio) => enqueueAudio(audio)
-  }), [activeScene, activateScene, campaign, client, connect, createInvite, createMapScene, currentUser, endSession, enqueueAudio, enterRoom, isGm, membership, moveToken, sceneCatalog.scenes, selfPresence, state, submitAction, updateSceneGrid]);
+  }), [activeScene, activateScene, campaign, client, connect, createInvite, createMapScene, createRemoteMapScene, currentUser, endSession, enqueueAudio, enterRoom, isGm, membership, moveToken, sceneCatalog.scenes, selfPresence, state, submitAction, updateSceneGrid]);
 
   return <FenixSessionContext.Provider value={value}>{children}</FenixSessionContext.Provider>;
 }

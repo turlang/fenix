@@ -62,13 +62,14 @@ function ensureCollections(campaign) {
 }
 
 export class CampaignSceneService {
-  constructor({ campaignService, repository, assetStorage, now = () => Date.now() } = {}) {
+  constructor({ campaignService, repository, assetStorage, remoteMapImporter = null, now = () => Date.now() } = {}) {
     if (!campaignService) throw new TypeError('campaignService é obrigatório.');
     if (!repository) throw new TypeError('repository é obrigatório.');
     if (!assetStorage) throw new TypeError('assetStorage é obrigatório.');
     this.campaignService = campaignService;
     this.repository = repository;
     this.assetStorage = assetStorage;
+    this.remoteMapImporter = remoteMapImporter;
     this.now = now;
   }
 
@@ -91,23 +92,28 @@ export class CampaignSceneService {
       mimeType,
       dataBase64
     });
-    const now = new Date(this.now()).toISOString();
-    const asset = {
-      ...stored,
-      kind: 'map-background',
-      createdAt: now,
-      createdByUserId: String(userId)
-    };
-    try {
-      campaign.assets.push(asset);
-      campaign.updatedAt = now;
-      await this.#persistCampaign(campaign);
-      return publicAsset(asset);
-    } catch (error) {
-      campaign.assets = campaign.assets.filter((item) => item.id !== asset.id);
-      await this.assetStorage.delete({ campaignId: campaign.id, assetId: asset.id }).catch(() => undefined);
-      throw error;
+    return this.#registerAsset(campaign, userId, stored, { sourceType: 'upload' });
+  }
+
+  async importMapUrl({ campaignId, userId, url } = {}) {
+    const { campaign } = this.campaignService.requireRole(campaignId, userId, 'gm');
+    ensureCollections(campaign);
+    if (!this.remoteMapImporter) {
+      throw sceneError('Importação de mapa por URL não está disponível neste Engine.', 'REMOTE_MAP_IMPORT_UNAVAILABLE', 503);
     }
+    const imported = await this.remoteMapImporter.importUrl(url);
+    const stored = await this.assetStorage.saveImageBuffer({
+      campaignId: campaign.id,
+      fileName: imported.fileName,
+      mimeType: imported.mimeType,
+      buffer: imported.buffer
+    });
+    return this.#registerAsset(campaign, userId, stored, {
+      sourceType: 'remote-import',
+      sourceHost: imported.sourceHost,
+      width: imported.width,
+      height: imported.height
+    });
   }
 
   async readAsset({ campaignId, userId, assetId } = {}) {
@@ -131,8 +137,8 @@ export class CampaignSceneService {
       id: randomUUID(),
       name: sceneName,
       description: text(description, 4000),
-      width: dimension(width, 1600),
-      height: dimension(height, 1000),
+      width: dimension(width, asset.width ?? 1600),
+      height: dimension(height, asset.height ?? 1000),
       backgroundAssetId: asset.id,
       grid: normalizeGrid({ size: gridSize }),
       createdAt: now,
@@ -182,6 +188,27 @@ export class CampaignSceneService {
       scene: publicScene(scene, campaign.assets),
       activeSceneId: scene.id
     };
+  }
+
+  async #registerAsset(campaign, userId, stored, metadata = {}) {
+    const now = new Date(this.now()).toISOString();
+    const asset = {
+      ...stored,
+      kind: 'map-background',
+      ...metadata,
+      createdAt: now,
+      createdByUserId: String(userId)
+    };
+    try {
+      campaign.assets.push(asset);
+      campaign.updatedAt = now;
+      await this.#persistCampaign(campaign);
+      return publicAsset(asset);
+    } catch (error) {
+      campaign.assets = campaign.assets.filter((item) => item.id !== asset.id);
+      await this.assetStorage.delete({ campaignId: campaign.id, assetId: asset.id }).catch(() => undefined);
+      throw error;
+    }
   }
 
   async #persistCampaign(campaign) {

@@ -35,6 +35,14 @@ function decodeBase64(value) {
   }
 }
 
+function normalizeImageType(value) {
+  const type = String(value ?? '').trim().toLowerCase();
+  if (!ALLOWED_IMAGE_TYPES.has(type)) {
+    throw assetError('Formato de mapa não suportado. Use PNG, JPG ou WEBP.', 'ASSET_TYPE_UNSUPPORTED', 415);
+  }
+  return type;
+}
+
 export class LocalAssetStorage {
   constructor({ rootDir = './data/fenix-assets', maxBytes = 15 * 1024 * 1024 } = {}) {
     this.rootDir = resolve(rootDir);
@@ -48,26 +56,33 @@ export class LocalAssetStorage {
   }
 
   async saveImage({ campaignId, assetId = randomUUID(), fileName, mimeType, dataBase64 } = {}) {
+    return this.saveImageBuffer({
+      campaignId,
+      assetId,
+      fileName,
+      mimeType,
+      buffer: decodeBase64(dataBase64)
+    });
+  }
+
+  async saveImageBuffer({ campaignId, assetId = randomUUID(), fileName, mimeType, buffer } = {}) {
     const campaign = safeSegment(campaignId, 'campaignId');
     const asset = safeSegment(assetId, 'assetId');
-    const type = String(mimeType ?? '').trim().toLowerCase();
-    if (!ALLOWED_IMAGE_TYPES.has(type)) {
-      throw assetError('Formato de mapa não suportado. Use PNG, JPG ou WEBP.', 'ASSET_TYPE_UNSUPPORTED', 415);
-    }
-    const buffer = decodeBase64(dataBase64);
-    if (!buffer.length) throw assetError('O arquivo do mapa está vazio.', 'ASSET_EMPTY');
-    if (buffer.length > this.maxBytes) {
+    const type = normalizeImageType(mimeType);
+    const bytes = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer ?? []);
+    if (!bytes.length) throw assetError('O arquivo do mapa está vazio.', 'ASSET_EMPTY');
+    if (bytes.length > this.maxBytes) {
       throw assetError(`O mapa excede o limite de ${Math.floor(this.maxBytes / 1024 / 1024)} MB.`, 'ASSET_TOO_LARGE', 413);
     }
     const campaignDir = join(this.rootDir, campaign);
     await mkdir(campaignDir, { recursive: true });
     const filePath = join(campaignDir, `${asset}.bin`);
-    await writeFile(filePath, buffer, { flag: 'wx' });
+    await writeFile(filePath, bytes, { flag: 'wx' });
     return Object.freeze({
       id: asset,
       fileName: String(fileName ?? 'mapa').trim().slice(0, 180) || 'mapa',
       mimeType: type,
-      size: buffer.length
+      size: bytes.length
     });
   }
 

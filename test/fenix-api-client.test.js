@@ -44,23 +44,26 @@ test('FenixApiClient envia campanha, commandId, credenciais e eventos para os en
   assert.equal(JSON.parse(calls[1].options.body).commandId, 'command-room-1');
 });
 
-test('FenixApiClient expõe endpoints de autenticação e campanhas com cookie habilitado', async () => {
+test('FenixApiClient expõe endpoints de autenticação, campanhas e importação remota com cookie habilitado', async () => {
   const calls = [];
   const client = new FenixApiClient({
     baseUrl: 'http://engine.test',
     fetchImpl: async (url, options = {}) => {
       calls.push({ url, options });
-      return jsonResponse({ ok: true });
+      return jsonResponse({ ok: true, asset: { id: 'asset-1' } });
     }
   });
 
   await client.login({ email: 'gm@example.com', password: 'senha-segura' });
   await client.createCampaign({ title: 'Ecos de Amn' });
   await client.createInvite('campaign-1', 'hero-ayla');
+  await client.importMapUrl('campaign-1', 'https://cdn.example.com/maps/templo.webp');
 
   assert.match(calls[0].url, /\/v1\/auth\/login$/);
   assert.match(calls[1].url, /\/v1\/campaigns$/);
   assert.match(calls[2].url, /\/v1\/campaigns\/campaign-1\/invites$/);
+  assert.match(calls[3].url, /\/v1\/campaigns\/campaign-1\/assets\/import-url$/);
+  assert.deepEqual(JSON.parse(calls[3].options.body), { url: 'https://cdn.example.com/maps/templo.webp' });
   assert.ok(calls.every((call) => call.options.credentials === 'include'));
 });
 

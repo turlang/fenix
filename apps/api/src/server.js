@@ -6,6 +6,7 @@ import { createAudioNarrationServiceFromEnv } from '../../../packages/audio-narr
 import { createConfig, loadEnvFile } from '../../../packages/config/src/index.js';
 import { createFenixRepositoryFromEnv } from '../../../packages/persistence-repository/src/index.js';
 import { createAssetStorageFromEnv } from '../../../packages/asset-storage/src/index.js';
+import { RemoteMapImporter } from '../../../packages/remote-map-importer/src/index.js';
 import { AuthService } from '../../../packages/auth-service/src/index.js';
 import {
   CampaignService,
@@ -81,10 +82,16 @@ const campaignService = new CampaignService({ repository, authService, logger })
 await campaignService.initialize();
 const assetStorage = createAssetStorageFromEnv();
 await assetStorage.initialize();
+const remoteMapImporter = new RemoteMapImporter({
+  maxBytes: assetStorage.maxBytes,
+  timeoutMs: config.remoteMapTimeoutMs,
+  maxRedirects: config.remoteMapMaxRedirects
+});
 const sceneService = new CampaignSceneService({
   campaignService,
   repository,
-  assetStorage
+  assetStorage,
+  remoteMapImporter
 });
 
 const runtimeRouter = leaseManager && config.internalRoutingSecret

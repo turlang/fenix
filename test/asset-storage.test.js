@@ -22,6 +22,17 @@ test('LocalAssetStorage persiste e lê mapa de campanha sem permitir segmentos i
     assert.equal(asset.mimeType, 'image/png');
     assert.deepEqual(await storage.read({ campaignId: 'campaign-1', assetId: 'asset-1' }), payload);
 
+    const remotePayload = Buffer.from('remote-webp-data');
+    const remoteAsset = await storage.saveImageBuffer({
+      campaignId: 'campaign-1',
+      assetId: 'asset-remote',
+      fileName: 'remote.webp',
+      mimeType: 'image/webp',
+      buffer: remotePayload
+    });
+    assert.equal(remoteAsset.id, 'asset-remote');
+    assert.deepEqual(await storage.read({ campaignId: 'campaign-1', assetId: 'asset-remote' }), remotePayload);
+
     await assert.rejects(
       () => storage.read({ campaignId: '../escape', assetId: 'asset-1' }),
       (error) => error.code === 'ASSET_PATH_INVALID'
@@ -51,6 +62,15 @@ test('LocalAssetStorage rejeita formato e tamanho inválidos', async () => {
         fileName: 'mapa.png',
         mimeType: 'image/png',
         dataBase64: Buffer.alloc(1025, 1).toString('base64')
+      }),
+      (error) => error.code === 'ASSET_TOO_LARGE' && error.statusCode === 413
+    );
+    await assert.rejects(
+      () => storage.saveImageBuffer({
+        campaignId: 'campaign-1',
+        fileName: 'remote.png',
+        mimeType: 'image/png',
+        buffer: Buffer.alloc(1025, 1)
       }),
       (error) => error.code === 'ASSET_TOO_LARGE' && error.statusCode === 413
     );

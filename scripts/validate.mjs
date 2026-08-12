@@ -7,6 +7,7 @@ const required = [
   'apps/api/src/http/register-session-routes.js',
   'apps/api/src/http/register-auth-routes.js',
   'apps/api/src/http/register-campaign-routes.js',
+  'apps/api/src/http/register-scene-routes.js',
   'apps/api/src/http/session-authorizer.js',
   'apps/api/src/realtime/register-realtime-routes.js',
   'apps/api/src/realtime/owner-aware-websocket-proxy.js',
@@ -42,8 +43,11 @@ const required = [
   'packages/distributed-command-ledger/src/index.js',
   'packages/runtime-observability/src/index.js',
   'packages/persistence-repository/src/index.js',
+  'packages/asset-storage/src/index.js',
+  'packages/remote-map-importer/src/index.js',
   'packages/auth-service/src/index.js',
   'packages/campaign-service/src/index.js',
+  'packages/campaign-scene-service/src/index.js',
   'packages/realtime-session-gateway/src/index.js',
   'packages/narration-output/src/index.js',
   'packages/narration-context-builder/src/index.js',
@@ -150,12 +154,32 @@ for (const marker of [
   'PostgresStateBus',
   'OwnerAwareRuntimeRouter',
   'createCommandLedger',
-  'RuntimeObservability'
+  'RuntimeObservability',
+  'RemoteMapImporter'
 ]) {
   if (!serverSource.includes(marker)) throw new Error(`Composition root distribuído incompleto: ${marker}.`);
 }
 if (serverSource.includes('createDevelopmentPeerAuthorizer')) {
   throw new Error('Composition root de produção não pode usar authorizer realtime de desenvolvimento.');
+}
+const remoteMapSource = await readFile(new URL('../packages/remote-map-importer/src/index.js', import.meta.url), 'utf8');
+for (const marker of ['REMOTE_MAP_PRIVATE_HOST_FORBIDDEN', 'resolvePublicRemoteHost', 'maxRedirects', 'REMOTE_MAP_SIGNATURE_INVALID']) {
+  if (!remoteMapSource.includes(marker)) throw new Error(`Importador remoto sem hardening obrigatório: ${marker}.`);
+}
+const directorSource = await readFile(new URL('../packages/session-director/src/index.js', import.meta.url), 'utf8');
+for (const forbidden of [
+  'PostgresRuntimeLeaseManager',
+  'PostgresStateBus',
+  'fenix_runtime_leases',
+  'pg_notify',
+  'PostgresCommandLedger',
+  'fenix_command_ledger',
+  'RuntimeObservability',
+  'OwnerAwareRuntimeRouter',
+  'RemoteMapImporter',
+  'asset-storage'
+]) {
+  if (directorSource.includes(forbidden)) throw new Error(`SessionDirector não pode conhecer infraestrutura: ${forbidden}.`);
 }
 const persistenceSource = await readFile(new URL('../packages/persistence-repository/src/index.js', import.meta.url), 'utf8');
 for (const marker of ['PostgresFenixRepository', 'FOR UPDATE', "import('pg')", 'setChangePublisher']) {
@@ -180,19 +204,6 @@ for (const marker of ['RuntimeObservability', 'fenix_runtime_events_total', 'toP
 const appSource = await readFile(new URL('../apps/api/src/app.js', import.meta.url), 'utf8');
 for (const marker of ["app.get('/ready'", "app.get('/metrics'", "app.get('/v1/runtime/observability'", 'X-Idempotency-Key']) {
   if (!appSource.includes(marker)) throw new Error(`Borda operacional incompleta: ${marker}.`);
-}
-const directorSource = await readFile(new URL('../packages/session-director/src/index.js', import.meta.url), 'utf8');
-for (const forbidden of [
-  'PostgresRuntimeLeaseManager',
-  'PostgresStateBus',
-  'fenix_runtime_leases',
-  'pg_notify',
-  'PostgresCommandLedger',
-  'fenix_command_ledger',
-  'RuntimeObservability',
-  'OwnerAwareRuntimeRouter'
-]) {
-  if (directorSource.includes(forbidden)) throw new Error(`SessionDirector não pode conhecer infraestrutura distribuída: ${forbidden}.`);
 }
 const realtimeClientSource = await readFile(new URL('../apps/fenix-vtt/lib/realtime-client.js', import.meta.url), 'utf8');
 if (/searchParams\.set\(['"](?:role|actorId|userId)['"]/.test(realtimeClientSource)) {

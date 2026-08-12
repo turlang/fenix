@@ -25,7 +25,20 @@ const campaignService = new CampaignService({ repository, authService, logger: {
 await campaignService.initialize();
 const assetStorage = new LocalAssetStorage({ rootDir: assetRoot, maxBytes: 1024 * 1024 });
 await assetStorage.initialize();
-const sceneService = new CampaignSceneService({ campaignService, repository, assetStorage });
+const remoteMapImporter = {
+  async importUrl(url) {
+    assert.equal(url, 'https://cdn.example.com/maps/remoto.png?temporary=secret');
+    return {
+      buffer: Buffer.from('remote-map-bytes'),
+      mimeType: 'image/png',
+      fileName: 'remoto.png',
+      width: 1280,
+      height: 720,
+      sourceHost: 'cdn.example.com'
+    };
+  }
+};
+const sceneService = new CampaignSceneService({ campaignService, repository, assetStorage, remoteMapImporter });
 
 let sessionStartCalls = 0;
 const sessionService = {
@@ -109,6 +122,20 @@ try {
   const asset = uploadedMap.json().asset;
   assert.equal(asset.mimeType, 'image/webp');
 
+  const remoteMap = await app.inject({
+    method: 'POST',
+    url: `/v1/campaigns/${campaign.id}/assets/import-url`,
+    headers: { cookie: gmCookie },
+    payload: { url: 'https://cdn.example.com/maps/remoto.png?temporary=secret' }
+  });
+  assert.equal(remoteMap.statusCode, 200);
+  const remoteAsset = remoteMap.json().asset;
+  assert.equal(remoteAsset.sourceType, 'remote-import');
+  assert.equal(remoteAsset.sourceHost, 'cdn.example.com');
+  assert.equal(remoteAsset.width, 1280);
+  assert.equal(remoteAsset.height, 720);
+  assert.equal(JSON.stringify(repository.snapshot()).includes('temporary=secret'), false);
+
   const createdScene = await app.inject({
     method: 'POST',
     url: `/v1/campaigns/${campaign.id}/scenes`,
@@ -126,6 +153,21 @@ try {
   const scene = createdScene.json().scene;
   assert.equal(scene.backgroundAssetId, asset.id);
   assert.deepEqual(scene.grid, { size: 70, type: 'square', offsetX: 0, offsetY: 0, visible: true });
+
+  const remoteScene = await app.inject({
+    method: 'POST',
+    url: `/v1/campaigns/${campaign.id}/scenes`,
+    headers: { cookie: gmCookie },
+    payload: {
+      name: 'Mapa por URL',
+      description: 'Cena importada do CDN.',
+      assetId: remoteAsset.id,
+      gridSize: 64
+    }
+  });
+  assert.equal(remoteScene.statusCode, 200);
+  assert.equal(remoteScene.json().scene.width, 1280);
+  assert.equal(remoteScene.json().scene.height, 720);
 
   const calibratedGrid = await app.inject({
     method: 'POST',
@@ -151,12 +193,22 @@ try {
   assert.equal(readAsset.headers['content-type'], 'image/webp');
   assert.equal(readAsset.rawPayload.toString(), mapBytes.toString());
 
+  const readRemoteAsset = await app.inject({
+    method: 'GET',
+    url: `/v1/campaigns/${campaign.id}/assets/${remoteAsset.id}`,
+    headers: { cookie: gmCookie }
+  });
+  assert.equal(readRemoteAsset.statusCode, 200);
+  assert.equal(readRemoteAsset.headers['content-type'], 'image/png');
+  assert.equal(readRemoteAsset.rawPayload.toString(), 'remote-map-bytes');
+
   const sceneCatalog = await app.inject({
     method: 'GET',
     url: `/v1/campaigns/${campaign.id}/scenes`,
     headers: { cookie: gmCookie }
   });
   assert.equal(sceneCatalog.statusCode, 200);
+  assert.equal(sceneCatalog.json().scenes.length, 2);
   assert.equal(sceneCatalog.json().scenes[0].name, 'Templo em Ruínas');
   assert.equal(sceneCatalog.json().scenes[0].grid.offsetX, 14);
   assert.equal(sceneCatalog.json().activeSceneId, scene.id);
@@ -193,7 +245,7 @@ try {
     headers: { cookie: playerCookie }
   });
   assert.equal(playerSceneCatalog.statusCode, 200);
-  assert.equal(playerSceneCatalog.json().scenes.length, 1);
+  assert.equal(playerSceneCatalog.json().scenes.length, 2);
 
   const playerMapUpload = await app.inject({
     method: 'POST',
@@ -206,6 +258,14 @@ try {
     }
   });
   assert.equal(playerMapUpload.statusCode, 403);
+
+  const playerRemoteImport = await app.inject({
+    method: 'POST',
+    url: `/v1/campaigns/${campaign.id}/assets/import-url`,
+    headers: { cookie: playerCookie },
+    payload: { url: 'https://cdn.example.com/maps/remoto.png?temporary=secret' }
+  });
+  assert.equal(playerRemoteImport.statusCode, 403);
 
   const playerGridChange = await app.inject({
     method: 'POST',
@@ -252,7 +312,7 @@ try {
   assert.equal(playerStart.statusCode, 403);
   assert.equal(sessionStartCalls, 0);
 
-  console.log('Auth + campaign + scene + grid HTTP integration OK');
+  console.log('Auth + campaign + scene + grid + remote map HTTP integration OK');
 } finally {
   await app.close();
   await rm(assetRoot, { recursive: true, force: true });

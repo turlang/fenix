@@ -82,6 +82,16 @@ export function createConfig(env = process.env) {
     trustProxy: parseBoolean(env.TRUST_PROXY, false),
     allowLegacySessionHttp: parseBoolean(env.FENIX_ALLOW_LEGACY_SESSION_HTTP, !isProduction),
     authCookieSameSite: parseSameSite(env.FENIX_AUTH_COOKIE_SAME_SITE, isProduction ? 'None' : 'Lax'),
+    remoteMapTimeoutMs: parseInteger(env.FENIX_REMOTE_MAP_TIMEOUT_MS, 10000, {
+      min: 1000,
+      max: 60000,
+      name: 'FENIX_REMOTE_MAP_TIMEOUT_MS'
+    }),
+    remoteMapMaxRedirects: parseInteger(env.FENIX_REMOTE_MAP_MAX_REDIRECTS, 3, {
+      min: 0,
+      max: 5,
+      name: 'FENIX_REMOTE_MAP_MAX_REDIRECTS'
+    }),
     instanceId: env.FENIX_INSTANCE_ID?.trim() || null,
     instancePublicUrl: env.FENIX_INSTANCE_PUBLIC_URL?.trim() || null,
     internalRoutingSecret,
