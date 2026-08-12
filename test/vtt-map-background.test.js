@@ -5,6 +5,7 @@ import { demoScene, demoViewport } from '../apps/fenix-vtt/lib/demo-scene.js';
 
 test('standalone demo scene exposes a tactical background and shared viewport', () => {
   assert.equal(demoScene.background, '/maps/salao-das-colunas.svg');
+  assert.match(demoScene.background, /^\/maps\//);
   assert.deepEqual(demoViewport, { x: 230, y: 160, zoom: 0.82 });
 
   const normalized = normalizeMapScene(demoScene);
