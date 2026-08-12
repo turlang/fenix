@@ -9,7 +9,14 @@ import {
   findRoomZone
 } from '../lib/demo-scene.js';
 
-export function MapStage({ authoritativeTokens = [], onTokenMoved = null, onSelectedActor = null, busy = false }) {
+export function MapStage({
+  authoritativeTokens = [],
+  onTokenMoved = null,
+  onSelectedActor = null,
+  busy = false,
+  canMoveAny = false,
+  movableActorId = null
+}) {
   const canvasRef = useRef(null);
   const rendererRef = useRef(null);
   const frameRef = useRef(null);
@@ -71,6 +78,11 @@ export function MapStage({ authoritativeTokens = [], onTokenMoved = null, onSele
     if (busy) return;
     const hit = rendererRef.current?.hitTest(event);
     if (!hit?.token) return;
+    const allowed = canMoveAny || (movableActorId && hit.token.id === movableActorId);
+    if (!allowed) {
+      setSelected(`${hit.token.name} · somente visualização`);
+      return;
+    }
     const currentZone = findRoomZone({ x: hit.token.x, y: hit.token.y });
     dragRef.current = {
       tokenId: hit.token.id,
@@ -139,7 +151,7 @@ export function MapStage({ authoritativeTokens = [], onTokenMoved = null, onSele
       <div className="map-room-label">
         <span className="eyebrow">Cena ativa</span>
         <strong>Salão das Colunas</strong>
-        <small>Solte o token para sincronizar · Câmara Norte no nordeste</small>
+        <small>{canMoveAny ? 'Mestre · controle de todos os tokens' : `Jogador · controle de ${movableActorId || 'nenhum token'}`}</small>
       </div>
 
       <div className="map-hud map-hud-bottom">
