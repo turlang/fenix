@@ -82,6 +82,15 @@ export class AuthService {
   }
 
   async initialize() {
+    this.refreshFromRepository();
+    const now = this.now();
+    await this.repository.mutate((draft) => {
+      draft.authSessions = (draft.authSessions ?? []).filter((session) => Date.parse(session.expiresAt) > now);
+    });
+    return this.refreshFromRepository();
+  }
+
+  refreshFromRepository() {
     const state = this.repository.snapshot();
     this.usersById.clear();
     this.usersByEmail.clear();
@@ -94,9 +103,6 @@ export class AuthService {
     for (const session of state.authSessions ?? []) {
       if (Date.parse(session.expiresAt) > now) this.sessionsByHash.set(session.tokenHash, session);
     }
-    await this.repository.mutate((draft) => {
-      draft.authSessions = (draft.authSessions ?? []).filter((session) => Date.parse(session.expiresAt) > now);
-    });
     return { users: this.usersById.size, sessions: this.sessionsByHash.size };
   }
 
