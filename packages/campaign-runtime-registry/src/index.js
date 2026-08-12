@@ -162,6 +162,18 @@ export class CampaignRuntimeRegistry {
     return { state: 'MULTI_SESSION', sessionId: null, campaignId: null, activeSessions: statuses.length, sessions: statuses };
   }
 
+  async assertOwnership(selector = {}) {
+    const entry = this.#resolveEntry(selector);
+    await this.#assertOwnership(entry);
+    const status = entry.runtime.getStatus();
+    return {
+      campaignId: entry.campaignId === LEGACY_KEY ? null : entry.campaignId,
+      sessionId: status.sessionId ?? null,
+      leaseGeneration: entry.leaseGeneration ?? null,
+      persistent: entry.persistent
+    };
+  }
+
   async start(input = {}) {
     const campaignId = text(input.campaignId ?? input.snapshot?.metadata?.campaignId);
     const key = campaignId || LEGACY_KEY;
