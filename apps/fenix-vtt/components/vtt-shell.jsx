@@ -23,9 +23,10 @@ export function VttShell() {
   const [actionText, setActionText] = useState('');
   const {
     state,
+    identity,
     connect,
     submitAction,
-    enterRoom,
+    moveToken,
     endSession,
     selectActor,
     clearError,
@@ -38,6 +39,7 @@ export function VttShell() {
   );
   const sessionActive = state.engineState === 'COLLECTING_ACTIONS';
   const timeline = state.timeline.slice(-4).reverse();
+  const realtimeReady = state.realtime === 'connected';
 
   async function handleSessionButton() {
     try {
@@ -75,6 +77,7 @@ export function VttShell() {
           <span className="status-dot" />
           <span>{state.connection === 'connected' ? 'Engine conectado' : 'Engine offline'}</span>
           <strong>{state.engineState}</strong>
+          <span className={`realtime-badge ${realtimeReady ? 'online' : ''}`}>WS {state.realtime}</span>
         </div>
 
         <div className="topbar-actions">
@@ -124,16 +127,28 @@ export function VttShell() {
         <section className="center-stage">
           <MapStage
             busy={state.busy}
-            onRoomEntered={enterRoom}
+            authoritativeTokens={state.tokens}
+            onTokenMoved={moveToken}
             onSelectedActor={selectActor}
           />
         </section>
 
         {rightOpen && !focusMode ? (
           <aside className="side-panel context-panel">
-            <div className="panel-heading">
-              <span className="eyebrow">Context Rail</span>
-              <h2>Em cena</h2>
+            <div className="panel-heading context-heading-row">
+              <div>
+                <span className="eyebrow">Context Rail</span>
+                <h2>Em cena</h2>
+              </div>
+              <span className="presence-count">{state.presence.length} online</span>
+            </div>
+
+            <div className="presence-strip" aria-label="Participantes conectados">
+              {state.presence.length ? state.presence.map((peer) => (
+                <span className="presence-chip" key={peer.clientId} title={`${peer.displayName} · ${peer.role}`}>
+                  <i />{peer.displayName}
+                </span>
+              )) : <span className="presence-empty">Realtime ainda não conectado</span>}
             </div>
 
             <div className="actor-stack">
@@ -162,11 +177,17 @@ export function VttShell() {
                   <strong>{state.busy ? 'Processando evento' : sessionActive ? 'Narrador pronto' : 'Aguardando sessão'}</strong>
                 </div>
               </div>
-              <p>Shared Core conectado por HTTP. Movimento do token e ações entram pelo mesmo pipeline universal.</p>
+              <p>
+                Shared Core conectado ao Session Gateway. Tokens, presença e narração são sincronizados por sessão sem acoplar WebSocket às regras.
+              </p>
               <div className="ai-status-grid">
                 <span>Safety <b>ON</b></span>
                 <span>Quality <b>ON</b></span>
                 <span>Novelty <b>ON</b></span>
+              </div>
+              <div className="realtime-meta">
+                <span>{identity?.role === 'player' ? 'PLAYER' : 'GM'} CLIENT</span>
+                <span>REV {state.revision}</span>
               </div>
             </div>
           </aside>
@@ -197,7 +218,7 @@ export function VttShell() {
               ) : null}
             </article>
           )) : (
-            <p className="timeline-empty">Inicie a sessão ou arraste Ayla até a Câmara Norte para acionar o primeiro evento real.</p>
+            <p className="timeline-empty">Inicie a sessão ou mova um token para sincronizar o primeiro evento realtime.</p>
           )}
         </div>
 
