@@ -3,6 +3,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { WebGlMapRenderer, detectBrowserRendererBackend } from '../../../packages/webgl-map-renderer/src/index.js';
 import {
+  SceneDoorState,
+  SceneWallKind,
+  cycleDoorState,
+  pointToWallDistance,
+  snapScenePoint
+} from '../../../packages/scene-geometry/src/index.js';
+import {
   createDemoRoomEnteredEvent,
   demoScene,
   demoTokens,
@@ -36,12 +43,25 @@ function normalizedGrid(grid = {}) {
   };
 }
 
+function cloneWalls(walls) {
+  return Array.isArray(walls) ? walls.map((wall) => ({
+    ...wall,
+    a: { ...wall.a },
+    b: { ...wall.b }
+  })) : [];
+}
+
+function randomWallId() {
+  return globalThis.crypto?.randomUUID?.() ?? `wall-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
 export function MapStage({
   scene = demoScene,
   authoritativeTokens = [],
   onTokenMoved = null,
   onSelectedActor = null,
   onGridCalibrated = null,
+  onWallsChanged = null,
   busy = false,
   canMoveAny = false,
   movableActorId = null
@@ -60,12 +80,28 @@ export function MapStage({
   const [gridEditorOpen, setGridEditorOpen] = useState(false);
   const [gridDraft, setGridDraft] = useState(() => normalizedGrid(scene.grid));
   const [gridSaving, setGridSaving] = useState(false);
+  const [wallEditorOpen, setWallEditorOpen] = useState(false);
+  const [wallMode, setWallMode] = useState('wall');
+  const [doorState, setDoorState] = useState(SceneDoorState.CLOSED);
+  const [snapWalls, setSnapWalls] = useState(true);
+  const [wallDraft, setWallDraft] = useState(() => cloneWalls(scene.walls));
+  const [wallStart, setWallStart] = useState(null);
+  const [wallHistory, setWallHistory] = useState([]);
+  const [wallsSaving, setWallsSaving] = useState(false);
   const demoZonesEnabled = scene.id === demoScene.id;
 
   useEffect(() => {
     setGridDraft(normalizedGrid(scene.grid));
     setGridEditorOpen(false);
+    setWallDraft(cloneWalls(scene.walls));
+    setWallHistory([]);
+    setWallStart(null);
+    setWallEditorOpen(false);
   }, [scene.id, scene.grid?.size, scene.grid?.offsetX, scene.grid?.offsetY, scene.grid?.visible]);
+
+  useEffect(() => {
+    if (!wallEditorOpen) setWallDraft(cloneWalls(scene.walls));
+  }, [scene.walls, wallEditorOpen]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -170,6 +206,75 @@ export function MapStage({
     applyZoom(factor, event.clientX - rect.left, event.clientY - rect.top);
   }
 
+  function boundedWallPoint(point) {
+    const base = snapWalls ? snapScenePoint(point, gridDraft) : point;
+    return {
+      x: Math.max(0, Math.min(scene.width, Number(base.x) || 0)),
+      y: Math.max(0, Math.min(scene.height, Number(base.y) || 0))
+    };
+  }
+
+  function rememberAndSetWalls(nextWalls) {
+    setWallHistory((history) => [...history.slice(-19), cloneWalls(wallDraft)]);
+    setWallDraft(cloneWalls(nextWalls));
+  }
+
+  function nearestWall(point, { doorsOnly = false } = {}) {
+    const candidates = doorsOnly ? wallDraft.filter((wall) => wall.kind === SceneWallKind.DOOR) : wallDraft;
+    let nearest = null;
+    let distance = Number.POSITIVE_INFINITY;
+    for (const wall of candidates) {
+      const next = pointToWallDistance(point, wall);
+      if (next < distance) {
+        distance = next;
+        nearest = wall;
+      }
+    }
+    return distance <= 14 / Math.max(0.1, viewport.zoom) ? nearest : null;
+  }
+
+  function handleWallAuthoring(event) {
+    const hit = rendererRef.current?.hitTest(event);
+    if (!hit?.world) return false;
+    const point = boundedWallPoint(hit.world);
+
+    if (wallMode === 'erase') {
+      const nearest = nearestWall(point);
+      if (nearest) rememberAndSetWalls(wallDraft.filter((wall) => wall.id !== nearest.id));
+      setWallStart(null);
+      return true;
+    }
+
+    if (wallMode === 'door-state') {
+      const nearest = nearestWall(point, { doorsOnly: true });
+      if (nearest) {
+        rememberAndSetWalls(wallDraft.map((wall) => wall.id === nearest.id
+          ? { ...wall, doorState: cycleDoorState(wall.doorState) }
+          : wall));
+      }
+      setWallStart(null);
+      return true;
+    }
+
+    if (!wallStart) {
+      setWallStart(point);
+      return true;
+    }
+
+    if (Math.hypot(point.x - wallStart.x, point.y - wallStart.y) >= 2) {
+      const kind = wallMode === 'door' ? SceneWallKind.DOOR : SceneWallKind.WALL;
+      rememberAndSetWalls([...wallDraft, {
+        id: randomWallId(),
+        kind,
+        a: wallStart,
+        b: point,
+        doorState: kind === SceneWallKind.DOOR ? doorState : null
+      }]);
+    }
+    setWallStart(null);
+    return true;
+  }
+
   function handlePointerDown(event) {
     if (busy) return;
     const wantsPan = tool === 'pan' || event.button === 1;
@@ -178,6 +283,13 @@ export function MapStage({
       event.currentTarget.setPointerCapture?.(event.pointerId);
       event.preventDefault();
       return;
+    }
+
+    if (wallEditorOpen && canMoveAny && event.button === 0) {
+      if (handleWallAuthoring(event)) {
+        event.preventDefault();
+        return;
+      }
     }
 
     const hit = rendererRef.current?.hitTest(event);
@@ -210,7 +322,7 @@ export function MapStage({
 
     const renderer = rendererRef.current;
     const drag = dragRef.current;
-    if (!renderer || !drag || busy) return;
+    if (!renderer || !drag || busy || wallEditorOpen) return;
     const hit = renderer.hitTest(event);
     const current = tokensRef.current.get(drag.tokenId);
     if (!current) return;
@@ -236,7 +348,7 @@ export function MapStage({
     if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
       event.currentTarget.releasePointerCapture?.(event.pointerId);
     }
-    if (!drag) return;
+    if (!drag || wallEditorOpen) return;
     const token = tokensRef.current.get(drag.tokenId);
     if (!token) return;
     void Promise.resolve(onTokenMoved?.(token, {
@@ -254,6 +366,43 @@ export function MapStage({
     } finally {
       setGridSaving(false);
     }
+  }
+
+  async function saveWalls() {
+    if (!onWallsChanged || !canMoveAny || demoZonesEnabled || wallsSaving) return;
+    setWallsSaving(true);
+    try {
+      const result = await onWallsChanged(scene.id, wallDraft);
+      setWallDraft(cloneWalls(result?.scene?.walls ?? wallDraft));
+      setWallHistory([]);
+      setWallStart(null);
+      setWallEditorOpen(false);
+    } finally {
+      setWallsSaving(false);
+    }
+  }
+
+  function cancelWalls() {
+    setWallDraft(cloneWalls(scene.walls));
+    setWallHistory([]);
+    setWallStart(null);
+    setWallEditorOpen(false);
+  }
+
+  function undoWallChange() {
+    setWallHistory((history) => {
+      if (!history.length) return history;
+      setWallDraft(cloneWalls(history[history.length - 1]));
+      return history.slice(0, -1);
+    });
+    setWallStart(null);
+  }
+
+  function screenPoint(point) {
+    return {
+      x: (Number(point?.x) - viewport.x) * viewport.zoom,
+      y: (Number(point?.y) - viewport.y) * viewport.zoom
+    };
   }
 
   const backgroundStyle = scene.background ? {
@@ -279,7 +428,7 @@ export function MapStage({
   };
 
   return (
-    <section className={`map-stage map-tool-${tool}`} aria-label="Mapa tático">
+    <section className={`map-stage map-tool-${tool} ${wallEditorOpen ? 'wall-authoring-active' : ''}`} aria-label="Mapa tático">
       {scene.background ? (
         <div className="map-background-layer" style={backgroundStyle} aria-hidden="true" />
       ) : null}
@@ -293,7 +442,10 @@ export function MapStage({
         <button type="button" onClick={() => applyZoom(1.2)} title="Aumentar zoom">+</button>
         <button type="button" onClick={fitScene} title="Ajustar mapa à tela">Ajustar</button>
         {canMoveAny && !demoZonesEnabled ? (
-          <button type="button" className={gridEditorOpen ? 'active' : ''} onClick={() => setGridEditorOpen((value) => !value)} title="Calibrar grade">Grade</button>
+          <>
+            <button type="button" className={gridEditorOpen ? 'active' : ''} onClick={() => { setGridEditorOpen((value) => !value); setWallEditorOpen(false); }} title="Calibrar grade">Grade</button>
+            <button type="button" className={wallEditorOpen ? 'active' : ''} onClick={() => { setWallEditorOpen((value) => !value); setGridEditorOpen(false); setWallStart(null); setTool('select'); }} title="Editar paredes e portas">Paredes</button>
+          </>
         ) : null}
       </div>
 
@@ -309,6 +461,36 @@ export function MapStage({
           <div className="grid-calibration-actions">
             <button type="button" onClick={() => setGridDraft(normalizedGrid(scene.grid))}>Restaurar</button>
             <button type="button" className="primary-button" disabled={gridSaving || busy} onClick={saveGrid}>{gridSaving ? 'Salvando…' : 'Salvar grade'}</button>
+          </div>
+        </div>
+      ) : null}
+
+      {wallEditorOpen ? (
+        <div className="wall-authoring-panel">
+          <div className="wall-authoring-heading">
+            <div><strong>Paredes e portas</strong><small>{wallDraft.length} segmentos · dois cliques para desenhar</small></div>
+            <span>{wallStart ? 'Ponto inicial definido' : 'Pronto'}</span>
+          </div>
+          <div className="wall-authoring-tools">
+            <button type="button" className={wallMode === 'wall' ? 'active' : ''} onClick={() => { setWallMode('wall'); setWallStart(null); }}>Parede</button>
+            <button type="button" className={wallMode === 'door' ? 'active' : ''} onClick={() => { setWallMode('door'); setWallStart(null); }}>Porta</button>
+            <button type="button" className={wallMode === 'door-state' ? 'active' : ''} onClick={() => { setWallMode('door-state'); setWallStart(null); }}>Alternar porta</button>
+            <button type="button" className={wallMode === 'erase' ? 'active danger' : 'danger'} onClick={() => { setWallMode('erase'); setWallStart(null); }}>Apagar</button>
+          </div>
+          <div className="wall-authoring-options">
+            <label><input type="checkbox" checked={snapWalls} onChange={(event) => setSnapWalls(event.target.checked)} /> Snap na grade</label>
+            <label>Nova porta
+              <select value={doorState} onChange={(event) => setDoorState(event.target.value)} disabled={wallMode !== 'door'}>
+                <option value={SceneDoorState.CLOSED}>Fechada</option>
+                <option value={SceneDoorState.OPEN}>Aberta</option>
+                <option value={SceneDoorState.LOCKED}>Trancada</option>
+              </select>
+            </label>
+          </div>
+          <div className="wall-authoring-actions">
+            <button type="button" disabled={!wallHistory.length} onClick={undoWallChange}>Desfazer</button>
+            <button type="button" onClick={cancelWalls}>Cancelar</button>
+            <button type="button" className="primary-button" disabled={wallsSaving || busy} onClick={saveWalls}>{wallsSaving ? 'Salvando…' : 'Salvar paredes'}</button>
           </div>
         </div>
       ) : null}
@@ -332,6 +514,21 @@ export function MapStage({
         onContextMenu={(event) => event.preventDefault()}
       />
 
+      {canMoveAny && wallEditorOpen ? (
+        <svg className="wall-authoring-overlay" aria-label="Geometria de paredes da cena">
+          {wallDraft.map((wall) => {
+            const a = screenPoint(wall.a);
+            const b = screenPoint(wall.b);
+            const stateClass = wall.kind === SceneWallKind.DOOR ? ` door-${wall.doorState}` : '';
+            return <line key={wall.id} className={`wall-segment wall-${wall.kind}${stateClass}`} x1={a.x} y1={a.y} x2={b.x} y2={b.y} />;
+          })}
+          {wallStart ? (() => {
+            const point = screenPoint(wallStart);
+            return <circle className="wall-start-handle" cx={point.x} cy={point.y} r="5" />;
+          })() : null}
+        </svg>
+      ) : null}
+
       <div className="map-atmosphere" aria-hidden="true" />
       <div className="map-grid-overlay" style={gridStyle} aria-hidden="true" />
       <div className="map-room-label">
@@ -342,7 +539,7 @@ export function MapStage({
 
       <div className="map-hud map-hud-bottom">
         <span>Selecionado</span>
-        <strong>{selected}</strong>
+        <strong>{wallEditorOpen ? `${wallDraft.length} segmentos` : selected}</strong>
       </div>
 
       {demoZonesEnabled ? (
