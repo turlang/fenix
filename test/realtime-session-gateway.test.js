@@ -82,9 +82,26 @@ test('gateway separa presença e aplica autoridade por papel/actorId', async () 
 
   await gm.receive(JSON.stringify({
     type: 'SCENE_UPDATE',
-    payload: { scene: { id: 'scene-2', name: 'Outra cena', width: 1200, height: 800 } }
+    payload: {
+      scene: {
+        id: 'scene-2',
+        name: 'Outra cena',
+        width: 1200,
+        height: 800,
+        walls: [
+          { id: 'wall-1', kind: 'wall', a: { x: 0, y: 0 }, b: { x: 120, y: 0 } },
+          { id: 'door-1', kind: 'door', doorState: 'open', a: { x: 120, y: 0 }, b: { x: 200, y: 0 } }
+        ]
+      }
+    }
   }));
-  assert.equal(hub.getSnapshot('session-1').scene.id, 'scene-2');
+  const realtimeScene = hub.getSnapshot('session-1').scene;
+  assert.equal(realtimeScene.id, 'scene-2');
+  assert.equal(realtimeScene.walls.length, 2);
+  assert.equal(realtimeScene.walls[1].doorState, 'open');
+  const playerSceneEvent = events(playerMessages, 'SCENE_UPDATED').at(-1);
+  assert.equal(playerSceneEvent.payload.scene.walls[0].id, 'wall-1');
+  assert.equal(playerSceneEvent.payload.scene.walls[1].kind, 'door');
 
   gm.disconnect();
   player.disconnect();
