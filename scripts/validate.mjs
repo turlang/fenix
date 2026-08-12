@@ -5,6 +5,10 @@ const required = [
   'apps/api/src/http/session-controller.js',
   'apps/api/src/http/session-schemas.js',
   'apps/api/src/http/register-session-routes.js',
+  'apps/api/src/http/register-auth-routes.js',
+  'apps/api/src/http/register-campaign-routes.js',
+  'apps/api/src/http/session-authorizer.js',
+  'apps/api/src/realtime/register-realtime-routes.js',
   'apps/foundry-module/module.json',
   'apps/fenix-vtt/package.json',
   'apps/fenix-vtt/postcss.config.mjs',
@@ -13,11 +17,13 @@ const required = [
   'apps/fenix-vtt/app/page.js',
   'apps/fenix-vtt/app/globals.css',
   'apps/fenix-vtt/app/live-bridge.css',
+  'apps/fenix-vtt/components/auth-campaign-gate.jsx',
   'apps/fenix-vtt/components/vtt-shell.jsx',
   'apps/fenix-vtt/components/map-stage.jsx',
   'apps/fenix-vtt/components/session-provider.jsx',
   'apps/fenix-vtt/lib/demo-scene.js',
   'apps/fenix-vtt/lib/fenix-api-client.js',
+  'apps/fenix-vtt/lib/realtime-client.js',
   'apps/fenix-vtt/lib/session-state.js',
   'apps/fenix-vtt/lib/browser-audio-queue.js',
   'apps/fenix-vtt/next.config.mjs',
@@ -28,6 +34,11 @@ const required = [
   'packages/webgl-map-renderer/src/index.js',
   'packages/session-director/src/index.js',
   'packages/session-runtime/src/index.js',
+  'packages/persistent-session-service/src/index.js',
+  'packages/persistence-repository/src/index.js',
+  'packages/auth-service/src/index.js',
+  'packages/campaign-service/src/index.js',
+  'packages/realtime-session-gateway/src/index.js',
   'packages/narration-output/src/index.js',
   'packages/narration-context-builder/src/index.js',
   'packages/scene-opening-context/src/index.js',
@@ -45,6 +56,8 @@ const required = [
   'packages/foundry-adapter/src/index.js',
   'packages/foundry-publisher/src/index.js',
   'packages/ai-provider/src/system-prompt.js',
+  'integration-tests/realtime-websocket.mjs',
+  'integration-tests/auth-campaign-http.mjs',
   '.env.example',
   '.gitignore',
   '.gitattributes',
@@ -67,8 +80,9 @@ const coreVersion = coreSource.match(/ENGINE_VERSION\s*=\s*['"]([^'"]+)['"]/)?.[
 if (packageJson.version !== moduleJson.version || packageJson.version !== coreVersion || packageJson.version !== vttPackageJson.version) {
   throw new Error(`Versões divergentes: engine=${packageJson.version}, foundry=${moduleJson.version}, core=${coreVersion}, vtt=${vttPackageJson.version}`);
 }
-if (!packageJson.scripts?.test || !packageJson.scripts?.check || !packageJson.scripts?.['build:vtt']) {
-  throw new Error('Scripts de qualidade ou build do VTT ausentes.');
+if (!packageJson.scripts?.test || !packageJson.scripts?.check || !packageJson.scripts?.['build:vtt']
+  || !packageJson.scripts?.['test:realtime-integration'] || !packageJson.scripts?.['test:auth-integration']) {
+  throw new Error('Scripts de qualidade, autenticação, realtime ou build do VTT ausentes.');
 }
 if (!/^\^?15\./.test(vttPackageJson.dependencies?.next ?? '')) {
   throw new Error('apps/fenix-vtt deve permanecer no Next.js 15 durante este marco.');
@@ -77,11 +91,13 @@ if (!/^\^?15\./.test(vttPackageJson.dependencies?.next ?? '')) {
 const standaloneUiFiles = [
   'apps/fenix-vtt/app/layout.js',
   'apps/fenix-vtt/app/page.js',
+  'apps/fenix-vtt/components/auth-campaign-gate.jsx',
   'apps/fenix-vtt/components/vtt-shell.jsx',
   'apps/fenix-vtt/components/map-stage.jsx',
   'apps/fenix-vtt/components/session-provider.jsx',
   'apps/fenix-vtt/lib/demo-scene.js',
   'apps/fenix-vtt/lib/fenix-api-client.js',
+  'apps/fenix-vtt/lib/realtime-client.js',
   'apps/fenix-vtt/lib/session-state.js',
   'apps/fenix-vtt/lib/browser-audio-queue.js'
 ];
@@ -102,7 +118,23 @@ for (const file of standaloneUiFiles) {
   }
 }
 
-const forbidden = ['.env', 'node_modules', 'data/narration-history.json'];
+const authSource = await readFile(new URL('../packages/auth-service/src/index.js', import.meta.url), 'utf8');
+for (const marker of ['scrypt', 'randomBytes(32)', 'tokenHash']) {
+  if (!authSource.includes(marker)) throw new Error(`AuthService sem requisito criptográfico: ${marker}.`);
+}
+const serverSource = await readFile(new URL('../apps/api/src/server.js', import.meta.url), 'utf8');
+if (!serverSource.includes('createAuthenticatedPeerAuthorizer')) {
+  throw new Error('Composition root deve usar identidade realtime autenticada.');
+}
+if (serverSource.includes('createDevelopmentPeerAuthorizer')) {
+  throw new Error('Composition root de produção não pode usar authorizer realtime de desenvolvimento.');
+}
+const realtimeClientSource = await readFile(new URL('../apps/fenix-vtt/lib/realtime-client.js', import.meta.url), 'utf8');
+if (/searchParams\.set\(['"](?:role|actorId|userId)['"]/.test(realtimeClientSource)) {
+  throw new Error('Cliente realtime não pode transportar autoridade de role/actor/user na URL.');
+}
+
+const forbidden = ['.env', 'node_modules', 'data/narration-history.json', 'data/fenix-state.json'];
 for (const path of forbidden) {
   try {
     await access(new URL(`../${path}`, import.meta.url));
