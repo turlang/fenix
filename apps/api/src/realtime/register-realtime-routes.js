@@ -11,7 +11,22 @@ function sendJson(socket, event) {
   return true;
 }
 
-export function registerRealtimeRoutes(app, { gateway, allowOrigin = () => true }) {
+function ownerChangedPayload(route) {
+  return {
+    code: 'RUNTIME_OWNER_CHANGED',
+    message: 'O owner do runtime mudou durante o roteamento realtime.',
+    ownerId: route?.ownerId ?? null,
+    ownerUrl: route?.ownerUrl ?? null,
+    generation: route?.generation ?? null
+  };
+}
+
+export function registerRealtimeRoutes(app, {
+  gateway,
+  allowOrigin = () => true,
+  ownerRouter = null,
+  proxyWebSocket = null
+}) {
   if (!app) throw new TypeError('app é obrigatório.');
   if (!gateway) throw new TypeError('gateway é obrigatório.');
 
@@ -25,13 +40,49 @@ export function registerRealtimeRoutes(app, { gateway, allowOrigin = () => true 
           message: 'Origem não autorizada para o canal realtime.'
         });
       }
+      if (!ownerRouter) return;
+
+      try {
+        const path = String(request.raw?.url ?? request.url ?? '/v1/realtime');
+        const routeContext = ownerRouter.verifyIncomingRequest({
+          headers: request.headers,
+          method: request.method,
+          path,
+          body: null
+        });
+        const route = await ownerRouter.resolve({ sessionId: text(request.query?.sessionId) });
+        request.fenixRuntimeRoute = { routeContext, route };
+
+        if (routeContext.routed) {
+          const generationChanged = route.mode === 'local' && Number(route.generation) !== Number(routeContext.generation);
+          if (route.mode === 'remote' || generationChanged) {
+            return reply.code(409).send(ownerChangedPayload(route));
+          }
+        } else if (route.mode === 'remote' && typeof proxyWebSocket !== 'function') {
+          return reply.code(503).send({
+            code: 'RUNTIME_ROUTING_NOT_CONFIGURED',
+            message: 'Proxy WebSocket para o owner não está configurado.'
+          });
+        }
+      } catch (error) {
+        return reply.code(Number(error?.statusCode) || 500).send({
+          code: error?.code || 'RUNTIME_ROUTING_FAILED',
+          message: error?.message || 'Falha ao resolver owner realtime.'
+        });
+      }
     }
   }, (socket, request) => {
     const query = request.query ?? {};
     const sessionId = text(query.sessionId);
     const clientId = text(query.clientId, 120);
-    let peer = null;
+    const route = request.fenixRuntimeRoute?.route ?? null;
 
+    if (route?.mode === 'remote') {
+      proxyWebSocket({ socket, request, route, sessionId, clientId });
+      return;
+    }
+
+    let peer = null;
     try {
       peer = gateway.openPeer({
         sessionId,
