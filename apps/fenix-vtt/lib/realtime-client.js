@@ -124,8 +124,10 @@ export class FenixRealtimeClient {
     return commandId;
   }
 
-  moveToken(token, { roomEntry = null } = {}) {
-    return this.send('TOKEN_MOVE', { token, roomEntry });
+  moveToken(token, { roomEntry = null, roomId = undefined } = {}) {
+    const payload = { token, roomEntry };
+    if (roomId !== undefined) payload.roomId = roomId;
+    return this.send('TOKEN_MOVE', payload);
   }
 
   updateScene(scene) {
