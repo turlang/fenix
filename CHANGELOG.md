@@ -21,10 +21,13 @@ Este projeto segue o formato do [Keep a Changelog](https://keepachangelog.com/pt
 - Integração PostgreSQL real com duas instâncias do ledger provando execução única, replay em outra réplica, conflito de payload e bloqueio de outcome desconhecido.
 - Advisory transaction lock na criação de `fenix_command_ledger`, evitando corrida de schema durante boot simultâneo de réplicas.
 - Migração segura JSON → PostgreSQL, integrações HTTP/WebSocket e build standalone no CI.
+- Scene Manager do standalone com upload de PNG/JPG/WEBP, cenas persistentes, background real, pan/zoom e calibração de grade por cena.
+- `RemoteMapImporter` e endpoint autenticado para importar battlemap diretamente de URL HTTP/HTTPS e copiar o resultado para o `AssetStorage` local.
+- Detecção server-side de formato e dimensões para mapas remotos, preservando o mesmo pipeline de cena usado por upload local.
 
 ### Alterado
 
-- `server.js` compõe persistência, leases, invalidation, routing, idempotência e observabilidade apenas na camada externa; `SessionDirector` continua sem conhecer essas implementações.
+- `server.js` compõe persistência, leases, invalidation, routing, idempotência, observabilidade, assets e importação remota apenas na camada externa; `SessionDirector` continua sem conhecer essas implementações.
 - Runtimes persistentes validam lease/fencing antes de operações narrativas e cada comando realtime passa por `assertOwnership()`.
 - Comandos realtime com `commandId` são deduplicados antes de tocar no gateway/hub; replay confirmado emite ACK sem reaplicar o efeito.
 - O cliente standalone gera `commandId` para start, action, room-entry e end.
@@ -33,7 +36,8 @@ Este projeto segue o formato do [Keep a Changelog](https://keepachangelog.com/pt
 - Owner realtime obsoleto encerra a conexão com `1012`; o browser reconecta ao mesmo endpoint público.
 - `/health` reporta routing e driver de idempotência; `/ready` verifica disponibilidade do ledger.
 - CI exige matriz Node 20/22/24, PostgreSQL 16, coordenação distribuída, idempotência, owner-aware routing, auth, WebSocket e build Next.
-- Validator arquitetural passa a exigir command ledger/observability/routing e impede que essas implementações apareçam no `SessionDirector`.
+- Validator arquitetural passa a exigir command ledger/observability/routing/importador remoto e impede que essas implementações apareçam no `SessionDirector`.
+- O Scene Manager permite escolher `Arquivo` ou `URL`; o modo URL usa dimensões detectadas pelo Engine e não depende de CORS/hotlink depois da importação.
 
 ### Segurança
 
@@ -44,6 +48,8 @@ Este projeto segue o formato do [Keep a Changelog](https://keepachangelog.com/pt
 - Resultado que não pode ser confirmado é marcado `UNKNOWN`; `COMMAND_OUTCOME_UNKNOWN` bloqueia reexecução automática.
 - O ledger persiste o hash do request e o resultado necessário ao replay, não o conteúdo original do comando.
 - Métricas HTTP públicas não expõem lista recente de owners/sources; esses detalhes ficam somente em logs estruturados.
+- Importação remota aceita somente HTTP/HTTPS, bloqueia localhost/redes privadas, fixa o IP após DNS validado e revalida cada redirect para reduzir SSRF/DNS rebinding.
+- Mapas remotos obedecem timeout, limite de tamanho, assinatura PNG/JPEG/WEBP e limite de dimensões; a URL completa, query strings e tokens temporários não são persistidos.
 
 ### Compatibilidade
 
@@ -51,7 +57,8 @@ Este projeto segue o formato do [Keep a Changelog](https://keepachangelog.com/pt
 - `FENIX_ALLOW_LEGACY_SESSION_HTTP` mantém o caminho Foundry conforme configuração.
 - Chamadas legadas sem idempotency key continuam aceitas, porém não recebem retry automático de timeout ambíguo.
 - JSON continua single-instance sem lease/LISTEN/routing e usa ledger apenas em memória.
-- PostgreSQL coordena ownership, cache invalidation, failover, encaminhamento e idempotência de execução; a próxima fronteira é outbox durável/garantia de entrega de eventos realtime.
+- PostgreSQL coordena ownership, cache invalidation, failover, encaminhamento e idempotência de execução; a próxima fronteira distribuída continua sendo outbox durável/garantia de entrega de eventos realtime.
+- Mapas por URL são importados como cópia local; não existe dependência permanente do host remoto.
 
 ## [0.1.0-alpha.24] - 2026-07-21
 
