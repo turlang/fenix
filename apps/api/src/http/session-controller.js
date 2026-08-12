@@ -19,8 +19,9 @@ async function execute(reply, operation, fallbackCode, fallbackStatus = 400) {
   }
 }
 
-export function createSessionController({ sessionService }) {
+export function createSessionController({ sessionService, authorizeRequest = async (request) => request.body ?? {} }) {
   if (!sessionService) throw new TypeError('sessionService é obrigatório.');
+  if (typeof authorizeRequest !== 'function') throw new TypeError('authorizeRequest deve ser função.');
   const required = ['start', 'processAction', 'describeRoom', 'end', 'getStatus'];
   for (const method of required) {
     if (typeof sessionService[method] !== 'function') {
@@ -30,19 +31,34 @@ export function createSessionController({ sessionService }) {
 
   return {
     start(request, reply) {
-      return execute(reply, () => sessionService.start(request.body ?? {}), 'SESSION_START_FAILED');
+      return execute(reply, async () => {
+        const input = await authorizeRequest(request, 'start');
+        return sessionService.start(input);
+      }, 'SESSION_START_FAILED');
     },
     action(request, reply) {
-      return execute(reply, () => sessionService.processAction(request.body ?? {}), 'ACTION_PROCESSING_FAILED');
+      return execute(reply, async () => {
+        const input = await authorizeRequest(request, 'action');
+        return sessionService.processAction(input);
+      }, 'ACTION_PROCESSING_FAILED');
     },
     roomEntry(request, reply) {
-      return execute(reply, () => sessionService.describeRoom(request.body ?? {}), 'ROOM_ENTRY_FAILED');
+      return execute(reply, async () => {
+        const input = await authorizeRequest(request, 'roomEntry');
+        return sessionService.describeRoom(input);
+      }, 'ROOM_ENTRY_FAILED');
     },
-    end() {
-      return sessionService.end();
+    end(request, reply) {
+      return execute(reply, async () => {
+        await authorizeRequest(request, 'end');
+        return sessionService.end();
+      }, 'SESSION_END_FAILED');
     },
-    status() {
-      return sessionService.getStatus();
+    status(request, reply) {
+      return execute(reply, async () => {
+        await authorizeRequest(request, 'status');
+        return sessionService.getStatus();
+      }, 'SESSION_STATUS_FAILED');
     }
   };
 }
