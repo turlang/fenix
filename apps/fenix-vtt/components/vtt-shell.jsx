@@ -3,18 +3,35 @@
 import { useMemo, useState } from 'react';
 import { MapStage } from './map-stage.jsx';
 import { useFenixSession } from './session-provider.jsx';
-
-const scenes = [
-  { id: '01', name: 'Portão Antigo', state: 'visited' },
-  { id: '02', name: 'Salão das Colunas', state: 'active' },
-  { id: '03', name: 'Câmara Norte', state: 'locked' }
-];
+import { demoScene } from '../lib/demo-scene.js';
 
 const actors = [
   { id: 'hero-ayla', name: 'Ayla', role: 'Jogadora', hp: '28 / 34' },
   { id: 'hero-dorian', name: 'Dorian', role: 'Jogador', hp: '21 / 27' },
   { id: 'npc-warden', name: 'Guardião', role: 'NPC', hp: 'Oculto' }
 ];
+
+async function imageDimensions(file) {
+  if (typeof createImageBitmap === 'function') {
+    const bitmap = await createImageBitmap(file);
+    const result = { width: bitmap.width, height: bitmap.height };
+    bitmap.close?.();
+    return result;
+  }
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const image = new Image();
+    image.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve({ width: image.naturalWidth, height: image.naturalHeight });
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error('Não foi possível ler as dimensões do mapa.'));
+    };
+    image.src = url;
+  });
+}
 
 export function VttShell({ onExitCampaign = null, onLogout = null }) {
   const [leftOpen, setLeftOpen] = useState(true);
@@ -23,6 +40,8 @@ export function VttShell({ onExitCampaign = null, onLogout = null }) {
   const [actionText, setActionText] = useState('');
   const [inviteActorId, setInviteActorId] = useState('hero-dorian');
   const [inviteUrl, setInviteUrl] = useState(null);
+  const [sceneManagerOpen, setSceneManagerOpen] = useState(false);
+  const [sceneUploadBusy, setSceneUploadBusy] = useState(false);
   const {
     state,
     identity,
@@ -30,11 +49,16 @@ export function VttShell({ onExitCampaign = null, onLogout = null }) {
     currentUser,
     membership,
     isGm,
+    scenes,
+    activeScene,
     connect,
     submitAction,
     moveToken,
     endSession,
     createInvite,
+    createMapScene,
+    activateScene,
+    resolveAssetUrl,
     selectActor,
     clearError,
     replayAudio
@@ -47,6 +71,15 @@ export function VttShell({ onExitCampaign = null, onLogout = null }) {
   const sessionActive = state.engineState === 'COLLECTING_ACTIONS';
   const timeline = state.timeline.slice(-4).reverse();
   const realtimeReady = state.realtime === 'connected';
+  const mapScene = useMemo(() => {
+    if (!activeScene) return demoScene;
+    return {
+      ...activeScene,
+      background: activeScene.backgroundAssetId
+        ? resolveAssetUrl(activeScene.backgroundAssetId)
+        : null
+    };
+  }, [activeScene, resolveAssetUrl]);
 
   async function handleSessionButton() {
     try {
@@ -78,6 +111,32 @@ export function VttShell({ onExitCampaign = null, onLogout = null }) {
       await navigator.clipboard?.writeText?.(url);
     } catch {
       // provider/API já expõe o erro quando aplicável.
+    }
+  }
+
+  async function handleCreateScene(event) {
+    event.preventDefault();
+    if (sceneUploadBusy) return;
+    const form = new FormData(event.currentTarget);
+    const file = form.get('mapFile');
+    if (!(file instanceof File) || !file.size) return;
+    setSceneUploadBusy(true);
+    try {
+      const dimensions = await imageDimensions(file);
+      await createMapScene({
+        file,
+        name: form.get('name'),
+        description: form.get('description'),
+        width: dimensions.width,
+        height: dimensions.height,
+        gridSize: Number(form.get('gridSize')) || 70
+      });
+      event.currentTarget.reset();
+      setSceneManagerOpen(false);
+    } catch {
+      // provider já publicou o erro operacional.
+    } finally {
+      setSceneUploadBusy(false);
     }
   }
 
@@ -116,21 +175,57 @@ export function VttShell({ onExitCampaign = null, onLogout = null }) {
       <div className={`workspace ${leftOpen ? 'with-left' : ''} ${rightOpen ? 'with-right' : ''}`}>
         {leftOpen && !focusMode ? (
           <aside className="side-panel scene-panel">
-            <div className="panel-heading">
-              <span className="eyebrow">Navegação</span>
-              <h2>Cenas</h2>
-            </div>
-            <nav className="scene-list" aria-label="Cenas da campanha">
-              {scenes.map((scene) => (
-                <button key={scene.id} type="button" className={`scene-row ${scene.state}`}>
-                  <span className="scene-index">{scene.id}</span>
-                  <span>
-                    <strong>{scene.name}</strong>
-                    <small>{scene.state === 'active' ? 'Cena ativa' : scene.state === 'locked' ? 'Não revelada' : 'Explorada'}</small>
-                  </span>
+            <div className="panel-heading scene-panel-heading">
+              <div><span className="eyebrow">Navegação</span><h2>Cenas</h2></div>
+              {isGm ? (
+                <button type="button" className="scene-add-button" onClick={() => setSceneManagerOpen((value) => !value)}>
+                  {sceneManagerOpen ? 'Fechar' : '+ Mapa'}
                 </button>
-              ))}
+              ) : null}
+            </div>
+
+            {isGm && sceneManagerOpen ? (
+              <form className="scene-manager-form" onSubmit={handleCreateScene}>
+                <label>Nome da cena<input name="name" placeholder="Ex.: Templo em Ruínas" minLength={2} required /></label>
+                <label>Mapa<input name="mapFile" type="file" accept="image/png,image/jpeg,image/webp" required /></label>
+                <label>Grid (px)<input name="gridSize" type="number" min="8" max="500" defaultValue="70" required /></label>
+                <label>Descrição visível<textarea name="description" rows="3" placeholder="O que os personagens percebem ao entrar nesta cena." /></label>
+                <button className="primary-button" disabled={sceneUploadBusy || state.busy}>
+                  {sceneUploadBusy ? 'Enviando mapa…' : 'Criar cena'}
+                </button>
+                <small>PNG, JPG ou WEBP · até 15 MB.</small>
+              </form>
+            ) : null}
+
+            <nav className="scene-list" aria-label="Cenas da campanha">
+              {scenes.length ? scenes.map((scene, index) => {
+                const active = activeScene?.id === scene.id;
+                return (
+                  <button
+                    key={scene.id}
+                    type="button"
+                    className={`scene-row ${active ? 'active' : ''}`}
+                    disabled={!isGm || state.busy}
+                    onClick={() => !active && activateScene(scene.id)}
+                  >
+                    <span className="scene-index">{String(index + 1).padStart(2, '0')}</span>
+                    <span>
+                      <strong>{scene.name}</strong>
+                      <small>{active ? 'Cena ativa' : `${scene.width} × ${scene.height}`}</small>
+                    </span>
+                  </button>
+                );
+              }) : (
+                <div className="scene-empty-state">
+                  <strong>Nenhum mapa enviado</strong>
+                  <small>{isGm ? 'Use “+ Mapa” para criar sua primeira cena.' : 'Aguarde o Mestre configurar uma cena.'}</small>
+                </div>
+              )}
             </nav>
+
+            {!scenes.length ? (
+              <div className="demo-scene-note"><span>DEMO</span> Salão das Colunas exibido até o primeiro mapa ser enviado.</div>
+            ) : null}
 
             <div className="panel-section">
               <span className="eyebrow">Identidade</span>
@@ -157,6 +252,7 @@ export function VttShell({ onExitCampaign = null, onLogout = null }) {
 
         <section className="center-stage">
           <MapStage
+            scene={mapScene}
             busy={state.busy}
             authoritativeTokens={state.tokens}
             onTokenMoved={moveToken}
