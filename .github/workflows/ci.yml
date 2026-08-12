@@ -42,7 +42,7 @@ jobs:
   dependency-smoke:
     name: Runtime dependency smoke / Node.js 24
     runs-on: ubuntu-latest
-    timeout-minutes: 6
+    timeout-minutes: 3
     continue-on-error: true
 
     steps:
@@ -58,9 +58,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for attempt in 1 2 3; do
-            echo "npm ci attempt ${attempt}/3"
-            if timeout 90s npm ci --ignore-scripts --no-audit --no-fund --fetch-retries=1 --fetch-timeout=30000; then
+          for attempt in 1 2; do
+            echo "npm ci attempt ${attempt}/2"
+            if timeout 45s npm ci --ignore-scripts --no-audit --no-fund --fetch-retries=1 --fetch-timeout=20000; then
               exit 0
             fi
             rm -rf node_modules "$HOME/.npm/_cacache/tmp" || true
