@@ -40,7 +40,7 @@ jobs:
         run: node --test
 
   integration-build:
-    name: Portable install + Postgres + auth + realtime + VTT build / Node.js 24
+    name: Portable install + Postgres + leases + auth + realtime + VTT build / Node.js 24
     runs-on: ubuntu-latest
     timeout-minutes: 10
     services:
@@ -81,6 +81,11 @@ jobs:
         env:
           DATABASE_URL: postgres://fenix:fenix_test@127.0.0.1:5432/fenix_test
         run: npm run test:postgres-integration
+
+      - name: Test distributed runtime coordination
+        env:
+          DATABASE_URL: postgres://fenix:fenix_test@127.0.0.1:5432/fenix_test
+        run: npm run test:coordination-integration
 
       - name: Test auth and campaign HTTP
         run: npm run test:auth-integration
