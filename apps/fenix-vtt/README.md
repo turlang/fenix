@@ -1,27 +1,73 @@
-# Fênix VTT — Standalone Shell
+# Fênix VTT — Standalone Live Bridge
 
-Este diretório é a primeira aplicação standalone do Projeto Fênix. O objetivo desta entrega é provar as fronteiras antes de adicionar um segundo grafo de dependências ao monorepo.
+Este diretório contém o primeiro cliente VTT standalone executável do Projeto Fênix. Ele consome o mesmo Shared Core usado pela integração Foundry e mantém regras, IA e narração fora da árvore React.
 
-## Estado desta entrega
+## Stack
 
-- App Router source scaffold preparado para Next.js 15.
-- Shell desktop/mobile com mapa como área principal, Scene Tree, Context Rail e Narration Timeline.
-- `MapStage` é Client Component porque possui a única fronteira necessária com Canvas/WebGL e APIs do navegador.
-- Renderer WebGL2 fica em `packages/webgl-map-renderer`; componentes React não conhecem regras, Groq, Guards ou `SessionDirector`.
-- O mesmo Shared Core já pode executar com `StandaloneVttAdapter` por `vttContextPort`.
+- Next.js 15 com App Router.
+- React 19.
+- Tailwind CSS 4 via PostCSS, coexistindo com os tokens visuais próprios do Fênix.
+- Canvas WebGL2 através de `packages/webgl-map-renderer` e do contrato `MapRendererPort`.
+- Fênix Engine HTTP através de `FenixApiClient`.
+- Browser Speech Synthesis como reprodução local/fallback de áudio.
 
-## Dependências
+## Executar localmente
 
-O `package.json` específico do Next/Tailwind não é adicionado nesta entrega de propósito. O CI atual registrou falha interna do npm (`Exit handler never called!`) durante `npm ci` em múltiplas versões de Node. Adicionar dependências sem conseguir gerar e validar um lockfile confiável violaria o protocolo fail-fast do projeto.
+Na raiz do monorepo:
 
-A próxima etapa de bootstrap adicionará Next.js 15, React e Tailwind CSS com lockfile validado quando o gate de dependências estiver estável. Até lá, o source scaffold e os contratos são verificáveis sem introduzir drift no `package-lock.json`.
+```bash
+npm ci
+```
+
+Terminal 1 — Engine:
+
+```bash
+npm run dev
+```
+
+Terminal 2 — VTT:
+
+```bash
+npm run dev:vtt
+```
+
+O VTT abre em `http://localhost:3000` e o Engine usa `http://localhost:3001` por padrão.
+
+Para apontar o cliente para outro Engine, copie `apps/fenix-vtt/.env.example` para `.env.local` nesse workspace e configure:
+
+```env
+NEXT_PUBLIC_FENIX_API_URL=http://localhost:3001
+```
+
+## Vertical slice disponível
+
+1. Inicie a sessão pelo topo, envie uma ação ou mova um token; o provider garante uma sessão ativa antes do evento.
+2. Selecione/arraste Ayla no mapa.
+3. Leve o token para a zona **03 — Câmara Norte**, no nordeste do mapa.
+4. A transição gera um evento universal `ROOM_ENTERED`.
+5. `FenixApiClient` envia o evento para `/v1/session/room-entry`.
+6. O Shared Core aplica contexto, Safety/Quality/Novelty Guards e narração.
+7. O texto retorna para a Narration Timeline.
+8. A diretiva de áudio entra na fila Browser-TTS sem cancelar a fala já em andamento.
+
+A caixa de comando também envia ações reais para `/v1/session/action`, vinculadas ao ator selecionado.
 
 ## Fronteira obrigatória
 
 ```text
 React/App Router -> Application/API -> Shared Core
 Canvas ---------> MapRendererPort -> WebGL2/WebGPU adapter
-Standalone state -> StandaloneVttAdapter -> VttContextPort
+Standalone state -> HTTP events -> Fênix Engine
 ```
 
-Nenhum componente desta aplicação pode importar `RulesService`, `NarrationService`, provider Groq ou código do módulo Foundry.
+Nenhum componente desta aplicação pode importar `RulesService`, `NarrationService`, provider Groq, `SessionDirector` ou código do módulo Foundry. Essa regra é verificada por `scripts/validate.mjs` no CI.
+
+## Gates
+
+O CI deve provar, antes de promover esta entrega:
+
+- estrutura e testes em Node.js 20, 22 e 24;
+- `package-lock.json` sem URLs de registry privado;
+- `npm ci` a partir do registry público;
+- import do runtime Fastify;
+- `npm run build:vtt` concluído com sucesso.
