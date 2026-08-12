@@ -1,4 +1,5 @@
 import { RealtimeEventType } from '../../../../packages/realtime-session-gateway/src/index.js';
+import { readAuthSessionToken } from '../http/register-auth-routes.js';
 
 function text(value, maxLength = 200) {
   return String(value ?? '').trim().slice(0, maxLength);
@@ -35,6 +36,8 @@ export function registerRealtimeRoutes(app, { gateway, allowOrigin = () => true 
       peer = gateway.openPeer({
         sessionId,
         clientId,
+        authToken: readAuthSessionToken(request),
+        // Campos abaixo existem apenas para o authorizer de desenvolvimento/testes.
         userId: text(query.userId, 120) || clientId,
         displayName: text(query.name, 120),
         role: text(query.role, 20),
@@ -55,7 +58,6 @@ export function registerRealtimeRoutes(app, { gateway, allowOrigin = () => true 
       return;
     }
 
-    // O listener precisa ser anexado durante a execução síncrona do handler.
     socket.on('message', (raw) => {
       void peer.receive(raw).catch((error) => {
         request.log.warn({
