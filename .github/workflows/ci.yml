@@ -40,7 +40,7 @@ jobs:
         run: node --test
 
   integration-build:
-    name: Portable install + API + realtime + VTT build / Node.js 24
+    name: Portable install + auth + realtime + VTT build / Node.js 24
     runs-on: ubuntu-latest
     timeout-minutes: 8
 
@@ -62,6 +62,9 @@ jobs:
 
       - name: Import Fastify runtimes
         run: node -e "Promise.all([import('fastify'), import('@fastify/websocket')]).then(() => console.log('Fastify realtime runtime OK'))"
+
+      - name: Test auth and campaign HTTP
+        run: npm run test:auth-integration
 
       - name: Test realtime WebSocket adapter
         run: npm run test:realtime-integration
