@@ -46,6 +46,11 @@ function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+async function replayResult(onReplay, result) {
+  if (typeof onReplay === 'function') await onReplay(clone(result));
+  return clone(result);
+}
+
 class BaseCommandLedger {
   constructor({ waitTimeoutMs = 1500, pollIntervalMs = 50, unknownAfterMs = 60000, resultMaxBytes = 512 * 1024, observability = null, logger = console } = {}) {
     this.waitTimeoutMs = Math.max(0, Number(waitTimeoutMs) || 0);
@@ -85,7 +90,7 @@ export class InMemoryCommandLedger extends BaseCommandLedger {
   async close() { return true; }
   async health() { return true; }
 
-  async execute({ campaignId = null, sessionId = null, commandId = null, commandType = 'command', request = null, ownerId = null, generation = null, execute } = {}) {
+  async execute({ campaignId = null, sessionId = null, commandId = null, commandType = 'command', request = null, ownerId = null, generation = null, onReplay = null, execute } = {}) {
     if (typeof execute !== 'function') throw new TypeError('execute é obrigatório.');
     const id = text(commandId, 300);
     if (!id) return execute();
@@ -95,7 +100,7 @@ export class InMemoryCommandLedger extends BaseCommandLedger {
     if (existing) {
       if (existing.status === 'COMPLETED') {
         this.record('command_replayed', { ownerId, generation, outcome: 'completed' });
-        return clone(existing.result);
+        return replayResult(onReplay, existing.result);
       }
       if (existing.status === 'UNKNOWN') {
         this.record('command_outcome_unknown', { ownerId, generation, code: existing.errorCode });
@@ -110,7 +115,8 @@ export class InMemoryCommandLedger extends BaseCommandLedger {
       }
       this.record('command_in_progress', { ownerId, generation, outcome: 'wait' });
       try {
-        return clone(await existing.promise);
+        const result = await existing.promise;
+        return replayResult(onReplay, result);
       } catch {
         throw commandError('O comando anterior terminou sem resultado confirmável.', 'COMMAND_OUTCOME_UNKNOWN', 409);
       }
@@ -162,31 +168,42 @@ export class InMemoryCommandLedger extends BaseCommandLedger {
 export class PostgresCommandLedger extends BaseCommandLedger {
   constructor({ pool, retentionHours = 168, ...options } = {}) {
     super(options);
-    if (!pool?.query) throw new TypeError('pool PostgreSQL é obrigatório.');
+    if (!pool?.query || !pool?.connect) throw new TypeError('pool PostgreSQL é obrigatório.');
     this.driver = 'postgres';
     this.pool = pool;
     this.retentionHours = Math.max(1, Math.min(24 * 90, Number(retentionHours) || 168));
   }
 
   async initialize() {
-    await this.pool.query(`
-      CREATE TABLE IF NOT EXISTS fenix_command_ledger (
-        scope_key TEXT NOT NULL,
-        command_id TEXT NOT NULL,
-        command_type TEXT NOT NULL,
-        session_id TEXT NULL,
-        request_hash TEXT NOT NULL,
-        status TEXT NOT NULL CHECK (status IN ('IN_PROGRESS','COMPLETED','UNKNOWN')),
-        result_json JSONB NULL,
-        error_code TEXT NULL,
-        owner_id TEXT NULL,
-        generation BIGINT NULL,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        PRIMARY KEY (scope_key, command_id)
-      )
-    `);
-    await this.pool.query('CREATE INDEX IF NOT EXISTS fenix_command_ledger_updated_idx ON fenix_command_ledger(updated_at)');
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query("SELECT pg_advisory_xact_lock(hashtext('fenix_command_ledger_schema_v1'))");
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS fenix_command_ledger (
+          scope_key TEXT NOT NULL,
+          command_id TEXT NOT NULL,
+          command_type TEXT NOT NULL,
+          session_id TEXT NULL,
+          request_hash TEXT NOT NULL,
+          status TEXT NOT NULL CHECK (status IN ('IN_PROGRESS','COMPLETED','UNKNOWN')),
+          result_json JSONB NULL,
+          error_code TEXT NULL,
+          owner_id TEXT NULL,
+          generation BIGINT NULL,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          PRIMARY KEY (scope_key, command_id)
+        )
+      `);
+      await client.query('CREATE INDEX IF NOT EXISTS fenix_command_ledger_updated_idx ON fenix_command_ledger(updated_at)');
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
     await this.cleanup();
     return true;
   }
@@ -205,7 +222,7 @@ export class PostgresCommandLedger extends BaseCommandLedger {
     );
   }
 
-  async execute({ campaignId = null, sessionId = null, commandId = null, commandType = 'command', request = null, ownerId = null, generation = null, execute } = {}) {
+  async execute({ campaignId = null, sessionId = null, commandId = null, commandType = 'command', request = null, ownerId = null, generation = null, onReplay = null, execute } = {}) {
     if (typeof execute !== 'function') throw new TypeError('execute é obrigatório.');
     const id = text(commandId, 300);
     if (!id) return execute();
@@ -214,7 +231,7 @@ export class PostgresCommandLedger extends BaseCommandLedger {
     const claimed = await this.#claim({ scope, id, commandType, sessionId, requestHash, ownerId, generation });
     if (!claimed) {
       const replay = await this.#awaitExisting({ scope, id, requestHash, ownerId, generation });
-      if (replay.type === 'completed') return replay.result;
+      if (replay.type === 'completed') return replayResult(onReplay, replay.result);
       throw replay.error;
     }
 
