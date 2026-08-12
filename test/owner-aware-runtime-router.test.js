@@ -193,6 +193,81 @@ test('router refaz resolução uma vez quando generation muda durante takeover',
   assert.equal(inspections, 2);
 });
 
+test('timeout de comando com commandId pode repetir no mesmo owner', async () => {
+  let requests = 0;
+  const router = new OwnerAwareRuntimeRouter({
+    instanceId: 'engine-b',
+    leaseManager: {
+      inspect: async () => ({
+        ownerId: 'engine-a',
+        ownerUrl: 'http://engine-a:3001',
+        sessionId: 'session-a',
+        generation: 8,
+        leaseUntil: new Date(Date.now() + 60_000).toISOString()
+      })
+    },
+    routingSecret: SECRET,
+    maxRetries: 1,
+    fetchImpl: async () => {
+      requests += 1;
+      if (requests === 1) {
+        const error = new Error('aborted');
+        error.name = 'AbortError';
+        throw error;
+      }
+      return jsonResponse(200, { narration: 'resultado reapresentado pelo ledger' });
+    }
+  });
+
+  const result = await router.executeHttp({
+    campaignId: 'campaign-a',
+    sessionId: 'session-a',
+    method: 'POST',
+    path: '/v1/session/action',
+    body: { campaignId: 'campaign-a', commandId: 'cmd-timeout-1', content: 'avanço' },
+    executeLocal: async () => assert.fail('não deveria executar localmente')
+  });
+  assert.equal(requests, 2);
+  assert.equal(result.narration, 'resultado reapresentado pelo ledger');
+});
+
+test('timeout sem commandId continua sem retry ambíguo', async () => {
+  let requests = 0;
+  const router = new OwnerAwareRuntimeRouter({
+    instanceId: 'engine-b',
+    leaseManager: {
+      inspect: async () => ({
+        ownerId: 'engine-a',
+        ownerUrl: 'http://engine-a:3001',
+        sessionId: 'session-a',
+        generation: 8,
+        leaseUntil: new Date(Date.now() + 60_000).toISOString()
+      })
+    },
+    routingSecret: SECRET,
+    maxRetries: 1,
+    fetchImpl: async () => {
+      requests += 1;
+      const error = new Error('aborted');
+      error.name = 'AbortError';
+      throw error;
+    }
+  });
+
+  await assert.rejects(
+    () => router.executeHttp({
+      campaignId: 'campaign-a',
+      sessionId: 'session-a',
+      method: 'POST',
+      path: '/v1/session/action',
+      body: { campaignId: 'campaign-a', content: 'avanço legado' },
+      executeLocal: async () => assert.fail('não deveria executar localmente')
+    }),
+    (error) => error.code === 'RUNTIME_OWNER_TIMEOUT'
+  );
+  assert.equal(requests, 1);
+});
+
 test('router executa local quando esta instância possui o lease', async () => {
   const router = new OwnerAwareRuntimeRouter({
     instanceId: 'engine-a',
