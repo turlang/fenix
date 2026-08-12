@@ -9,13 +9,12 @@ import {
   findRoomZone
 } from '../lib/demo-scene.js';
 
-export function MapStage({ onRoomEntered = null, onSelectedActor = null, busy = false }) {
+export function MapStage({ authoritativeTokens = [], onTokenMoved = null, onSelectedActor = null, busy = false }) {
   const canvasRef = useRef(null);
   const rendererRef = useRef(null);
   const frameRef = useRef(null);
   const dragRef = useRef(null);
   const tokensRef = useRef(new Map(demoTokens.map((token) => [token.id, { ...token }])));
-  const tokenZoneRef = useRef(new Map());
   const [backend, setBackend] = useState('detecting');
   const [selected, setSelected] = useState('Ayla');
   const [error, setError] = useState(null);
@@ -57,11 +56,27 @@ export function MapStage({ onRoomEntered = null, onSelectedActor = null, busy = 
     };
   }, []);
 
+  useEffect(() => {
+    const renderer = rendererRef.current;
+    if (!renderer || !Array.isArray(authoritativeTokens)) return;
+    for (const token of authoritativeTokens) {
+      if (!token?.id || dragRef.current?.tokenId === token.id) continue;
+      const merged = { ...(tokensRef.current.get(token.id) ?? {}), ...token };
+      tokensRef.current.set(token.id, merged);
+      renderer.upsertToken(merged);
+    }
+  }, [authoritativeTokens]);
+
   function handlePointerDown(event) {
     if (busy) return;
     const hit = rendererRef.current?.hitTest(event);
     if (!hit?.token) return;
-    dragRef.current = { tokenId: hit.token.id };
+    const currentZone = findRoomZone({ x: hit.token.x, y: hit.token.y });
+    dragRef.current = {
+      tokenId: hit.token.id,
+      roomId: currentZone?.room?.id ?? null,
+      roomEntry: currentZone ? createDemoRoomEnteredEvent(currentZone) : null
+    };
     setSelected(hit.token.name);
     onSelectedActor?.(hit.token.id);
     event.currentTarget.setPointerCapture?.(event.pointerId);
@@ -81,22 +96,23 @@ export function MapStage({ onRoomEntered = null, onSelectedActor = null, busy = 
     renderer.upsertToken(moved);
 
     const zone = findRoomZone(hit.world);
-    const previousZoneId = tokenZoneRef.current.get(moved.id) ?? null;
-    const nextZoneId = zone?.id ?? null;
-    if (previousZoneId === nextZoneId) return;
-    tokenZoneRef.current.set(moved.id, nextZoneId);
-
-    if (zone && moved.id.startsWith('hero-')) {
-      const eventPayload = createDemoRoomEnteredEvent(zone);
-      void Promise.resolve(onRoomEntered?.(eventPayload)).catch(() => undefined);
-    }
+    drag.roomId = zone?.room?.id ?? null;
+    drag.roomEntry = zone ? createDemoRoomEnteredEvent(zone) : null;
   }
 
   function handlePointerUp(event) {
+    const drag = dragRef.current;
     dragRef.current = null;
     if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
       event.currentTarget.releasePointerCapture?.(event.pointerId);
     }
+    if (!drag) return;
+    const token = tokensRef.current.get(drag.tokenId);
+    if (!token) return;
+    void Promise.resolve(onTokenMoved?.(token, {
+      roomEntry: drag.roomEntry,
+      roomId: drag.roomId
+    })).catch(() => undefined);
   }
 
   return (
@@ -105,7 +121,7 @@ export function MapStage({ onRoomEntered = null, onSelectedActor = null, busy = 
         <span className="status-dot" aria-hidden="true" />
         <span>Renderer: {backend}</span>
         <span className="hud-divider" />
-        <span>{busy ? 'Engine processando…' : '60 FPS alvo'}</span>
+        <span>{busy ? 'Engine processando…' : 'Realtime autoritativo'}</span>
       </div>
 
       <canvas
@@ -123,7 +139,7 @@ export function MapStage({ onRoomEntered = null, onSelectedActor = null, busy = 
       <div className="map-room-label">
         <span className="eyebrow">Cena ativa</span>
         <strong>Salão das Colunas</strong>
-        <small>Arraste Ayla até a Câmara Norte · nordeste</small>
+        <small>Solte o token para sincronizar · Câmara Norte no nordeste</small>
       </div>
 
       <div className="map-hud map-hud-bottom">
