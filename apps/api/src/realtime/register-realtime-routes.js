@@ -21,6 +21,10 @@ function ownerChangedPayload(route) {
   };
 }
 
+function isOwnershipFailure(error) {
+  return ['RUNTIME_LEASE_LOST', 'RUNTIME_OWNER_CHANGED', 'SESSION_NOT_ACTIVE'].includes(error?.code);
+}
+
 export function registerRealtimeRoutes(app, {
   gateway,
   allowOrigin = () => true,
@@ -118,6 +122,9 @@ export function registerRealtimeRoutes(app, {
           clientId
         }, 'Comando realtime rejeitado');
         gateway.sendError(sessionId, clientId, error);
+        if (isOwnershipFailure(error) && socket.readyState < 2) {
+          socket.close(1012, 'Runtime owner changed');
+        }
       });
     });
 
