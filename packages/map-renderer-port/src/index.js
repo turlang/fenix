@@ -33,7 +33,10 @@ export function normalizeMapScene(input = {}) {
     background: input.background ?? null,
     grid: Object.freeze({
       size: Math.max(8, finiteNumber(input.grid?.size, 100)),
-      type: String(input.grid?.type ?? 'square')
+      type: String(input.grid?.type ?? 'square'),
+      offsetX: finiteNumber(input.grid?.offsetX, 0),
+      offsetY: finiteNumber(input.grid?.offsetY, 0),
+      visible: input.grid?.visible !== false
     })
   });
 }
@@ -93,6 +96,7 @@ export class HeadlessMapRenderer {
     this.#assertAlive();
     this.scene = normalizeMapScene(scene);
     this.tokens.clear();
+    this.grid = this.scene.grid;
     return this.scene;
   }
 
