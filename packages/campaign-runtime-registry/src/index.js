@@ -11,6 +11,19 @@ function text(value) {
 
 const LEGACY_KEY = '__legacy__';
 
+function listActiveSessions(campaignService) {
+  if (typeof campaignService.listActiveSessions === 'function') {
+    return campaignService.listActiveSessions();
+  }
+  const campaigns = campaignService.repository?.snapshot?.().campaigns ?? [];
+  return campaigns
+    .filter((campaign) => campaign?.activeSession?.sessionId)
+    .map((campaign) => ({
+      campaignId: campaign.id,
+      ...structuredClone(campaign.activeSession)
+    }));
+}
+
 export class CampaignRuntimeRegistry {
   constructor({ runtimeFactory, campaignService, realtimeHub = null, logger = console } = {}) {
     if (typeof runtimeFactory !== 'function') throw new TypeError('runtimeFactory é obrigatório.');
@@ -24,7 +37,7 @@ export class CampaignRuntimeRegistry {
   }
 
   async initialize() {
-    const activeSessions = this.campaignService.listActiveSessions();
+    const activeSessions = listActiveSessions(this.campaignService);
     const restored = [];
 
     for (const active of activeSessions) {
