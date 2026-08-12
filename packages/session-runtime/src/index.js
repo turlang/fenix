@@ -14,6 +14,12 @@ import { NarrationService } from '../../narration-service/src/index.js';
 import { SessionDirector } from '../../session-director/src/index.js';
 import { AudioNarrationService } from '../../audio-narration-service/src/index.js';
 
+function hasSnapshotInput(input) {
+  if (!input || typeof input !== 'object') return false;
+  if (input.snapshot && typeof input.snapshot === 'object') return true;
+  return Object.keys(input).length > 0;
+}
+
 export function createSessionRuntime({
   vttContextPort = null,
   narrationOutputPort = null,
@@ -59,8 +65,10 @@ export function createSessionRuntime({
   return {
     getStatus: () => director.getStatus(),
     async start(input = {}) {
-      const snapshot = input?.snapshot ?? input;
-      if (typeof contextPort.setSnapshot === 'function') contextPort.setSnapshot(snapshot);
+      if (typeof contextPort.setSnapshot === 'function' && hasSnapshotInput(input)) {
+        const snapshot = input?.snapshot ?? input;
+        await contextPort.setSnapshot(snapshot);
+      }
       return director.start();
     },
     processAction(input) {
