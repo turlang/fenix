@@ -52,6 +52,19 @@ export function createConfig(env = process.env) {
     'http://127.0.0.1:30000',
     ...configuredOrigins
   ])];
+  const runtimeLeaseTtlMs = parseInteger(env.FENIX_RUNTIME_LEASE_TTL_MS, 15000, {
+    min: 500,
+    max: 300000,
+    name: 'FENIX_RUNTIME_LEASE_TTL_MS'
+  });
+  const runtimeHeartbeatMs = parseInteger(env.FENIX_RUNTIME_HEARTBEAT_MS, 5000, {
+    min: 250,
+    max: 120000,
+    name: 'FENIX_RUNTIME_HEARTBEAT_MS'
+  });
+  if (runtimeHeartbeatMs >= runtimeLeaseTtlMs) {
+    throw new RangeError('FENIX_RUNTIME_HEARTBEAT_MS deve ser menor que FENIX_RUNTIME_LEASE_TTL_MS.');
+  }
   return Object.freeze({
     nodeEnv,
     isProduction,
@@ -65,6 +78,15 @@ export function createConfig(env = process.env) {
     trustProxy: parseBoolean(env.TRUST_PROXY, false),
     allowLegacySessionHttp: parseBoolean(env.FENIX_ALLOW_LEGACY_SESSION_HTTP, !isProduction),
     authCookieSameSite: parseSameSite(env.FENIX_AUTH_COOKIE_SAME_SITE, isProduction ? 'None' : 'Lax'),
+    instanceId: env.FENIX_INSTANCE_ID?.trim() || null,
+    instancePublicUrl: env.FENIX_INSTANCE_PUBLIC_URL?.trim() || null,
+    runtimeLeaseTtlMs,
+    runtimeHeartbeatMs,
+    runtimeReconcileMs: parseInteger(env.FENIX_RUNTIME_RECONCILE_MS, 5000, {
+      min: 500,
+      max: 120000,
+      name: 'FENIX_RUNTIME_RECONCILE_MS'
+    }),
     allowedOrigins
   });
 }
