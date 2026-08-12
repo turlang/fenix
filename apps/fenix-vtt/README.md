@@ -1,73 +1,91 @@
-# Fênix VTT — Standalone Live Bridge
+# Fênix VTT — Authenticated Standalone
 
-Este diretório contém o primeiro cliente VTT standalone executável do Projeto Fênix. Ele consome o mesmo Shared Core usado pela integração Foundry e mantém regras, IA e narração fora da árvore React.
+Este diretório contém o cliente VTT standalone do Projeto Fênix. Ele consome o mesmo Shared Core usado pela integração Foundry e mantém regras, IA, autenticação e persistência fora da árvore React.
 
 ## Stack
 
-- Next.js 15 com App Router.
+- Next.js 15 / App Router.
 - React 19.
-- Tailwind CSS 4 via PostCSS, coexistindo com os tokens visuais próprios do Fênix.
-- Canvas WebGL2 através de `packages/webgl-map-renderer` e do contrato `MapRendererPort`.
-- Fênix Engine HTTP através de `FenixApiClient`.
-- Browser Speech Synthesis como reprodução local/fallback de áudio.
+- Tailwind CSS 4 via PostCSS.
+- Canvas WebGL2 atrás de `MapRendererPort`.
+- Engine HTTP por `FenixApiClient`.
+- Multiplayer por `FenixRealtimeClient` / WebSocket.
+- Browser Speech Synthesis como fallback local de áudio.
 
 ## Executar localmente
 
-Na raiz do monorepo:
+Na raiz:
 
 ```bash
 npm ci
 ```
 
-Terminal 1 — Engine:
+Terminal 1:
 
 ```bash
 npm run dev
 ```
 
-Terminal 2 — VTT:
+Terminal 2:
 
 ```bash
 npm run dev:vtt
 ```
 
-O VTT abre em `http://localhost:3000` e o Engine usa `http://localhost:3001` por padrão.
-
-Para apontar o cliente para outro Engine, copie `apps/fenix-vtt/.env.example` para `.env.local` nesse workspace e configure:
+O VTT usa `http://localhost:3000` e o Engine `http://localhost:3001` por padrão. Outro Engine pode ser definido em `.env.local`:
 
 ```env
 NEXT_PUBLIC_FENIX_API_URL=http://localhost:3001
 ```
 
-## Vertical slice disponível
+## Primeiro acesso
 
-1. Inicie a sessão pelo topo, envie uma ação ou mova um token; o provider garante uma sessão ativa antes do evento.
-2. Selecione/arraste Ayla no mapa.
-3. Leve o token para a zona **03 — Câmara Norte**, no nordeste do mapa.
-4. A transição gera um evento universal `ROOM_ENTERED`.
-5. `FenixApiClient` envia o evento para `/v1/session/room-entry`.
-6. O Shared Core aplica contexto, Safety/Quality/Novelty Guards e narração.
-7. O texto retorna para a Narration Timeline.
-8. A diretiva de áudio entra na fila Browser-TTS sem cancelar a fala já em andamento.
+1. Abra o VTT.
+2. Se ainda não existem contas, a interface apresenta **Ativar primeiro Mestre**.
+3. O bootstrap cria a primeira conta e recebe cookie de sessão HttpOnly.
+4. Crie uma campanha.
+5. Entre na campanha e inicie a sessão.
+6. Como GM, escolha um personagem no painel de convite e gere o link one-time.
+7. O jogador abre o link, entra/cria conta e recebe a membership vinculada ao `actorId` reservado.
 
-A caixa de comando também envia ações reais para `/v1/session/action`, vinculadas ao ator selecionado.
+O convite fica no fragmento `#invite=...`; o segredo não é colocado na query HTTP do Engine.
+
+## Autoridade
+
+O navegador não define mais papel por URL. A conexão `/v1/realtime` envia somente:
+
+- `sessionId`;
+- `clientId`.
+
+O servidor usa o cookie autenticado para obter `userId` e a membership da campanha para definir `role` e `actorId`.
+
+- GM: inicia/encerra sessão, controla cena e qualquer token.
+- Player: controla somente o token/ações do seu `actorId`.
+
+A UI também esconde/desabilita controles indevidos, mas a regra definitiva fica no servidor.
+
+## Persistência e restart
+
+A campanha mantém uma sessão narrativa ativa e o Engine restaura a mesma `sessionId` no restart. `SessionDirector.restore()` não chama `createOpening()`, portanto a abertura da cena não é repetida automaticamente.
+
+O estado realtime recupera cena, tokens, revisão, sala atual e histórico recente. Presença é efêmera e reaparece quando os browsers reconectam.
 
 ## Fronteira obrigatória
 
 ```text
-React/App Router -> Application/API -> Shared Core
-Canvas ---------> MapRendererPort -> WebGL2/WebGPU adapter
-Standalone state -> HTTP events -> Fênix Engine
+React/App Router → API/Realtime clients → Engine application layer → Shared Core
+Canvas → MapRendererPort → WebGL2
+Auth UI → HTTP cookie → AuthService/CampaignService
 ```
 
-Nenhum componente desta aplicação pode importar `RulesService`, `NarrationService`, provider Groq, `SessionDirector` ou código do módulo Foundry. Essa regra é verificada por `scripts/validate.mjs` no CI.
+Nenhum componente do VTT pode importar `RulesService`, `NarrationService`, Groq, `SessionDirector` ou código Foundry. `scripts/validate.mjs` verifica essa fronteira.
 
 ## Gates
 
-O CI deve provar, antes de promover esta entrega:
-
-- estrutura e testes em Node.js 20, 22 e 24;
-- `package-lock.json` sem URLs de registry privado;
-- `npm ci` a partir do registry público;
-- import do runtime Fastify;
-- `npm run build:vtt` concluído com sucesso.
+- `node:test` em Node 20/22/24;
+- testes de segredo em repouso, bootstrap, convite e restart;
+- lockfile portátil;
+- `npm ci` público;
+- integração HTTP auth/campanha;
+- integração WebSocket real;
+- `npm run build:vtt`.
