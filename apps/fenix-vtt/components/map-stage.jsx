@@ -65,7 +65,7 @@ export function MapStage({
   useEffect(() => {
     setGridDraft(normalizedGrid(scene.grid));
     setGridEditorOpen(false);
-  }, [scene.id, scene.grid]);
+  }, [scene.id, scene.grid?.size, scene.grid?.offsetX, scene.grid?.offsetY, scene.grid?.visible]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -104,7 +104,7 @@ export function MapStage({
       renderer?.destroy();
       rendererRef.current = null;
     };
-  }, [scene]);
+  }, [scene.id, scene.background, scene.width, scene.height]);
 
   useEffect(() => {
     rendererRef.current?.setViewport(viewport);
