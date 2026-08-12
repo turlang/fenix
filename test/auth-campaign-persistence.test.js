@@ -37,11 +37,30 @@ test('senha e tokens reutilizáveis não são persistidos em texto puro', async 
   });
 
   const serialized = JSON.stringify(repository.snapshot());
-  assert.doesNotMatch(serialized, new RegExp(password.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
-  assert.doesNotMatch(serialized, new RegExp(authSession.token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
-  assert.doesNotMatch(serialized, new RegExp(invite.token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.equal(serialized.includes(password), false);
+  assert.equal(serialized.includes(authSession.token), false);
+  assert.equal(serialized.includes(invite.token), false);
   assert.match(serialized, /"algorithm":"scrypt"/);
   assert.match(serialized, /"tokenHash":/);
+});
+
+test('bootstrap concorrente permite somente um primeiro usuário', async () => {
+  const { repository, authService } = await fixture();
+  const attempts = await Promise.allSettled([
+    authService.bootstrapOwner({
+      email: 'first@example.com',
+      displayName: 'Primeiro Mestre',
+      password: 'Senha-Primeiro-2026'
+    }),
+    authService.bootstrapOwner({
+      email: 'second@example.com',
+      displayName: 'Segundo Mestre',
+      password: 'Senha-Segundo-2026'
+    })
+  ]);
+  assert.equal(attempts.filter((item) => item.status === 'fulfilled').length, 1);
+  assert.equal(attempts.filter((item) => item.status === 'rejected').length, 1);
+  assert.equal(repository.snapshot().users.length, 1);
 });
 
 test('convite é one-time e fixa actorId do jogador no servidor', async () => {
