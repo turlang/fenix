@@ -210,13 +210,15 @@ export class PostgresRuntimeLeaseManager {
     const result = await this.pool.query(
       `INSERT INTO fenix_runtime_leases
         (campaign_id, owner_id, owner_url, session_id, generation, lease_until, updated_at)
-       VALUES ($1, $2, $3, $4, 1, NOW() + ($5 * INTERVAL '1 millisecond'), NOW())
+       VALUES ($1, $2, $3, $4, 1, NOW() + ($5::bigint * INTERVAL '1 millisecond'), NOW())
        ON CONFLICT (campaign_id) DO UPDATE
        SET owner_id = EXCLUDED.owner_id,
            owner_url = EXCLUDED.owner_url,
            session_id = COALESCE(EXCLUDED.session_id, fenix_runtime_leases.session_id),
            generation = CASE
-             WHEN fenix_runtime_leases.owner_id = EXCLUDED.owner_id THEN fenix_runtime_leases.generation
+             WHEN fenix_runtime_leases.owner_id = EXCLUDED.owner_id
+              AND fenix_runtime_leases.lease_until > NOW()
+             THEN fenix_runtime_leases.generation
              ELSE fenix_runtime_leases.generation + 1
            END,
            lease_until = EXCLUDED.lease_until,
@@ -249,7 +251,7 @@ export class PostgresRuntimeLeaseManager {
     const sid = boundedText(sessionId, 300);
     const result = await this.pool.query(
       `UPDATE fenix_runtime_leases
-       SET session_id = $4, lease_until = NOW() + ($5 * INTERVAL '1 millisecond'), updated_at = NOW()
+       SET session_id = $4, lease_until = NOW() + ($5::bigint * INTERVAL '1 millisecond'), updated_at = NOW()
        WHERE campaign_id = $1 AND owner_id = $2 AND generation = $3 AND lease_until > NOW()
        RETURNING *`,
       [id, this.instanceId, Number(generation), sid || null, this.leaseTtlMs]
@@ -267,7 +269,7 @@ export class PostgresRuntimeLeaseManager {
     if (!id || !Number.isFinite(token)) return null;
     const result = await this.pool.query(
       `UPDATE fenix_runtime_leases
-       SET lease_until = NOW() + ($4 * INTERVAL '1 millisecond'), updated_at = NOW()
+       SET lease_until = NOW() + ($4::bigint * INTERVAL '1 millisecond'), updated_at = NOW()
        WHERE campaign_id = $1 AND owner_id = $2 AND generation = $3 AND lease_until > NOW()
        RETURNING *`,
       [id, this.instanceId, token, this.leaseTtlMs]
@@ -370,20 +372,31 @@ export class PostgresRuntimeLeaseManager {
 
   async #leaseLost(lease) {
     this.owned.delete(lease.campaignId);
-    await this.#publish('RUNTIME_LEASE_LOST', lease).catch(() => undefined);
+    await this.#publish('RUNTIME_LEASE_LOST', lease);
     if (this.onLeaseLost) await this.onLeaseLost(lease);
   }
 
   async #publish(type, lease) {
-    if (!this.publishEvent) return;
-    await this.publishEvent(type, {
-      campaignId: lease.campaignId,
-      ownerId: lease.ownerId,
-      ownerUrl: lease.ownerUrl,
-      sessionId: lease.sessionId,
-      generation: lease.generation,
-      leaseUntil: lease.leaseUntil
-    });
+    if (!this.publishEvent) return false;
+    try {
+      await this.publishEvent(type, {
+        campaignId: lease.campaignId,
+        ownerId: lease.ownerId,
+        ownerUrl: lease.ownerUrl,
+        sessionId: lease.sessionId,
+        generation: lease.generation,
+        leaseUntil: lease.leaseUntil
+      });
+      return true;
+    } catch (error) {
+      this.logger.warn?.('[Fênix][RuntimeLease] lease persistido, mas evento de coordenação não foi publicado', {
+        type,
+        campaignId: lease.campaignId,
+        generation: lease.generation,
+        message: error.message
+      });
+      return false;
+    }
   }
 }
 
