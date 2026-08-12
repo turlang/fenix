@@ -20,6 +20,12 @@ function hasSnapshotInput(input) {
   return Object.keys(input).length > 0;
 }
 
+async function applySnapshot(contextPort, input) {
+  if (typeof contextPort.setSnapshot !== 'function' || !hasSnapshotInput(input)) return;
+  const snapshot = input?.snapshot ?? input;
+  await contextPort.setSnapshot(snapshot);
+}
+
 export function createSessionRuntime({
   vttContextPort = null,
   narrationOutputPort = null,
@@ -65,11 +71,12 @@ export function createSessionRuntime({
   return {
     getStatus: () => director.getStatus(),
     async start(input = {}) {
-      if (typeof contextPort.setSnapshot === 'function' && hasSnapshotInput(input)) {
-        const snapshot = input?.snapshot ?? input;
-        await contextPort.setSnapshot(snapshot);
-      }
+      await applySnapshot(contextPort, input);
       return director.start();
+    },
+    async restore({ sessionId, snapshot, startedAt = null } = {}) {
+      await applySnapshot(contextPort, { snapshot });
+      return director.restore({ sessionId, startedAt });
     },
     processAction(input) {
       return director.processAction(normalizePlayerActionEvent(input));
