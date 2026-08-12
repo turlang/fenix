@@ -6,7 +6,7 @@ Versão base `0.1.0-alpha.24` — Node.js 20–24, Foundry VTT 13 e Fênix VTT s
 
 ![Preview do Mestre Orc Engine](docs/preview.svg)
 
-O projeto mantém um Shared Core VTT-agnóstico para contexto, intenção, regras, relacionamentos, narração e áudio. O Foundry VTT continua como adapter de primeira classe, enquanto `apps/fenix-vtt` executa o mesmo Core como cliente standalone com Next.js, WebGL2, contas persistentes e sincronização multiplayer por WebSocket.
+O projeto mantém um Shared Core VTT-agnóstico para contexto, intenção, regras, relacionamentos, narração e áudio. O Foundry VTT continua como adapter de primeira classe, enquanto `apps/fenix-vtt` executa o mesmo Core como cliente standalone com Next.js, WebGL2, contas, campanhas, multiplayer e persistência PostgreSQL opcional.
 
 ## Engine
 
@@ -17,72 +17,81 @@ npm run check
 npm run dev
 ```
 
-Configuração mínima de desenvolvimento:
+Desenvolvimento pode permanecer em JSON:
 
 ```env
-PORT=3001
-HOST=0.0.0.0
-NODE_ENV=development
-CORS_ALLOWED_ORIGINS=http://localhost:30000,http://127.0.0.1:30000,http://localhost:3000,http://localhost:3001
+FENIX_PERSISTENCE_DRIVER=json
 FENIX_STATE_FILE=./data/fenix-state.json
-FENIX_AUTH_COOKIE_SAME_SITE=Lax
-FENIX_ALLOW_LEGACY_SESSION_HTTP=true
-GROQ_API_KEY=sua_chave
-GROQ_MODEL=seu_modelo_disponivel
-MESTRE_ORC_NARRATION_MEMORY_FILE=./data/narration-history.json
-MESTRE_ORC_AUDIO_ENABLED=true
-MESTRE_ORC_AUDIO_MODE=browser-tts
 ```
 
-Abra `http://localhost:3001/health`. Com os serviços ativos, os campos incluem `auth`, `persistence`, `realtime`, `ai` e `audio`.
+Para PostgreSQL:
+
+```env
+FENIX_PERSISTENCE_DRIVER=postgres
+DATABASE_URL=postgres://usuario:senha@host:5432/fenix
+FENIX_POSTGRES_POOL_MAX=10
+```
+
+Também configure `GROQ_API_KEY`, `GROQ_MODEL`, CORS e autenticação conforme `.env.example`.
 
 ## Fênix VTT standalone
-
-Em outro terminal:
 
 ```powershell
 npm run dev:vtt
 ```
 
-Na primeira abertura, o VTT oferece o **bootstrap único do primeiro Mestre**. Depois disso, a entrada usa login por conta persistente. O GM cria campanhas e gera convites one-time ligados a um `actorId`; o jogador cria/usa sua conta pelo convite e passa a controlar somente aquele personagem.
+Na primeira abertura, o VTT oferece o bootstrap único do primeiro Mestre. Depois disso, a entrada usa login persistente. O GM cria campanhas e convites one-time ligados a um `actorId`; jogadores controlam apenas o personagem atribuído pelo servidor.
 
-A identidade do WebSocket não vem mais de `?role=...` ou `?actor=...`. O browser envia somente `sessionId` e `clientId`; o servidor deriva `userId`, papel GM/Player e `actorId` a partir do cookie HttpOnly e da membership da campanha.
+O browser envia somente `sessionId` e `clientId` no WebSocket. `userId`, papel GM/Player e `actorId` são derivados do cookie HttpOnly e da membership.
 
-O fluxo standalone atual possui:
+O fluxo atual possui:
 
 - Next.js 15 + React 19 + Tailwind CSS 4;
 - renderer WebGL2 atrás de `MapRendererPort`;
-- autenticação com senha derivada por `scrypt`;
-- sessão por token opaco, persistindo somente seu hash;
-- campanhas, memberships e convites expirantes de uso único;
-- `RealtimeSessionHub` com cena/tokens/sala/histórico persistíveis;
-- WebSocket `/v1/realtime` com autoridade GM/Player no servidor;
-- `ROOM_ENTERED` produzido pelo movimento e narrado pelo Shared Core;
-- broadcast de narração e áudio;
-- restauração da mesma sessão após restart, sem repetir a abertura da cena.
+- autenticação com `scrypt` e token opaco;
+- campanhas/memberships/convites;
+- `CampaignRuntimeRegistry` com runtime isolado por campanha;
+- várias campanhas ativas simultaneamente dentro da mesma instância do Engine;
+- `RealtimeSessionHub` isolado por `sessionId`;
+- WebSocket `/v1/realtime` com autoridade GM/Player;
+- `ROOM_ENTERED` e ações pelo mesmo Shared Core;
+- recuperação das sessões persistidas após restart sem repetir aberturas;
+- JSON local ou PostgreSQL transacional como adapters de persistência.
 
-A persistência atual usa `FENIX_STATE_FILE`. É um adapter **single-instance alpha**; em Render, use Persistent Disk. O próximo adapter previsto é PostgreSQL para múltiplas instâncias/campanhas concorrentes. Consulte `docs/FENIX_AUTH_PERSISTENCE.md`.
+## PostgreSQL e migração
+
+`PostgresFenixRepository` preserva o contrato dos serviços atuais e usa pool, transação, advisory lock de inicialização e `SELECT ... FOR UPDATE` nas mutações. O estado continua em uma linha JSONB versionada nesta fase de transição.
+
+Para migrar um estado JSON existente para um banco vazio:
+
+```powershell
+npm run migrate:postgres
+```
+
+O script recusa sobrescrever PostgreSQL que já contenha estado.
 
 ## Comandos
 
 - `npm run dev`: inicia API/Engine.
 - `npm run dev:vtt`: inicia o Fênix VTT.
-- `npm run build:vtt`: gera o build standalone do Next.js.
-- `npm test`: executa a suíte `node:test`.
-- `npm run test:auth-integration`: valida cookies, contas, campanhas e convites no Fastify real.
-- `npm run test:realtime-integration`: valida o adapter WebSocket real.
-- `npm run validate`: valida fronteiras, arquivos e versões.
-- `npm run check`: executa validação + testes do Core.
+- `npm run build:vtt`: build standalone.
+- `npm test`: suíte `node:test`.
+- `npm run test:auth-integration`: auth/campanhas no Fastify real.
+- `npm run test:realtime-integration`: WebSocket real.
+- `npm run test:postgres-integration`: duas instâncias concorrentes contra PostgreSQL real.
+- `npm run migrate:postgres`: migra JSON para PostgreSQL vazio.
+- `npm run validate`: valida fronteiras/estrutura.
+- `npm run check`: validação + Core tests.
 
 ## Segurança e operação
 
-- Nunca versione `.env`, `data/fenix-state.json`, `data/narration-history.json` ou `node_modules`.
-- Senhas usam `scrypt` + salt aleatório; tokens reutilizáveis de sessão/convite não são gravados em texto puro.
-- Cookies de autenticação são `HttpOnly`; em produção são `Secure` e usam `SameSite=None` por padrão para frontend/API cross-site.
-- O upgrade WebSocket valida `Origin`, limita payload e aplica rate limit por peer.
-- Jogador não pode escolher `role`/`actorId` pela URL, mover outro token, trocar cena ou encerrar a sessão.
-- Em produção, o HTTP legado de sessão fica fechado por padrão. Ative `FENIX_ALLOW_LEGACY_SESSION_HTTP=true` apenas quando o adapter Foundry precisar dessa compatibilidade.
-- O arquivo persistente é escrito atomicamente, mas não substitui um banco transacional para horizontal scaling.
+- Nunca versione `.env`, estado persistido ou `node_modules`.
+- Senhas usam `scrypt` + salt; tokens reutilizáveis de sessão/convite não ficam em texto puro.
+- Cookies são `HttpOnly` e `Secure` em produção.
+- WebSocket valida `Origin`, payload e rate limit.
+- Jogador não escolhe `role`/`actorId` pela URL e não controla recursos de outra membership.
+- O HTTP legado Foundry permanece disponível apenas conforme `FENIX_ALLOW_LEGACY_SESSION_HTTP`.
+- PostgreSQL protege mutações concorrentes do repository, mas **horizontal scaling completo ainda não está concluído**: os serviços mantêm caches em memória e ainda não há lease distribuído de ownership do runtime.
 
 ## Módulo Foundry
 
@@ -92,7 +101,7 @@ Copie `apps/foundry-module` para:
 FoundryVTT/Data/modules/mestre-orc/
 ```
 
-A lógica alpha.24 continua no módulo: número de sala, Journal relacionado, read-aloud seguro, narração privada/áudio e captura de ações. A compatibilidade HTTP legado existe para que essa integração não precise migrar no mesmo marco do VTT standalone.
+A lógica alpha.24 permanece no módulo: correlação por número da sala, Journal relacionado e read-aloud seguro. Essa regra não foi movida para o Shared Core.
 
 ## Arquitetura validada
 
@@ -105,11 +114,14 @@ Conta → Campaign Membership → VTT ---┘                       │
        RealtimeSessionGateway                                     ↓
                ↓                                            todos os peers
        RealtimeSessionHub
+               ↓
+      CampaignRuntimeRegistry
         │       │       │
-      Scene   Tokens   Rooms
+     Mesa A  Mesa B  Mesa C
         └───────┼───────┘
                 ↓
-       Persistence Repository
+      Persistence Repository
+         JSON | PostgreSQL
 ```
 
 `SessionDirector` continua sem conhecer Foundry, autenticação, banco, Fastify, WebSocket, React ou WebGL.
@@ -119,10 +131,11 @@ Conta → Campaign Membership → VTT ---┘                       │
 A pipeline exige:
 
 1. validação + `node:test` em Node.js 20, 22 e 24;
-2. testes de token/convite/anti-escalation/restart;
+2. isolamento de runtimes e concorrência por campanha;
 3. lockfile portátil + `npm ci` público;
-4. integração HTTP real de autenticação/campanha;
-5. integração WebSocket real;
-6. build de produção do Fênix VTT.
+4. PostgreSQL 16 real e teste de mutações concorrentes;
+5. integração HTTP de auth/campanhas;
+6. integração WebSocket real;
+7. build de produção do Fênix VTT.
 
-Os arquivos `README-ALPHA*.md` preservam o histórico das versões anteriores.
+Veja `docs/FENIX_AUTH_PERSISTENCE.md` para os limites e a evolução distribuída. Os `README-ALPHA*.md` preservam o histórico anterior.
