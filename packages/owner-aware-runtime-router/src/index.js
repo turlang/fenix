@@ -13,6 +13,10 @@ const RETRYABLE_OWNER_ERRORS = new Set([
   'RUNTIME_OWNER_CHANGED',
   'RUNTIME_LEASE_HELD'
 ]);
+const IDEMPOTENT_TRANSPORT_ERRORS = new Set([
+  'RUNTIME_OWNER_TIMEOUT',
+  'RUNTIME_OWNER_UNREACHABLE'
+]);
 
 function routingError(message, code, statusCode = 409, details = {}) {
   const error = new Error(message);
@@ -59,6 +63,10 @@ function canonicalRequest({ source, generation, timestamp, method, path, body })
     text(path, 2000),
     bodyHash(body)
   ].join('\n');
+}
+
+function hasCommandId(body, headers) {
+  return Boolean(text(body?.commandId ?? body?.messageId, 300) || headerValue(headers, 'x-idempotency-key'));
 }
 
 export function normalizeOwnerBaseUrl(value) {
@@ -148,6 +156,7 @@ export class OwnerAwareRuntimeRouter {
     fetchImpl = globalThis.fetch,
     requestTimeoutMs = 5000,
     maxRetries = 1,
+    observability = null,
     logger = console
   } = {}) {
     this.instanceId = text(instanceId, 200);
@@ -162,11 +171,16 @@ export class OwnerAwareRuntimeRouter {
     this.fetchImpl = fetchImpl;
     this.requestTimeoutMs = Math.max(500, Number(requestTimeoutMs) || 5000);
     this.maxRetries = Math.max(0, Math.min(3, Number(maxRetries) || 0));
+    this.observability = observability;
     this.logger = logger;
   }
 
   get enabled() {
     return Boolean(this.leaseManager && this.signer && this.fetchImpl);
+  }
+
+  record(event, attributes = {}) {
+    this.observability?.record?.(event, { sourceId: this.instanceId, ...attributes });
   }
 
   verifyIncomingRequest(input) {
@@ -196,11 +210,13 @@ export class OwnerAwareRuntimeRouter {
       resolvedCampaignId = text(await this.resolveCampaignIdBySessionId(resolvedSessionId), 300);
     }
     if (!resolvedCampaignId || !this.leaseManager?.inspect) {
+      this.record('route_resolved_unowned', { outcome: 'unowned' });
       return Object.freeze({ mode: 'unowned', campaignId: resolvedCampaignId || null, sessionId: resolvedSessionId || null });
     }
 
     const lease = await this.leaseManager.inspect(resolvedCampaignId);
     if (!activeLease(lease)) {
+      this.record('route_resolved_unowned', { outcome: 'lease_inactive' });
       return Object.freeze({ mode: 'unowned', campaignId: resolvedCampaignId, sessionId: resolvedSessionId || lease?.sessionId || null });
     }
     const route = {
@@ -211,7 +227,9 @@ export class OwnerAwareRuntimeRouter {
       generation: Number(lease.generation),
       leaseUntil: lease.leaseUntil
     };
-    return Object.freeze({ ...route, mode: lease.ownerId === this.instanceId ? 'local' : 'remote' });
+    const mode = lease.ownerId === this.instanceId ? 'local' : 'remote';
+    this.record(`route_resolved_${mode}`, { ownerId: lease.ownerId, generation: lease.generation, outcome: mode });
+    return Object.freeze({ ...route, mode });
   }
 
   async executeHttp({
@@ -227,12 +245,16 @@ export class OwnerAwareRuntimeRouter {
     if (typeof executeLocal !== 'function') throw new TypeError('executeLocal é obrigatório.');
     const normalizedPath = text(path, 2000) || '/';
     const incoming = routeContext ?? this.verifyIncomingRequest({ headers, method, path: normalizedPath, body });
+    const replaySafe = hasCommandId(body, headers);
     let lastFailure = null;
     let lastRouteKey = null;
+
+    const canRetry = (error) => RETRYABLE_OWNER_ERRORS.has(error?.code) || (replaySafe && IDEMPOTENT_TRANSPORT_ERRORS.has(error?.code));
 
     for (let attempt = 0; attempt <= this.maxRetries; attempt += 1) {
       const route = await this.resolve({ campaignId, sessionId });
       if (incoming.routed && route.mode === 'remote') {
+        this.record('http_route_owner_changed', { ownerId: route.ownerId, generation: route.generation, attempt, transport: 'http', code: 'RUNTIME_OWNER_CHANGED' });
         throw routingError('O owner do runtime mudou durante o encaminhamento.', 'RUNTIME_OWNER_CHANGED', 409, {
           ownerId: route.ownerId,
           ownerUrl: route.ownerUrl,
@@ -255,22 +277,33 @@ export class OwnerAwareRuntimeRouter {
           });
         }
         const routeKey = `${route.ownerId}:${route.generation}`;
-        if (attempt > 0 && routeKey === lastRouteKey && lastFailure) throw lastFailure;
+        const repeatedSameRoute = attempt > 0 && routeKey === lastRouteKey;
+        if (repeatedSameRoute && lastFailure && !replaySafe) throw lastFailure;
         lastRouteKey = routeKey;
+        this.record('http_proxy_attempt', { ownerId: route.ownerId, generation: route.generation, attempt: attempt + 1, transport: 'http' });
         try {
-          return await this.#forwardHttp({ route, method, path: normalizedPath, body, headers });
+          const startedAt = Date.now();
+          const value = await this.#forwardHttp({ route, method, path: normalizedPath, body, headers });
+          this.record('http_proxy_success', { ownerId: route.ownerId, generation: route.generation, attempt: attempt + 1, transport: 'http', outcome: replaySafe ? 'idempotent' : 'standard', durationMs: Date.now() - startedAt });
+          return value;
         } catch (error) {
           lastFailure = error;
-          if (!RETRYABLE_OWNER_ERRORS.has(error?.code) || attempt >= this.maxRetries) throw error;
+          this.record('http_proxy_failure', { ownerId: route.ownerId, generation: route.generation, attempt: attempt + 1, transport: 'http', code: error?.code });
+          if (!canRetry(error) || attempt >= this.maxRetries) throw error;
+          this.record('http_proxy_retry', { ownerId: route.ownerId, generation: route.generation, attempt: attempt + 2, transport: 'http', code: error?.code, outcome: replaySafe ? 'idempotent' : 'owner_change' });
           continue;
         }
       }
 
       try {
-        return await executeLocal();
+        const startedAt = Date.now();
+        const value = await executeLocal();
+        this.record('http_local_success', { ownerId: this.instanceId, generation: route.generation, attempt: attempt + 1, transport: 'http', durationMs: Date.now() - startedAt });
+        return value;
       } catch (error) {
         lastFailure = error;
-        if (incoming.routed || !RETRYABLE_OWNER_ERRORS.has(error?.code) || attempt >= this.maxRetries) throw error;
+        this.record('http_local_failure', { ownerId: this.instanceId, generation: route.generation, attempt: attempt + 1, transport: 'http', code: error?.code });
+        if (incoming.routed || !canRetry(error) || attempt >= this.maxRetries) throw error;
       }
     }
     throw lastFailure ?? routingError('Falha ao resolver owner do runtime.', 'RUNTIME_ROUTING_FAILED', 503);
@@ -287,8 +320,10 @@ export class OwnerAwareRuntimeRouter {
     };
     const cookie = headerValue(headers, 'cookie');
     const authorization = headerValue(headers, 'authorization');
+    const idempotencyKey = headerValue(headers, 'x-idempotency-key');
     if (cookie) forwardedHeaders.cookie = cookie;
     if (authorization) forwardedHeaders.authorization = authorization;
+    if (idempotencyKey) forwardedHeaders['x-idempotency-key'] = idempotencyKey;
 
     try {
       const response = await this.fetchImpl(target, {
