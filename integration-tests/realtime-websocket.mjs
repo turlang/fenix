@@ -53,7 +53,7 @@ const config = createConfig({
   PORT: '3001',
   CORS_ALLOWED_ORIGINS: 'http://localhost:3000'
 });
-const app = createApiApp({
+const app = await createApiApp({
   config,
   sessionService,
   narrator: null,
