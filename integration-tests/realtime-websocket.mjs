@@ -61,9 +61,17 @@ const app = await createApiApp({
   realtimeGateway: gateway
 });
 
+let socket = null;
+const hardTimeout = setTimeout(() => {
+  console.error('Realtime WebSocket integration excedeu 10s.');
+  socket?.terminate?.();
+  process.exitCode = 1;
+}, 10_000);
+hardTimeout.unref?.();
+
 try {
   await app.ready();
-  const socket = await app.injectWS('/v1/realtime?sessionId=integration-session&clientId=player-1&role=player&actorId=hero-ayla&name=Ayla');
+  socket = await app.injectWS('/v1/realtime?sessionId=integration-session&clientId=player-1&role=player&actorId=hero-ayla&name=Ayla');
 
   const statePromise = waitForType(socket, 'STATE_SYNC');
   socket.send(JSON.stringify({ type: 'REQUEST_STATE', commandId: 'state-1', payload: {} }));
@@ -90,8 +98,12 @@ try {
   assert.equal(tokenEvent.payload.token.id, 'hero-ayla');
   assert.equal(narrationEvent.payload.metadata.roomId, '03');
 
-  socket.close();
   console.log('Realtime WebSocket integration OK');
 } finally {
+  clearTimeout(hardTimeout);
+  if (socket) {
+    socket.terminate?.();
+    if (socket.readyState < 2) socket.close?.();
+  }
   await app.close();
 }
