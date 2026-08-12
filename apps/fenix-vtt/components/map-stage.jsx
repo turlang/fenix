@@ -6,6 +6,7 @@ import {
   createDemoRoomEnteredEvent,
   demoScene,
   demoTokens,
+  demoViewport,
   findRoomZone
 } from '../lib/demo-scene.js';
 
@@ -43,7 +44,7 @@ export function MapStage({
       setBackend(detected === 'webgpu' ? 'webgl2 · WebGPU ready' : 'webgl2');
       rendererRef.current = renderer;
       renderer.loadScene(demoScene);
-      renderer.setViewport({ x: 230, y: 160, zoom: 0.82 });
+      renderer.setViewport(demoViewport);
       for (const token of tokensRef.current.values()) renderer.upsertToken(token);
 
       const loop = () => {
@@ -127,8 +128,19 @@ export function MapStage({
     })).catch(() => undefined);
   }
 
+  const backgroundStyle = demoScene.background ? {
+    width: `${demoScene.width}px`,
+    height: `${demoScene.height}px`,
+    backgroundImage: `url("${demoScene.background}")`,
+    transform: `translate(${-demoViewport.x * demoViewport.zoom}px, ${-demoViewport.y * demoViewport.zoom}px) scale(${demoViewport.zoom})`
+  } : undefined;
+
   return (
     <section className="map-stage" aria-label="Mapa tático">
+      {demoScene.background ? (
+        <div className="map-background-layer" style={backgroundStyle} aria-hidden="true" />
+      ) : null}
+
       <div className="map-hud map-hud-top">
         <span className="status-dot" aria-hidden="true" />
         <span>Renderer: {backend}</span>
