@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 
 const editorSource = await readFile(new URL('../apps/fenix-vtt/components/advanced-vision-editor.jsx', import.meta.url), 'utf8');
 const fogSource = await readFile(new URL('../apps/fenix-vtt/components/fog-of-war-overlay.jsx', import.meta.url), 'utf8');
+const floorOverlaySource = await readFile(new URL('../apps/fenix-vtt/components/floor-region-overlay.jsx', import.meta.url), 'utf8');
 const lightingSource = await readFile(new URL('../apps/fenix-vtt/components/dynamic-lighting-overlay.jsx', import.meta.url), 'utf8');
 const routeSource = await readFile(new URL('../apps/api/src/http/register-scene-routes.js', import.meta.url), 'utf8');
 const serverSource = await readFile(new URL('../apps/api/src/server.js', import.meta.url), 'utf8');
@@ -22,6 +23,16 @@ test('editor expõe visão, níveis, voo, altura corporal e piso automático', (
   assert.match(editorSource, /Fonte de luz pessoal anexada ao token/);
   assert.match(editorSource, /SceneRegionKind/);
   assert.match(editorSource, /updateSceneRegions/);
+});
+
+test('Mestre possui overlay visual de pisos e badges de Z sobre o battlemap', () => {
+  assert.match(floorOverlaySource, /if \(!isGm \|\| !scene \|\| !viewport\) return null/);
+  assert.match(floorOverlaySource, /Pisos · \{regions\.length\}/);
+  assert.match(floorOverlaySource, /floor-region-shape region-\$\{region\.kind\}/);
+  assert.match(floorOverlaySource, /floor-region-live-arrow/);
+  assert.match(floorOverlaySource, /floor-region-token-z/);
+  assert.match(fogSource, /FloorRegionOverlay/);
+  assert.match(fogSource, /viewport=\{viewport\}/);
 });
 
 test('Fog usa alcance e elevação individuais e só aplica sentidos especiais na visão ativa', () => {
