@@ -98,7 +98,7 @@ Arraste e teclado passam pela mesma política local e depois pela mesma autorida
 
 O zoom do mapa por roda do mouse é registrado diretamente no `canvas` com `addEventListener('wheel', ..., { passive: false })`. Isso permite cancelar o scroll da página com `preventDefault()` sem provocar o erro do Chrome `Unable to preventDefault inside passive event listener invocation`.
 
-O listener é removido no cleanup do componente/troca de cena. O cálculo de zoom continua usando `zoomViewportAt()`, preservando o ponto do mundo sob o cursor e os mesmos limites de zoom usados pelos botões `+` e `−`.
+O listener é removido no cleanup do componente e recriado quando a cena/dimensões mudam. O cálculo de zoom continua usando `zoomViewportAt()`, preservando o ponto do mundo sob o cursor e os mesmos limites de zoom usados pelos botões `+` e `−`.
 
 ## Fog of War e colisão
 
