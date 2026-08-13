@@ -55,6 +55,10 @@ Se uma tentativa de movimento é bloqueada, qualquer `roomEntry` enviado junto �
 
 O registro de exploração continua acontecendo depois do comando realtime e usa `result.token.x/y`. Como `result.token` já contém a posição resolvida pelo Collision Engine, uma tentativa bloqueada não revela células atrás da parede.
 
+### Estabilidade durante drag
+
+A exploração transitória do Fog é idempotente: se o token continua vendo exatamente o mesmo conjunto de células, o estado React existente é reutilizado em vez de criar um novo array. O conjunto de tokens usado pelo Dynamic Lighting durante o drag também é memoizado. Isso impede ciclos de renderização durante `pointermove` e evita o erro `Maximum update depth exceeded` observado no Chrome durante a validação física.
+
 ## Dynamic Lighting
 
 A configuração persistente da cena agora possui:
@@ -97,6 +101,8 @@ SVG overlay alinhado ao viewport
 ```
 
 A camada visual aplica escuridão ambiente e recorta as regiões iluminadas com os polígonos de LOS. Fog continua acima da iluminação, portanto uma fonte de luz não revela automaticamente áreas que o personagem ainda não pode ver.
+
+O editor sincroniza o estado persistido por uma assinatura estável do conteúdo de `scene.lighting`, e não pela identidade do objeto React. Isso evita resets e atualizações recursivas quando um objeto semanticamente igual é reconstruído pela camada de composição.
 
 ## Fontes anexadas a tokens
 
@@ -149,19 +155,18 @@ React / SVG
 
 ## Gates automatizados
 
-A CI deste marco valida separadamente:
+O marco possui gates para:
 
-- colisão contra parede, porta fechada, porta trancada e porta aberta;
-- bounds da cena e saída segura de sobreposição inicial;
-- rejeição de `roomEntry` quando o movimento é bloqueado;
-- propagação da posição autoritativa no evento realtime e no ACK;
-- normalização e limites das fontes de luz;
-- sombra por LOS e passagem de luz por porta aberta;
-- fontes anexadas a tokens;
-- persistência de iluminação GM-only;
-- autorização HTTP real de iluminação com Fastify;
-- fronteira arquitetural impedindo colisão/luz no `SessionDirector`;
-- build do VTT standalone junto aos gates PostgreSQL/realtime existentes.
+- colisão por parede e portas fechadas/trancadas;
+- passagem por porta aberta;
+- limites da cena;
+- room-entry bloqueado quando o movimento não atravessa a parede;
+- normalização e persistência de iluminação;
+- sombras por LOS;
+- fonte anexada a token;
+- autorização HTTP GM-only para iluminação;
+- fronteira arquitetural mantendo colisão/iluminação fora do `SessionDirector`;
+- estabilidade de renderização do Fog e do editor de iluminação durante drag.
 
 ## Limites deliberados deste marco
 
