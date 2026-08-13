@@ -1,0 +1,138 @@
+/* Fenix VTT scene-control layout contract: each control family owns one canvas zone. */
+
+.scene-tool-palette {
+  left: 70px;
+  width: 148px;
+  max-height: calc(100% - 28px);
+  overflow-y: auto;
+}
+
+/* Never stack an inspector underneath the contextual tool palette. */
+.scene-layer-inspector {
+  top: 14px !important;
+  left: 228px !important;
+  width: min(360px, calc(100% - 620px)) !important;
+  min-width: 280px;
+  max-height: calc(100% - 28px);
+  overflow: auto;
+  transform: none !important;
+}
+
+/* The active scene already exists in the navigation rail for the GM. */
+.has-gm-controls .map-room-label {
+  display: none;
+}
+
+/* Camera owns the top-right corner. Remove the old centering transform. */
+.has-gm-controls .map-camera-toolbar {
+  left: auto;
+  right: 14px;
+  top: 14px;
+  transform: none;
+}
+
+/* Runtime diagnostics move away from the camera into the bottom-right corner. */
+.has-gm-controls .map-hud-top {
+  top: auto;
+  right: 14px;
+  bottom: 14px;
+  max-width: min(430px, calc(100% - 28px));
+  opacity: .78;
+  pointer-events: none;
+}
+
+.has-gm-controls .map-hud-bottom {
+  left: 14px;
+}
+
+/* Region properties live below camera controls, never in the same top-right slot. */
+.scene-region-legend {
+  top: 62px;
+  right: 14px;
+  max-height: calc(100% - 76px);
+}
+
+@media (max-width: 1120px) {
+  .scene-tool-palette {
+    width: 136px;
+  }
+
+  .scene-layer-inspector {
+    left: 210px !important;
+    width: min(320px, calc(100% - 544px)) !important;
+    min-width: 250px;
+  }
+
+  .scene-region-legend {
+    width: 264px;
+  }
+}
+
+@media (max-width: 860px) {
+  .scene-layer-controls {
+    top: 8px;
+    left: 8px;
+    width: 42px;
+  }
+
+  .scene-layer-controls button {
+    width: 30px;
+  }
+
+  .scene-layer-controls button > small {
+    display: none;
+  }
+
+  .scene-tool-palette {
+    top: 8px;
+    left: 55px;
+    width: 126px;
+    max-height: 46%;
+  }
+
+  .scene-layer-inspector {
+    top: 8px !important;
+    left: 190px !important;
+    right: 8px !important;
+    width: auto !important;
+    min-width: 0;
+    max-height: 46%;
+  }
+
+  .scene-region-legend {
+    top: auto;
+    bottom: 8px;
+    right: 8px;
+    width: min(292px, calc(100% - 71px));
+    max-height: 45%;
+  }
+
+  .has-gm-controls .map-camera-toolbar {
+    top: auto;
+    right: 8px;
+    bottom: 8px;
+  }
+
+  .has-gm-controls .map-hud-top {
+    display: none;
+  }
+}
+
+@media (max-width: 620px) {
+  .scene-tool-palette {
+    width: 118px;
+  }
+
+  .scene-layer-inspector {
+    top: 230px !important;
+    left: 55px !important;
+    right: 8px !important;
+    max-height: calc(100% - 238px);
+  }
+
+  .scene-region-legend {
+    left: 55px;
+    right: 8px;
+    width: auto;
+  }
+}
