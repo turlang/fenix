@@ -134,7 +134,31 @@ Regras de UX:
 
 A representação visual usa uma camada SVG alinhada ao mesmo viewport do mapa. O modelo persistente continua em coordenadas de mundo e não depende do DOM nem do WebGL.
 
-Colisão, Fog of War e line-of-sight não fazem parte do authoring atual; essas etapas consomem o contrato `scene-geometry` depois que a edição estiver validada isoladamente.
+### Fog of War + visão por token
+
+`Fog` abre a configuração da cena. O Mestre define alcance em células e os níveis de opacidade para área explorada e nunca vista. O painel também permite limpar a memória de exploração da cena de forma explícita.
+
+`Visão` é um preview exclusivo do Mestre: ele aplica o mesmo Fog que um jogador veria, usando o ator atualmente selecionado no Context Rail. O Mestre pode desligar o preview a qualquer momento e voltar à visão irrestrita do mapa.
+
+Para jogadores, o Fog ativo é automático e usa somente o token associado ao `membership.actorId`.
+
+Estados visuais:
+
+```text
+não explorado    → quase totalmente encoberto
+já explorado     → escurecido, preservando memória espacial
+visão atual      → mapa sem máscara
+```
+
+A máscara acompanha pan/zoom e o movimento do token no mesmo viewport do battlemap. Durante o drag, a visão é atualizada localmente para resposta imediata; a memória persistente é calculada pelo Engine a partir do `TOKEN_MOVE` já autorizado.
+
+Paredes e portas afetam a visão sem mudar o fluxo de edição: paredes, portas fechadas e portas trancadas bloqueiam LOS; portas abertas liberam a passagem visual.
+
+O cliente jogador nunca recebe a memória de exploração de outros personagens. `SCENE_UPDATED` funciona como invalidação e cada cliente recarrega via HTTP autenticado o estado de Fog filtrado para sua membership.
+
+Recalibrar tamanho ou offsets da grade limpa a memória explorada porque as células mudam de posição lógica. Alterar apenas a visibilidade da grade não apaga a memória.
+
+Colisão física e iluminação dinâmica continuam fora deste marco; ambas devem consumir `scene-geometry`/`scene-vision` sem acoplar regras gráficas ao Shared Core narrativo.
 
 ## Mobile
 
@@ -152,4 +176,4 @@ O mapa completo continua disponível, mas não é o fluxo principal em telas peq
 
 ## Limite arquitetural
 
-Componentes Next.js nunca importam `RulesService`, `NarrationService`, Groq ou adapters de VTT. A UI conversa com Application/API; o renderer conversa com `MapRendererPort`; o Engine recebe eventos universais definidos em `packages/vtt-contracts`. O contrato puro `scene-geometry` pode ser consumido pelo editor e pelo realtime, mas o `SessionDirector` narrativo não conhece authoring de mapa.
+Componentes Next.js nunca importam `RulesService`, `NarrationService`, Groq ou adapters de VTT. A UI conversa com Application/API; o renderer conversa com `MapRendererPort`; o Engine recebe eventos universais definidos em `packages/vtt-contracts`. Os contratos puros `scene-geometry` e `scene-vision` podem ser consumidos pelo editor/overlay e pela infraestrutura de cena, mas o `SessionDirector` narrativo não conhece authoring, Fog ou line-of-sight.
