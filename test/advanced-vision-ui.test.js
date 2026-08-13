@@ -16,12 +16,12 @@ test('editor expõe visão normal, darkvision, infravision, alcance, elevação 
   assert.match(editorSource, /visionProfiles/);
 });
 
-test('Fog usa alcance individual e passa perfil/polígono para Dynamic Lighting', () => {
+test('Fog usa alcance individual e só aplica sentidos especiais na visão ativa', () => {
   assert.match(fogSource, /resolveTokenVisionProfile/);
   assert.match(fogSource, /visionRangeCells: visionProfile\.rangeCells/);
   assert.match(fogSource, /maxDistance: visionProfile\.rangeCells/);
-  assert.match(fogSource, /visionProfile=\{visionProfile\}/);
-  assert.match(fogSource, /visionPolygon=\{visibility\}/);
+  assert.match(fogSource, /visionProfile=\{active \? visionProfile : null\}/);
+  assert.match(fogSource, /visionPolygon=\{active \? visibility : \[\]\}/);
   assert.match(fogSource, /active=\{true\}/);
 });
 
