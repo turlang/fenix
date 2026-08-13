@@ -153,6 +153,13 @@ export class FenixApiClient {
     });
   }
 
+  updateSceneFog(campaignId, sceneId, fog) {
+    return this.request(`/v1/campaigns/${encodeURIComponent(campaignId)}/scenes/${encodeURIComponent(sceneId)}/fog`, {
+      method: 'POST',
+      body: fog
+    });
+  }
+
   activateScene(campaignId, sceneId) {
     return this.request(`/v1/campaigns/${encodeURIComponent(campaignId)}/scenes/${encodeURIComponent(sceneId)}/activate`, {
       method: 'POST'
