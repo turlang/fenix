@@ -19,6 +19,12 @@ function exploredForActor(fog = {}, actorId = null) {
   return [];
 }
 
+function sameCells(first, second) {
+  if (first === second) return true;
+  if (!Array.isArray(first) || !Array.isArray(second) || first.length !== second.length) return false;
+  return first.every((value, index) => value === second[index]);
+}
+
 function exploredPath(cells, grid) {
   return cells.map((key) => {
     const rect = cellKeyToRect(key, grid);
@@ -52,7 +58,7 @@ export function FogOfWarOverlay({
   const [exploredCells, setExploredCells] = useState(persisted);
 
   useEffect(() => {
-    setExploredCells(persisted);
+    setExploredCells((current) => sameCells(current, persisted) ? current : [...persisted]);
   }, [scene?.id, actorId, persisted]);
 
   const actorToken = useMemo(() => {
@@ -70,7 +76,10 @@ export function FogOfWarOverlay({
       sceneHeight: scene.height,
       visionRangeCells: fog.visionRangeCells
     });
-    setExploredCells((current) => [...mergeExploredCells(current, discovered)]);
+    setExploredCells((current) => {
+      const merged = mergeExploredCells(current, discovered);
+      return sameCells(current, merged) ? current : [...merged];
+    });
   }, [
     active,
     actorToken?.x,
@@ -109,11 +118,13 @@ export function FogOfWarOverlay({
     scene?.walls
   ]);
 
+  const lightingTokens = useMemo(() => {
+    if (!transientToken?.id) return tokens;
+    return (Array.isArray(tokens) ? tokens : []).map((token) => token?.id === transientToken.id ? transientToken : token);
+  }, [tokens, transientToken]);
+
   if (!scene || !viewport) return null;
 
-  const lightingTokens = transientToken?.id
-    ? (Array.isArray(tokens) ? tokens : []).map((token) => token?.id === transientToken.id ? transientToken : token)
-    : tokens;
   const lighting = (
     <DynamicLightingOverlay
       scene={scene}
