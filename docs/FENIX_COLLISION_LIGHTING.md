@@ -147,6 +147,22 @@ React / SVG
 
 `SessionDirector` não conhece colisão, fontes de luz, ray casting, React, WebGL, Fastify ou persistência de cena.
 
+## Gates automatizados
+
+A CI deste marco valida separadamente:
+
+- colisão contra parede, porta fechada, porta trancada e porta aberta;
+- bounds da cena e saída segura de sobreposição inicial;
+- rejeição de `roomEntry` quando o movimento é bloqueado;
+- propagação da posição autoritativa no evento realtime e no ACK;
+- normalização e limites das fontes de luz;
+- sombra por LOS e passagem de luz por porta aberta;
+- fontes anexadas a tokens;
+- persistência de iluminação GM-only;
+- autorização HTTP real de iluminação com Fastify;
+- fronteira arquitetural impedindo colisão/luz no `SessionDirector`;
+- build do VTT standalone junto aos gates PostgreSQL/realtime existentes.
+
 ## Limites deliberados deste marco
 
 Ainda não fazem parte desta entrega:
