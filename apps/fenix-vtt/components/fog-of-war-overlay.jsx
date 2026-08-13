@@ -8,6 +8,7 @@ import {
   normalizeSceneFog,
   visibleGridCells
 } from '../../../packages/scene-vision/src/index.js';
+import { DynamicLightingOverlay } from './dynamic-lighting-overlay.jsx';
 
 function exploredForActor(fog = {}, actorId = null) {
   if (!actorId) return [];
@@ -108,7 +109,21 @@ export function FogOfWarOverlay({
     scene?.walls
   ]);
 
-  if (!active || !fog.enabled || !scene || !viewport) return null;
+  if (!scene || !viewport) return null;
+
+  const lightingTokens = transientToken?.id
+    ? (Array.isArray(tokens) ? tokens : []).map((token) => token?.id === transientToken.id ? transientToken : token)
+    : tokens;
+  const lighting = (
+    <DynamicLightingOverlay
+      scene={scene}
+      tokens={lightingTokens}
+      viewport={viewport}
+      active
+    />
+  );
+
+  if (!active || !fog.enabled) return lighting;
 
   const transform = `translate(${-viewport.x * viewport.zoom}px, ${-viewport.y * viewport.zoom}px) scale(${viewport.zoom})`;
   const currentPoints = visibility.map((point) => `${point.x},${point.y}`).join(' ');
@@ -118,42 +133,45 @@ export function FogOfWarOverlay({
   const exploredMask = `fog-explored-${id}`;
 
   return (
-    <svg
-      className="fog-of-war-overlay"
-      width={scene.width}
-      height={scene.height}
-      viewBox={`0 0 ${scene.width} ${scene.height}`}
-      style={{ transform }}
-      aria-hidden="true"
-    >
-      <defs>
-        <mask id={unexploredMask} maskUnits="userSpaceOnUse" x="0" y="0" width={scene.width} height={scene.height}>
-          <rect width={scene.width} height={scene.height} fill="white" />
-          {!noToken && explored ? <path d={explored} fill="black" /> : null}
-          {!noToken && currentPoints ? <polygon points={currentPoints} fill="black" /> : null}
-        </mask>
-        <mask id={exploredMask} maskUnits="userSpaceOnUse" x="0" y="0" width={scene.width} height={scene.height}>
-          <rect width={scene.width} height={scene.height} fill="black" />
-          {!noToken && explored ? <path d={explored} fill="white" /> : null}
-          {!noToken && currentPoints ? <polygon points={currentPoints} fill="black" /> : null}
-        </mask>
-      </defs>
-      <rect
-        className="fog-unexplored"
+    <>
+      {lighting}
+      <svg
+        className="fog-of-war-overlay"
         width={scene.width}
         height={scene.height}
-        opacity={fog.unexploredOpacity}
-        mask={`url(#${unexploredMask})`}
-      />
-      {!noToken ? (
+        viewBox={`0 0 ${scene.width} ${scene.height}`}
+        style={{ transform }}
+        aria-hidden="true"
+      >
+        <defs>
+          <mask id={unexploredMask} maskUnits="userSpaceOnUse" x="0" y="0" width={scene.width} height={scene.height}>
+            <rect width={scene.width} height={scene.height} fill="white" />
+            {!noToken && explored ? <path d={explored} fill="black" /> : null}
+            {!noToken && currentPoints ? <polygon points={currentPoints} fill="black" /> : null}
+          </mask>
+          <mask id={exploredMask} maskUnits="userSpaceOnUse" x="0" y="0" width={scene.width} height={scene.height}>
+            <rect width={scene.width} height={scene.height} fill="black" />
+            {!noToken && explored ? <path d={explored} fill="white" /> : null}
+            {!noToken && currentPoints ? <polygon points={currentPoints} fill="black" /> : null}
+          </mask>
+        </defs>
         <rect
-          className="fog-explored"
+          className="fog-unexplored"
           width={scene.width}
           height={scene.height}
-          opacity={fog.exploredOpacity}
-          mask={`url(#${exploredMask})`}
+          opacity={fog.unexploredOpacity}
+          mask={`url(#${unexploredMask})`}
         />
-      ) : null}
-    </svg>
+        {!noToken ? (
+          <rect
+            className="fog-explored"
+            width={scene.width}
+            height={scene.height}
+            opacity={fog.exploredOpacity}
+            mask={`url(#${exploredMask})`}
+          />
+        ) : null}
+      </svg>
+    </>
   );
 }
