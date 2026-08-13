@@ -177,6 +177,16 @@ const realtimeGateway = {
       hub: realtimeHub,
       sessionService: scopedSessionService,
       authorizePeer,
+      resolveTokenVerticalState: ({ actorId }) => {
+        const campaign = campaignService.findCampaignBySessionId?.(sessionId) ?? null;
+        const sceneId = realtimeHub.getSnapshot(sessionId).scene?.id ?? campaign?.activeSceneId ?? null;
+        if (!campaign?.id || !sceneId || !actorId) return {};
+        return sceneService.resolveRuntimeVerticalState({
+          campaignId: campaign.id,
+          sceneId,
+          actorId
+        });
+      },
       logger
     });
     const peer = gateway.openPeer(input);
@@ -211,7 +221,8 @@ const realtimeGateway = {
                   sceneId,
                   actorId: result.token.id,
                   x: result.token.x,
-                  y: result.token.y
+                  y: result.token.y,
+                  elevation: result.token.elevation
                 }).catch((error) => {
                   logger.warn?.('[Fênix][Fog] falha ao persistir exploração autoritativa', {
                     campaignId: ownership.campaignId,

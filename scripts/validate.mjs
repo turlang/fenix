@@ -21,16 +21,21 @@ const required = [
   'apps/fenix-vtt/app/live-bridge.css',
   'apps/fenix-vtt/app/wall-authoring.css',
   'apps/fenix-vtt/app/fog-of-war.css',
+  'apps/fenix-vtt/app/advanced-vision.css',
+  'apps/fenix-vtt/app/dynamic-lighting.css',
   'apps/fenix-vtt/components/auth-campaign-gate.jsx',
   'apps/fenix-vtt/components/vtt-shell.jsx',
   'apps/fenix-vtt/components/map-stage.jsx',
   'apps/fenix-vtt/components/fog-of-war-overlay.jsx',
+  'apps/fenix-vtt/components/advanced-vision-editor.jsx',
+  'apps/fenix-vtt/components/dynamic-lighting-overlay.jsx',
   'apps/fenix-vtt/components/session-provider.jsx',
   'apps/fenix-vtt/lib/demo-scene.js',
   'apps/fenix-vtt/lib/fenix-api-client.js',
   'apps/fenix-vtt/lib/realtime-client.js',
   'apps/fenix-vtt/lib/session-state.js',
   'apps/fenix-vtt/lib/browser-audio-queue.js',
+  'apps/fenix-vtt/lib/token-input-movement.js',
   'apps/fenix-vtt/next.config.mjs',
   'packages/core/src/index.js',
   'packages/vtt-contracts/src/index.js',
@@ -38,7 +43,10 @@ const required = [
   'packages/map-renderer-port/src/index.js',
   'packages/webgl-map-renderer/src/index.js',
   'packages/scene-geometry/src/index.js',
+  'packages/scene-collision/src/index.js',
   'packages/scene-vision/src/index.js',
+  'packages/scene-lighting/src/index.js',
+  'packages/scene-elevation/src/index.js',
   'packages/session-director/src/index.js',
   'packages/session-runtime/src/index.js',
   'packages/persistent-session-service/src/index.js',
@@ -92,7 +100,8 @@ const required = [
   'docs/FENIX_VTT_UI_UX.md',
   'docs/FENIX_AUTH_PERSISTENCE.md',
   'docs/FENIX_WALLS_DOORS.md',
-  'docs/FENIX_FOG_LOS.md'
+  'docs/FENIX_FOG_LOS.md',
+  'docs/FENIX_ELEVATION_LEVELS.md'
 ];
 for (const file of required) await access(new URL(`../${file}`, import.meta.url));
 
@@ -125,12 +134,15 @@ const standaloneUiFiles = [
   'apps/fenix-vtt/components/vtt-shell.jsx',
   'apps/fenix-vtt/components/map-stage.jsx',
   'apps/fenix-vtt/components/fog-of-war-overlay.jsx',
+  'apps/fenix-vtt/components/advanced-vision-editor.jsx',
+  'apps/fenix-vtt/components/dynamic-lighting-overlay.jsx',
   'apps/fenix-vtt/components/session-provider.jsx',
   'apps/fenix-vtt/lib/demo-scene.js',
   'apps/fenix-vtt/lib/fenix-api-client.js',
   'apps/fenix-vtt/lib/realtime-client.js',
   'apps/fenix-vtt/lib/session-state.js',
-  'apps/fenix-vtt/lib/browser-audio-queue.js'
+  'apps/fenix-vtt/lib/browser-audio-queue.js',
+  'apps/fenix-vtt/lib/token-input-movement.js'
 ];
 const forbiddenUiImports = [
   'RulesService',
@@ -166,9 +178,12 @@ for (const marker of [
   'RuntimeObservability',
   'RemoteMapImporter',
   'recordExploration',
+  'resolveTokenVerticalState',
+  'resolveRuntimeVerticalState',
+  'elevation: result.token.elevation',
   "message.type === 'TOKEN_MOVE'"
 ]) {
-  if (!serverSource.includes(marker)) throw new Error(`Composition root distribuído/Fog incompleto: ${marker}.`);
+  if (!serverSource.includes(marker)) throw new Error(`Composition root distribuído/Fog/elevação incompleto: ${marker}.`);
 }
 if (serverSource.includes('createDevelopmentPeerAuthorizer')) {
   throw new Error('Composition root de produção não pode usar authorizer realtime de desenvolvimento.');
@@ -178,12 +193,24 @@ for (const marker of ['REMOTE_MAP_PRIVATE_HOST_FORBIDDEN', 'resolvePublicRemoteH
   if (!remoteMapSource.includes(marker)) throw new Error(`Importador remoto sem hardening obrigatório: ${marker}.`);
 }
 const geometrySource = await readFile(new URL('../packages/scene-geometry/src/index.js', import.meta.url), 'utf8');
-for (const marker of ['SceneWallKind', 'SceneDoorState', 'normalizeSceneWalls', 'wallBlocksMovement', 'wallBlocksVision']) {
+for (const marker of ['SceneWallKind', 'SceneDoorState', 'normalizeSceneWalls', 'wallBlocksMovement', 'wallBlocksVision', 'bottomElevation', 'topElevation']) {
   if (!geometrySource.includes(marker)) throw new Error(`Contrato de geometria de cena incompleto: ${marker}.`);
 }
+const collisionSource = await readFile(new URL('../packages/scene-collision/src/index.js', import.meta.url), 'utf8');
+for (const marker of ['resolveTokenMovement', 'verticalEnabled', 'tokenVerticalBand', 'wallIntersectsVerticalBand']) {
+  if (!collisionSource.includes(marker)) throw new Error(`Contrato de colisão vertical incompleto: ${marker}.`);
+}
+const elevationSource = await readFile(new URL('../packages/scene-elevation/src/index.js', import.meta.url), 'utf8');
+for (const marker of ['TokenMovementMode', 'normalizeSceneElevation', 'normalizeTokenVerticalProfile', 'wallIntersectsVerticalBand', 'wallContainsElevation', 'eyeElevation', 'clampFlyingElevation']) {
+  if (!elevationSource.includes(marker)) throw new Error(`Contrato 2.5D de elevação incompleto: ${marker}.`);
+}
 const visionSource = await readFile(new URL('../packages/scene-vision/src/index.js', import.meta.url), 'utf8');
-for (const marker of ['normalizeSceneFog', 'hasLineOfSight', 'computeVisibilityPolygon', 'visibleGridCells', 'mergeExploredCells']) {
-  if (!visionSource.includes(marker)) throw new Error(`Contrato de visão/Fog incompleto: ${marker}.`);
+for (const marker of ['normalizeSceneFog', 'hasLineOfSight', 'computeVisibilityPolygon', 'visibleGridCells', 'mergeExploredCells', 'originElevation', 'targetElevation', 'wallContainsElevation']) {
+  if (!visionSource.includes(marker)) throw new Error(`Contrato de visão/Fog vertical incompleto: ${marker}.`);
+}
+const lightingSource = await readFile(new URL('../packages/scene-lighting/src/index.js', import.meta.url), 'utf8');
+for (const marker of ['normalizeSceneLighting', 'computeSceneLightPolygons', 'resolveLightOrigin', 'elevation', 'verticalEnabled']) {
+  if (!lightingSource.includes(marker)) throw new Error(`Contrato de iluminação vertical incompleto: ${marker}.`);
 }
 const sceneServiceSource = await readFile(new URL('../packages/campaign-scene-service/src/index.js', import.meta.url), 'utf8');
 for (const marker of [
@@ -191,15 +218,18 @@ for (const marker of [
   'normalizeSceneWalls',
   'updateFog',
   'recordExploration',
+  'resolveRuntimeVerticalState',
+  'normalizeSceneElevation',
+  'eyeElevation',
   'visibleGridCells',
   'exploredByActor',
   'exploredCells',
   "requireRole(campaignId, userId, 'gm')"
 ]) {
-  if (!sceneServiceSource.includes(marker)) throw new Error(`Scene Manager sem authoring/Fog persistente: ${marker}.`);
+  if (!sceneServiceSource.includes(marker)) throw new Error(`Scene Manager sem authoring/Fog/elevação persistente: ${marker}.`);
 }
 const sceneRoutesSource = await readFile(new URL('../apps/api/src/http/register-scene-routes.js', import.meta.url), 'utf8');
-for (const marker of ['scenes/:sceneId/walls', 'scenes/:sceneId/fog']) {
+for (const marker of ['scenes/:sceneId/walls', 'scenes/:sceneId/fog', 'sceneElevation: request.body?.sceneElevation']) {
   if (!sceneRoutesSource.includes(marker)) throw new Error(`Endpoint de cena ausente: ${marker}.`);
 }
 const mapStageSource = await readFile(new URL('../apps/fenix-vtt/components/map-stage.jsx', import.meta.url), 'utf8');
@@ -207,8 +237,12 @@ for (const marker of ['FogOfWarOverlay', 'onFogChanged', 'fogPreview', 'Visão']
   if (!mapStageSource.includes(marker)) throw new Error(`MapStage sem UI de Fog/LOS: ${marker}.`);
 }
 const fogOverlaySource = await readFile(new URL('../apps/fenix-vtt/components/fog-of-war-overlay.jsx', import.meta.url), 'utf8');
-for (const marker of ['computeVisibilityPolygon', 'visibleGridCells', 'exploredByActor', 'exploredCells']) {
-  if (!fogOverlaySource.includes(marker)) throw new Error(`Overlay de Fog incompleto: ${marker}.`);
+for (const marker of ['computeVisibilityPolygon', 'visibleGridCells', 'exploredByActor', 'exploredCells', 'observerElevation', 'verticalEnabled']) {
+  if (!fogOverlaySource.includes(marker)) throw new Error(`Overlay de Fog vertical incompleto: ${marker}.`);
+}
+const advancedVisionSource = await readFile(new URL('../apps/fenix-vtt/components/advanced-vision-editor.jsx', import.meta.url), 'utf8');
+for (const marker of ['Níveis da cena', 'Voo / Z variável', 'Altura do corpo', 'sceneElevation', 'Aplicar faixa padrão às paredes', 'moveVertical']) {
+  if (!advancedVisionSource.includes(marker)) throw new Error(`Editor de visão/elevação incompleto: ${marker}.`);
 }
 const directorSource = await readFile(new URL('../packages/session-director/src/index.js', import.meta.url), 'utf8');
 for (const forbidden of [
@@ -224,11 +258,16 @@ for (const forbidden of [
   'asset-storage',
   'SceneWallKind',
   'scene-geometry',
+  'scene-collision',
   'scene-vision',
+  'scene-lighting',
+  'scene-elevation',
+  'TokenMovementMode',
   'computeVisibilityPolygon',
-  'visibleGridCells'
+  'visibleGridCells',
+  'clampFlyingElevation'
 ]) {
-  if (directorSource.includes(forbidden)) throw new Error(`SessionDirector não pode conhecer infraestrutura/authoring/visão: ${forbidden}.`);
+  if (directorSource.includes(forbidden)) throw new Error(`SessionDirector não pode conhecer infraestrutura/authoring/visão/elevação: ${forbidden}.`);
 }
 const persistenceSource = await readFile(new URL('../packages/persistence-repository/src/index.js', import.meta.url), 'utf8');
 for (const marker of ['PostgresFenixRepository', 'FOR UPDATE', "import('pg')", 'setChangePublisher']) {
@@ -255,8 +294,8 @@ for (const marker of ["app.get('/ready'", "app.get('/metrics'", "app.get('/v1/ru
   if (!appSource.includes(marker)) throw new Error(`Borda operacional incompleta: ${marker}.`);
 }
 const realtimeSource = await readFile(new URL('../packages/realtime-session-gateway/src/index.js', import.meta.url), 'utf8');
-for (const marker of ['normalizeSceneWalls', 'SCENE_UPDATED', 'REALTIME_SCENE_FORBIDDEN']) {
-  if (!realtimeSource.includes(marker)) throw new Error(`Realtime sem geometria autoritativa: ${marker}.`);
+for (const marker of ['normalizeSceneWalls', 'SCENE_UPDATED', 'REALTIME_SCENE_FORBIDDEN', 'resolveTokenVerticalState', 'clampFlyingElevation', 'movementMode', 'verticalEnabled']) {
+  if (!realtimeSource.includes(marker)) throw new Error(`Realtime sem geometria/elevação autoritativa: ${marker}.`);
 }
 const realtimeClientSource = await readFile(new URL('../apps/fenix-vtt/lib/realtime-client.js', import.meta.url), 'utf8');
 if (/searchParams\.set\(['"](?:role|actorId|userId)['"]/.test(realtimeClientSource)) {

@@ -1,4 +1,5 @@
 import { computeVisibilityPolygon, hasLineOfSight } from '../../scene-vision/src/index.js';
+import { normalizeElevationValue } from '../../scene-elevation/src/index.js';
 
 const MAX_LIGHT_SOURCES = 128;
 const DEFAULT_COLOR = '#f2c66f';
@@ -49,6 +50,7 @@ export function normalizeLightSource(input = {}, {
     enabled: input.enabled !== false,
     x: Math.round(clamp(finite(input.x), 0, width) * 100) / 100,
     y: Math.round(clamp(finite(input.y), 0, height) * 100) / 100,
+    elevation: normalizeElevationValue(input.elevation, 0),
     radiusCells: Math.round(clamp(finite(input.radiusCells, 6), 1, 60)),
     intensity: Math.round(clamp(finite(input.intensity, 1), 0.1, 1) * 100) / 100,
     color: color(input.color),
@@ -79,9 +81,17 @@ export function normalizeSceneLighting(input = {}, options = {}) {
 export function resolveLightOrigin(source, tokens = []) {
   if (source?.attachedTokenId) {
     const token = (Array.isArray(tokens) ? tokens : []).find((item) => item?.id === source.attachedTokenId);
-    if (token) return Object.freeze({ x: finite(token.x), y: finite(token.y) });
+    if (token) return Object.freeze({
+      x: finite(token.x),
+      y: finite(token.y),
+      elevation: normalizeElevationValue(token.elevation, source?.elevation ?? 0)
+    });
   }
-  return Object.freeze({ x: finite(source?.x), y: finite(source?.y) });
+  return Object.freeze({
+    x: finite(source?.x),
+    y: finite(source?.y),
+    elevation: normalizeElevationValue(source?.elevation, 0)
+  });
 }
 
 export function computeSceneLightPolygons({
@@ -90,7 +100,8 @@ export function computeSceneLightPolygons({
   grid = {},
   sceneWidth,
   sceneHeight,
-  tokens = []
+  tokens = [],
+  verticalEnabled = false
 } = {}) {
   const lighting = normalizeSceneLighting(lightingInput, { sceneWidth, sceneHeight, idFactory: () => 'preview-light' });
   if (!lighting.enabled) return Object.freeze([]);
@@ -103,7 +114,9 @@ export function computeSceneLightPolygons({
       walls,
       sceneWidth,
       sceneHeight,
-      maxDistance: radius
+      maxDistance: radius,
+      verticalEnabled,
+      elevation: origin.elevation
     });
     return Object.freeze({
       source,
@@ -114,7 +127,15 @@ export function computeSceneLightPolygons({
   }));
 }
 
-export function lightContributionAtPoint({ source, point, tokens = [], walls = [], grid = {} } = {}) {
+export function lightContributionAtPoint({
+  source,
+  point,
+  tokens = [],
+  walls = [],
+  grid = {},
+  verticalEnabled = false,
+  pointElevation = 0
+} = {}) {
   if (!source?.enabled) return 0;
   const origin = resolveLightOrigin(source, tokens);
   const gridSize = Math.max(1, finite(grid.size, 70));
@@ -123,7 +144,12 @@ export function lightContributionAtPoint({ source, point, tokens = [], walls = [
   const dy = finite(point?.y) - origin.y;
   const distance = Math.hypot(dx, dy);
   if (distance > radius) return 0;
-  if (!hasLineOfSight(origin, point, walls, { maxDistance: radius })) return 0;
+  if (!hasLineOfSight(origin, point, walls, {
+    maxDistance: radius,
+    verticalEnabled,
+    originElevation: origin.elevation,
+    targetElevation: pointElevation
+  })) return 0;
   const falloff = 1 - distance / radius;
   return Math.round(clamp(falloff * finite(source.intensity, 1), 0, 1) * 1000) / 1000;
 }

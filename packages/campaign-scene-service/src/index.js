@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { normalizeSceneWalls } from '../../scene-geometry/src/index.js';
 import { normalizeSceneLighting } from '../../scene-lighting/src/index.js';
+import { eyeElevation, normalizeSceneElevation } from '../../scene-elevation/src/index.js';
 import {
   mergeExploredCells,
   normalizeExploredCells,
@@ -80,6 +81,11 @@ function ensureSceneLighting(scene) {
   return scene.lighting;
 }
 
+function ensureSceneElevation(scene) {
+  scene.elevation = structuredClone(normalizeSceneElevation(scene.elevation ?? {}));
+  return scene.elevation;
+}
+
 function ensureSceneVisionProfiles(scene) {
   const fogConfig = normalizeSceneFog(scene.fog ?? {});
   scene.visionProfiles = structuredClone(normalizeTokenVisionProfiles(scene.visionProfiles ?? {}, {
@@ -120,6 +126,14 @@ function publicLighting(scene) {
   });
 }
 
+function publicElevation(scene) {
+  const elevation = ensureSceneElevation(scene);
+  return Object.freeze({
+    ...elevation,
+    levels: Object.freeze(elevation.levels.map((level) => Object.freeze({ ...level })))
+  });
+}
+
 function publicVisionProfiles(scene) {
   const profiles = ensureSceneVisionProfiles(scene);
   return Object.freeze(Object.fromEntries(
@@ -146,6 +160,7 @@ function publicScene(scene, assets = [], membership = null) {
     walls: sceneWalls(scene),
     fog: publicFog(scene, membership),
     lighting: publicLighting(scene),
+    elevation: publicElevation(scene),
     visionProfiles: publicVisionProfiles(scene),
     backgroundAssetId: scene.backgroundAssetId ?? null,
     backgroundAsset: publicAsset(asset),
@@ -163,6 +178,7 @@ function ensureCollections(campaign) {
     if (!Array.isArray(scene.walls)) scene.walls = [];
     ensureSceneFog(scene);
     ensureSceneLighting(scene);
+    ensureSceneElevation(scene);
     ensureSceneVisionProfiles(scene);
   }
   return campaign;
@@ -188,6 +204,22 @@ export class CampaignSceneService {
       scenes: campaign.scenes.map((scene) => publicScene(scene, campaign.assets, membership)),
       assets: campaign.assets.map(publicAsset)
     };
+  }
+
+  resolveRuntimeVerticalState({ campaignId, sceneId, actorId } = {}) {
+    const campaign = this.campaignService.getRaw?.(campaignId);
+    if (!campaign) throw sceneError('Campanha não encontrada.', 'CAMPAIGN_NOT_FOUND', 404);
+    ensureCollections(campaign);
+    const scene = campaign.scenes.find((item) => item.id === String(sceneId));
+    if (!scene) throw sceneError('Cena não encontrada.', 'CAMPAIGN_SCENE_NOT_FOUND', 404);
+    const fog = ensureSceneFog(scene);
+    const profile = normalizeTokenVisionProfile(ensureSceneVisionProfiles(scene)[String(actorId)] ?? {}, {
+      defaultRangeCells: fog.visionRangeCells
+    });
+    return Object.freeze({
+      sceneElevation: publicElevation(scene),
+      profile: Object.freeze({ ...profile, personalLight: Object.freeze({ ...profile.personalLight }) })
+    });
   }
 
   async uploadMap({ campaignId, userId, fileName, mimeType, dataBase64 } = {}) {
@@ -255,6 +287,9 @@ export class CampaignSceneService {
       },
       lighting: {
         ...normalizeSceneLighting({ enabled: false, darkness: 0.78, sources: [] })
+      },
+      elevation: {
+        ...normalizeSceneElevation({ enabled: false })
       },
       visionProfiles: {},
       createdAt: now,
@@ -328,6 +363,7 @@ export class CampaignSceneService {
     exploredOpacity,
     unexploredOpacity,
     visionProfiles,
+    sceneElevation,
     resetExploration = false
   } = {}) {
     const { campaign, membership } = this.campaignService.requireRole(campaignId, userId, 'gm');
@@ -352,6 +388,11 @@ export class CampaignSceneService {
       }));
     } else {
       ensureSceneVisionProfiles(scene);
+    }
+    if (sceneElevation !== undefined) {
+      scene.elevation = structuredClone(normalizeSceneElevation(sceneElevation));
+    } else {
+      ensureSceneElevation(scene);
     }
     scene.updatedAt = now;
     campaign.updatedAt = now;
@@ -388,7 +429,7 @@ export class CampaignSceneService {
     };
   }
 
-  async recordExploration({ campaignId, userId, sceneId, actorId, x, y } = {}) {
+  async recordExploration({ campaignId, userId, sceneId, actorId, x, y, elevation = undefined } = {}) {
     const { campaign, membership } = this.campaignService.requireRole(campaignId, userId);
     ensureCollections(campaign);
     const scene = campaign.scenes.find((item) => item.id === String(sceneId));
@@ -404,13 +445,18 @@ export class CampaignSceneService {
     const visionProfile = normalizeTokenVisionProfile(ensureSceneVisionProfiles(scene)[actor] ?? {}, {
       defaultRangeCells: fog.visionRangeCells
     });
+    const elevationConfig = ensureSceneElevation(scene);
+    const observerElevation = eyeElevation(visionProfile, elevation ?? visionProfile.elevation);
     const discoveredCells = visibleGridCells({
       origin: { x, y },
       walls: sceneWalls(scene),
       grid: scene.grid,
       sceneWidth: scene.width,
       sceneHeight: scene.height,
-      visionRangeCells: visionProfile.rangeCells
+      visionRangeCells: visionProfile.rangeCells,
+      verticalEnabled: elevationConfig.enabled,
+      originElevation: observerElevation,
+      targetElevation: observerElevation
     });
     const previous = fog.exploredByActor[actor] ?? [];
     const merged = mergeExploredCells(previous, discoveredCells);

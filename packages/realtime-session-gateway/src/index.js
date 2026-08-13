@@ -1,6 +1,13 @@
 import { normalizeSceneWalls } from '../../scene-geometry/src/index.js';
 import { resolveTokenMovement } from '../../scene-collision/src/index.js';
 import { normalizeSceneLighting } from '../../scene-lighting/src/index.js';
+import {
+  TokenMovementMode,
+  clampFlyingElevation,
+  normalizeElevationValue,
+  normalizeSceneElevation,
+  normalizeTokenVerticalProfile
+} from '../../scene-elevation/src/index.js';
 
 const MAX_COORDINATE = 1_000_000;
 
@@ -52,6 +59,13 @@ function normalizeRole(value) {
   return value === RealtimeRole.PLAYER ? RealtimeRole.PLAYER : RealtimeRole.GM;
 }
 
+function normalizeVerticalState(input = {}) {
+  return Object.freeze({
+    sceneElevation: normalizeSceneElevation(input.sceneElevation ?? {}),
+    profile: normalizeTokenVerticalProfile(input.profile ?? {})
+  });
+}
+
 export function normalizeRealtimeIdentity(input = {}) {
   const clientId = boundedText(input.clientId, 120);
   if (!clientId) throw gatewayError('clientId é obrigatório.', 'REALTIME_CLIENT_ID_REQUIRED');
@@ -72,11 +86,15 @@ export function normalizeRealtimeIdentity(input = {}) {
 export function normalizeRealtimeToken(input = {}) {
   const id = boundedText(input.id, 200);
   if (!id) throw gatewayError('Token sem id.', 'REALTIME_TOKEN_ID_REQUIRED');
+  const requestedMode = String(input.movementMode ?? TokenMovementMode.GROUND).trim().toLowerCase();
   return Object.freeze({
     id,
     name: boundedText(input.name, 200, id),
     x: finiteCoordinate(input.x, 'token.x'),
     y: finiteCoordinate(input.y, 'token.y'),
+    elevation: normalizeElevationValue(input.elevation, 0),
+    height: Math.max(0.2, Math.min(20, Number(input.height) || 1.8)),
+    movementMode: requestedMode === TokenMovementMode.FLYING ? TokenMovementMode.FLYING : TokenMovementMode.GROUND,
     size: Math.max(1, Math.min(1000, Number(input.size) || 80)),
     visible: input.visible !== false
   });
@@ -260,31 +278,63 @@ export class RealtimeSessionHub {
     return true;
   }
 
-  applyTokenMove(sessionId, identity, input = {}) {
+  applyTokenMove(sessionId, identity, input = {}, verticalStateInput = {}) {
     const session = this.ensureSession(sessionId);
-    const requestedToken = normalizeRealtimeToken(input.token ?? input);
+    const rawToken = input.token ?? input;
+    const requestedToken = normalizeRealtimeToken(rawToken);
     if (identity.role !== RealtimeRole.GM && identity.actorId !== requestedToken.id) {
       throw gatewayError('Jogador só pode mover o próprio token.', 'REALTIME_TOKEN_FORBIDDEN', 403);
     }
 
+    const verticalState = normalizeVerticalState(verticalStateInput);
+    const profile = verticalState.profile;
+    const elevationConfig = verticalState.sceneElevation;
     const previousToken = session.tokens.get(requestedToken.id) ?? null;
+    const requestedHasElevation = Object.prototype.hasOwnProperty.call(rawToken ?? {}, 'elevation');
+    const previousElevation = previousToken?.elevation ?? profile.elevation;
+    let authoritativeElevation = profile.elevation;
+    if (elevationConfig.enabled) {
+      if (identity.role === RealtimeRole.GM) {
+        authoritativeElevation = requestedHasElevation ? requestedToken.elevation : previousElevation;
+      } else if (profile.movementMode === TokenMovementMode.FLYING) {
+        authoritativeElevation = requestedHasElevation
+          ? clampFlyingElevation({
+              previousElevation,
+              requestedElevation: requestedToken.elevation,
+              baseElevation: profile.elevation,
+              verticalStep: elevationConfig.verticalStep
+            })
+          : previousElevation;
+      }
+    }
+
+    const authoritativeRequestedToken = normalizeRealtimeToken({
+      ...requestedToken,
+      elevation: authoritativeElevation,
+      height: profile.height,
+      movementMode: profile.movementMode
+    });
     const ignoredWalls = identity.role === RealtimeRole.GM;
     const collision = session.scene ? resolveTokenMovement({
       from: previousToken,
-      to: requestedToken,
+      to: authoritativeRequestedToken,
       walls: ignoredWalls ? [] : (session.scene.walls ?? []),
       sceneWidth: session.scene.width,
       sceneHeight: session.scene.height,
-      tokenSize: requestedToken.size
+      tokenSize: authoritativeRequestedToken.size,
+      verticalEnabled: elevationConfig.enabled,
+      tokenElevation: authoritativeElevation,
+      tokenHeight: profile.height
     }) : {
-      position: { x: requestedToken.x, y: requestedToken.y },
+      position: { x: authoritativeRequestedToken.x, y: authoritativeRequestedToken.y },
       blocked: false,
       boundaryAdjusted: false,
       wallId: null,
-      fraction: 1
+      fraction: 1,
+      verticalEnabled: elevationConfig.enabled
     };
     const token = normalizeRealtimeToken({
-      ...requestedToken,
+      ...authoritativeRequestedToken,
       x: collision.position.x,
       y: collision.position.y
     });
@@ -297,13 +347,14 @@ export class RealtimeSessionHub {
         sessionId: session.id,
         revision: session.revision,
         token,
-        requested: { x: requestedToken.x, y: requestedToken.y },
+        requested: { x: requestedToken.x, y: requestedToken.y, elevation: requestedToken.elevation },
         collision: {
           blocked: collision.blocked === true,
           boundaryAdjusted: collision.boundaryAdjusted === true,
           wallId: collision.wallId ?? null,
           fraction: Number(collision.fraction) || 0,
-          ignoredWalls
+          ignoredWalls,
+          verticalEnabled: elevationConfig.enabled
         },
         by: identity.clientId
       }
@@ -327,7 +378,8 @@ export class RealtimeSessionHub {
     return {
       token,
       requestedToken,
-      collision: { ...collision, ignoredWalls },
+      collision: { ...collision, ignoredWalls, verticalEnabled: elevationConfig.enabled },
+      verticalState,
       revision: session.revision,
       roomChanged,
       shouldNarrate,
@@ -413,6 +465,7 @@ export class RealtimeSessionGateway {
     hub,
     sessionService,
     authorizePeer = defaultAuthorizer,
+    resolveTokenVerticalState = null,
     maxMessagesPerWindow = 60,
     messageWindowMs = 10_000,
     logger = console
@@ -422,6 +475,7 @@ export class RealtimeSessionGateway {
     this.hub = hub;
     this.sessionService = sessionService;
     this.authorizePeer = authorizePeer;
+    this.resolveTokenVerticalState = typeof resolveTokenVerticalState === 'function' ? resolveTokenVerticalState : null;
     this.maxMessagesPerWindow = Math.max(10, Number(maxMessagesPerWindow) || 60);
     this.messageWindowMs = Math.max(1000, Number(messageWindowMs) || 10_000);
     this.logger = logger;
@@ -463,7 +517,14 @@ export class RealtimeSessionGateway {
     const commandId = message.commandId;
     switch (message.type) {
       case RealtimeCommandType.TOKEN_MOVE: {
-        const moved = this.hub.applyTokenMove(sessionId, identity, message.payload);
+        const actorId = boundedText(message.payload?.token?.id ?? message.payload?.id, 200);
+        const resolvedVertical = this.resolveTokenVerticalState
+          ? this.resolveTokenVerticalState({ sessionId, identity, actorId })
+          : {};
+        if (resolvedVertical && typeof resolvedVertical.then === 'function') {
+          throw new TypeError('resolveTokenVerticalState precisa ser síncrono nesta camada.');
+        }
+        const moved = this.hub.applyTokenMove(sessionId, identity, message.payload, resolvedVertical ?? {});
         try {
           if (moved.shouldNarrate) {
             await this.sessionService.describeRoom(moved.roomEntry);
@@ -479,12 +540,15 @@ export class RealtimeSessionGateway {
           revision: moved.revision,
           roomChanged: moved.roomChanged,
           narrated: moved.shouldNarrate,
+          elevation: moved.token.elevation,
+          movementMode: moved.token.movementMode,
           collision: {
             blocked: moved.collision?.blocked === true,
             boundaryAdjusted: moved.collision?.boundaryAdjusted === true,
             wallId: moved.collision?.wallId ?? null,
             fraction: Number(moved.collision?.fraction) || 0,
-            ignoredWalls: moved.collision?.ignoredWalls === true
+            ignoredWalls: moved.collision?.ignoredWalls === true,
+            verticalEnabled: moved.collision?.verticalEnabled === true
           }
         });
         return moved;

@@ -134,6 +134,7 @@ export function registerSceneRoutes(app, { authService, sceneService }) {
         exploredOpacity: request.body?.exploredOpacity,
         unexploredOpacity: request.body?.unexploredOpacity,
         visionProfiles: request.body?.visionProfiles,
+        sceneElevation: request.body?.sceneElevation,
         resetExploration: request.body?.resetExploration === true
       });
     } catch (error) {

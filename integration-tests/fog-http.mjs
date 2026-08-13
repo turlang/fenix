@@ -85,7 +85,27 @@ try {
     method: 'POST',
     url: `/v1/campaigns/${campaign.id}/scenes/${scene.id}/fog`,
     headers: { cookie: gmCookie },
-    payload: { enabled: true, visionRangeCells: 10, exploredOpacity: 0.45, unexploredOpacity: 0.95 }
+    payload: {
+      enabled: true,
+      visionRangeCells: 10,
+      exploredOpacity: 0.45,
+      unexploredOpacity: 0.95,
+      visionProfiles: {
+        'hero-ayla': { mode: 'darkvision', rangeCells: 8, elevation: 4, height: 1.8, movementMode: 'flying' }
+      },
+      sceneElevation: {
+        enabled: true,
+        unit: 'm',
+        levelHeight: 3,
+        verticalStep: 1,
+        defaultWallBottom: 0,
+        defaultWallTop: 3,
+        levels: [
+          { id: 'ground', name: 'Térreo', elevation: 0 },
+          { id: 'bridge', name: 'Ponte', elevation: 4 }
+        ]
+      }
+    }
   });
   assert.equal(configured.statusCode, 200);
   assert.deepEqual(configured.json().scene.fog, {
@@ -95,6 +115,11 @@ try {
     unexploredOpacity: 0.95,
     exploredByActor: {}
   });
+  assert.equal(configured.json().scene.elevation.enabled, true);
+  assert.equal(configured.json().scene.elevation.verticalStep, 1);
+  assert.equal(configured.json().scene.elevation.levels[1].name, 'Ponte');
+  assert.equal(configured.json().scene.visionProfiles['hero-ayla'].movementMode, 'flying');
+  assert.equal(configured.json().scene.visionProfiles['hero-ayla'].elevation, 4);
 
   const invite = await app.inject({
     method: 'POST',
@@ -121,7 +146,11 @@ try {
     method: 'POST',
     url: `/v1/campaigns/${campaign.id}/scenes/${scene.id}/fog`,
     headers: { cookie: playerCookie },
-    payload: { enabled: false }
+    payload: {
+      enabled: false,
+      sceneElevation: { enabled: false },
+      visionProfiles: { 'hero-ayla': { elevation: 999, movementMode: 'flying' } }
+    }
   });
   assert.equal(forbidden.statusCode, 403);
 
@@ -131,12 +160,15 @@ try {
     headers: { cookie: playerCookie }
   });
   assert.equal(playerCatalog.statusCode, 200);
-  const playerFog = playerCatalog.json().scenes[0].fog;
+  const playerScene = playerCatalog.json().scenes[0];
+  const playerFog = playerScene.fog;
   assert.equal(playerFog.enabled, true);
   assert.ok(Array.isArray(playerFog.exploredCells));
   assert.equal('exploredByActor' in playerFog, false);
+  assert.equal(playerScene.elevation.enabled, true);
+  assert.equal(playerScene.visionProfiles['hero-ayla'].elevation, 4, 'tentativa do jogador não pode alterar Z persistido');
 
-  console.log('Fog HTTP integration OK');
+  console.log('Fog + elevation HTTP integration OK');
 } finally {
   await app.close();
   await rm(assetRoot, { recursive: true, force: true });
