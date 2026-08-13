@@ -196,6 +196,8 @@ Os gates deste marco cobrem:
 - Fog usando o Z aceito;
 - compatibilidade dos gates anteriores de voo, colisão, LOS, iluminação e infraestrutura distribuída.
 
+A CI deste marco deve manter verdes Node 20/22/24, validator modular, HTTP de autenticação/Fog/Lighting, PostgreSQL, coordenação distribuída, idempotência, routing, WebSocket e build standalone. O gate específico de Floor Regions exige também persistência GM-only, `regions: []` para jogador e cálculo de piso no composition root antes do movimento realtime.
+
 ## Limites deliberados
 
 Ainda não fazem parte desta fase:
