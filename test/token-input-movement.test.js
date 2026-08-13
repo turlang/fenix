@@ -92,6 +92,7 @@ test('MapStage aplica colisão durante pointermove e mantém noclip visual do Me
   assert.match(mapStageSource, /const requested = \{ \.\.\.current, x: hit\.world\.x, y: hit\.world\.y \};/);
   assert.match(mapStageSource, /resolveClientTokenMovement\(\{\s*previousToken: current,\s*requestedToken: requested,\s*scene,\s*ignoreWalls: canMoveAny\s*\}\)/);
   assert.match(mapStageSource, /const moved = resolved\?\.token \?\? requested;/);
+  assert.match(mapStageSource, /setDragVisionToken\(moved\);/);
   assert.match(mapStageSource, /const zone = roomZoneAt\(\{ x: moved\.x, y: moved\.y \}\);/);
   assert.doesNotMatch(mapStageSource, /const moved = \{ \.\.\.current, x: hit\.world\.x, y: hit\.world\.y \};/);
 });
