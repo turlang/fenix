@@ -10,6 +10,7 @@ import {
 } from '../apps/fenix-vtt/lib/token-input-movement.js';
 
 const shellSource = await readFile(new URL('../apps/fenix-vtt/components/vtt-shell.jsx', import.meta.url), 'utf8');
+const mapStageSource = await readFile(new URL('../apps/fenix-vtt/components/map-stage.jsx', import.meta.url), 'utf8');
 
 test('WASD e setas usam direções gamer equivalentes', () => {
   assert.deepEqual(movementDirectionForKey('w'), { x: 0, y: -1 });
@@ -84,4 +85,13 @@ test('VttShell aplica guarda local no drag e registra WASD global com noclip do 
   assert.match(shellSource, /requestedTokenFromKeyboard\(token, event\.key/);
   assert.match(shellSource, /ignoreWalls: isGm/);
   assert.match(shellSource, /resolveSafeToken\(requested\)/);
+});
+
+test('MapStage aplica colisão durante pointermove e mantém noclip visual do Mestre', () => {
+  assert.match(mapStageSource, /import \{ resolveClientTokenMovement \} from '\.\.\/lib\/token-input-movement\.js';/);
+  assert.match(mapStageSource, /const requested = \{ \.\.\.current, x: hit\.world\.x, y: hit\.world\.y \};/);
+  assert.match(mapStageSource, /resolveClientTokenMovement\(\{\s*previousToken: current,\s*requestedToken: requested,\s*scene,\s*ignoreWalls: canMoveAny\s*\}\)/);
+  assert.match(mapStageSource, /const moved = resolved\?\.token \?\? requested;/);
+  assert.match(mapStageSource, /const zone = roomZoneAt\(\{ x: moved\.x, y: moved\.y \}\);/);
+  assert.doesNotMatch(mapStageSource, /const moved = \{ \.\.\.current, x: hit\.world\.x, y: hit\.world\.y \};/);
 });
