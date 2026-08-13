@@ -18,7 +18,7 @@ test('editor de iluminação sincroniza por assinatura estável de conteúdo', (
   assert.doesNotMatch(lightingSource, /\[scene\?\.id, scene\?\.lighting, scene\?\.width, scene\?\.height, editorOpen\]/);
 });
 
-test('zoom por scroll usa listener wheel não-passivo e não delegação passiva do React', () => {
+test('zoom por scroll usa listener wheel não-passivo e preserva zoom sob o cursor', () => {
   assert.match(mapStageSource, /const canvas = canvasRef\.current;\s*if \(!canvas\) return undefined;\s*canvas\.addEventListener\('wheel', handleWheel, \{ passive: false \}\)/);
   assert.match(mapStageSource, /removeEventListener\('wheel', handleWheel\)/);
   assert.match(mapStageSource, /function handleWheel\(event\) \{\s*event\.preventDefault\(\)/);
