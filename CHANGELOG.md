@@ -27,6 +27,10 @@ Este projeto segue o formato do [Keep a Changelog](https://keepachangelog.com/pt
 - `scene-geometry` com contrato puro para segmentos `wall`/`door`, estados `open`/`closed`/`locked`, snap à grade, distância e semântica futura de bloqueio de visão/movimento.
 - Walls + Doors Authoring no mapa standalone com desenho em dois cliques, portas, alternância de estado, apagar, desfazer, cancelar e salvar.
 - Endpoint GM-only `POST /v1/campaigns/:campaignId/scenes/:sceneId/walls` e persistência de geometria por cena.
+- `scene-vision` com ray-casting, line-of-sight, polígono de visão, células visíveis e memória de exploração por personagem.
+- Fog of War por cena com alcance em células, níveis de opacidade, preview do Mestre e visão automática do token do jogador.
+- Endpoint GM-only `POST /v1/campaigns/:campaignId/scenes/:sceneId/fog` para configurar Fog e opcionalmente limpar exploração.
+- Persistência autoritativa de exploração derivada de `TOKEN_MOVE` já autorizado, sem endpoint público para revelar células arbitrárias.
 
 ### Alterado
 
@@ -43,6 +47,9 @@ Este projeto segue o formato do [Keep a Changelog](https://keepachangelog.com/pt
 - O Scene Manager permite escolher `Arquivo` ou `URL`; o modo URL usa dimensões detectadas pelo Engine e não depende de CORS/hotlink depois da importação.
 - Cenas autoritativas agora carregam `walls` no catálogo, no snapshot persistente e em `SCENE_UPDATED`, mantendo a geometria sincronizada em reconnect/failover.
 - Validator arquitetural passa a exigir o contrato `scene-geometry` e impede que authoring de paredes vaze para o `SessionDirector`.
+- `SCENE_UPDATED` também invalida o catálogo local do standalone, permitindo que cada cliente recarregue Fog conforme sua membership sem transmitir histórico privado no broadcast.
+- Alterar tamanho ou offsets da grade limpa automaticamente a memória explorada, pois as chaves `col:row` deixam de representar a mesma posição; esconder/mostrar a grade preserva a exploração.
+- Validator arquitetural passa a exigir `scene-vision`, overlay de Fog e persistência autoritativa, mantendo LOS/Fog fora do `SessionDirector`.
 
 ### Segurança
 
@@ -57,6 +64,9 @@ Este projeto segue o formato do [Keep a Changelog](https://keepachangelog.com/pt
 - Mapas remotos obedecem timeout, limite de tamanho, assinatura PNG/JPEG/WEBP e limite de dimensões; a URL completa, query strings e tokens temporários não são persistidos.
 - Alteração de paredes/portas é autorizada como GM no servidor; jogadores podem receber a geometria da cena, mas não persistir `walls` nem publicar `SCENE_UPDATE` autoritativo.
 - Payloads de geometria são normalizados novamente no Engine, com limite de 2.000 segmentos, bounds de cena, tamanho mínimo e IDs únicos.
+- Configuração de Fog é GM-only e jogadores recebem somente a memória explorada do próprio `membership.actorId`.
+- A memória explorada é calculada no Engine a partir da posição normalizada de um `TOKEN_MOVE` já autorizado; o cliente não escolhe livremente células a revelar.
+- Quando o token do jogador não está disponível, o overlay fecha de forma segura e mantém a cena encoberta.
 
 ### Compatibilidade
 
@@ -66,7 +76,8 @@ Este projeto segue o formato do [Keep a Changelog](https://keepachangelog.com/pt
 - JSON continua single-instance sem lease/LISTEN/routing e usa ledger apenas em memória.
 - PostgreSQL coordena ownership, cache invalidation, failover, encaminhamento e idempotência de execução; a próxima fronteira distribuída continua sendo outbox durável/garantia de entrega de eventos realtime.
 - Mapas por URL são importados como cópia local; não existe dependência permanente do host remoto.
-- Walls + Doors Authoring não altera a lógica Foundry alpha.24 e ainda não aplica colisão, Fog of War, line-of-sight ou iluminação dinâmica; a próxima evolução do mapa consumirá a mesma geometria persistida.
+- Walls + Doors Authoring não altera a lógica Foundry alpha.24.
+- Fog/LOS usa a mesma geometria standalone e ainda não implementa colisão física, fontes de luz, darkvision, elevação ou iluminação dinâmica.
 
 ## [0.1.0-alpha.24] - 2026-07-21
 

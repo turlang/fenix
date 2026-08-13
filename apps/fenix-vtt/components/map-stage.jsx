@@ -9,6 +9,8 @@ import {
   pointToWallDistance,
   snapScenePoint
 } from '../../../packages/scene-geometry/src/index.js';
+import { normalizeSceneFog } from '../../../packages/scene-vision/src/index.js';
+import { FogOfWarOverlay } from './fog-of-war-overlay.jsx';
 import {
   createDemoRoomEnteredEvent,
   demoScene,
@@ -62,9 +64,11 @@ export function MapStage({
   onSelectedActor = null,
   onGridCalibrated = null,
   onWallsChanged = null,
+  onFogChanged = null,
   busy = false,
   canMoveAny = false,
-  movableActorId = null
+  movableActorId = null,
+  visionActorId = null
 }) {
   const canvasRef = useRef(null);
   const rendererRef = useRef(null);
@@ -88,6 +92,12 @@ export function MapStage({
   const [wallStart, setWallStart] = useState(null);
   const [wallHistory, setWallHistory] = useState([]);
   const [wallsSaving, setWallsSaving] = useState(false);
+  const [fogEditorOpen, setFogEditorOpen] = useState(false);
+  const [fogDraft, setFogDraft] = useState(() => normalizeSceneFog(scene.fog ?? {}));
+  const [fogSaving, setFogSaving] = useState(false);
+  const [fogPreview, setFogPreview] = useState(false);
+  const [resetExploration, setResetExploration] = useState(false);
+  const [dragVisionToken, setDragVisionToken] = useState(null);
   const demoZonesEnabled = scene.id === demoScene.id;
 
   useEffect(() => {
@@ -97,11 +107,20 @@ export function MapStage({
     setWallHistory([]);
     setWallStart(null);
     setWallEditorOpen(false);
+    setFogDraft(normalizeSceneFog(scene.fog ?? {}));
+    setFogEditorOpen(false);
+    setFogPreview(false);
+    setResetExploration(false);
+    setDragVisionToken(null);
   }, [scene.id, scene.grid?.size, scene.grid?.offsetX, scene.grid?.offsetY, scene.grid?.visible]);
 
   useEffect(() => {
     if (!wallEditorOpen) setWallDraft(cloneWalls(scene.walls));
   }, [scene.walls, wallEditorOpen]);
+
+  useEffect(() => {
+    if (!fogEditorOpen) setFogDraft(normalizeSceneFog(scene.fog ?? {}));
+  }, [scene.fog, fogEditorOpen]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -306,6 +325,7 @@ export function MapStage({
       roomEntry: currentZone ? createDemoRoomEnteredEvent(currentZone) : null
     };
     setSelected(hit.token.name);
+    setDragVisionToken({ ...hit.token });
     onSelectedActor?.(hit.token.id);
     event.currentTarget.setPointerCapture?.(event.pointerId);
     event.preventDefault();
@@ -330,6 +350,7 @@ export function MapStage({
     const moved = { ...current, x: hit.world.x, y: hit.world.y };
     tokensRef.current.set(moved.id, moved);
     renderer.upsertToken(moved);
+    setDragVisionToken(moved);
 
     const zone = roomZoneAt(hit.world);
     drag.roomId = zone?.room?.id ?? null;
@@ -348,13 +369,19 @@ export function MapStage({
     if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
       event.currentTarget.releasePointerCapture?.(event.pointerId);
     }
-    if (!drag || wallEditorOpen) return;
+    if (!drag || wallEditorOpen) {
+      setDragVisionToken(null);
+      return;
+    }
     const token = tokensRef.current.get(drag.tokenId);
-    if (!token) return;
+    if (!token) {
+      setDragVisionToken(null);
+      return;
+    }
     void Promise.resolve(onTokenMoved?.(token, {
       roomEntry: drag.roomEntry,
       roomId: drag.roomId
-    })).catch(() => undefined);
+    })).catch(() => undefined).finally(() => setDragVisionToken(null));
   }
 
   async function saveGrid() {
@@ -379,6 +406,22 @@ export function MapStage({
       setWallEditorOpen(false);
     } finally {
       setWallsSaving(false);
+    }
+  }
+
+  async function saveFog() {
+    if (!onFogChanged || !canMoveAny || demoZonesEnabled || fogSaving) return;
+    setFogSaving(true);
+    try {
+      const result = await onFogChanged(scene.id, {
+        ...normalizeSceneFog(fogDraft),
+        resetExploration
+      });
+      setFogDraft(normalizeSceneFog(result?.scene?.fog ?? fogDraft));
+      setResetExploration(false);
+      setFogEditorOpen(false);
+    } finally {
+      setFogSaving(false);
     }
   }
 
@@ -426,6 +469,9 @@ export function MapStage({
     backgroundSize: `${gridScreen.size}px ${gridScreen.size}px`,
     backgroundPosition: `${gridScreen.x}px ${gridScreen.y}px`
   };
+  const fogEnabled = scene.fog?.enabled === true;
+  const fogActive = fogEnabled && (!canMoveAny || fogPreview);
+  const resolvedVisionActorId = canMoveAny ? visionActorId : movableActorId;
 
   return (
     <section className={`map-stage map-tool-${tool} ${wallEditorOpen ? 'wall-authoring-active' : ''}`} aria-label="Mapa tático">
@@ -443,8 +489,10 @@ export function MapStage({
         <button type="button" onClick={fitScene} title="Ajustar mapa à tela">Ajustar</button>
         {canMoveAny && !demoZonesEnabled ? (
           <>
-            <button type="button" className={gridEditorOpen ? 'active' : ''} onClick={() => { setGridEditorOpen((value) => !value); setWallEditorOpen(false); }} title="Calibrar grade">Grade</button>
-            <button type="button" className={wallEditorOpen ? 'active' : ''} onClick={() => { setWallEditorOpen((value) => !value); setGridEditorOpen(false); setWallStart(null); setTool('select'); }} title="Editar paredes e portas">Paredes</button>
+            <button type="button" className={gridEditorOpen ? 'active' : ''} onClick={() => { setGridEditorOpen((value) => !value); setWallEditorOpen(false); setFogEditorOpen(false); }} title="Calibrar grade">Grade</button>
+            <button type="button" className={wallEditorOpen ? 'active' : ''} onClick={() => { setWallEditorOpen((value) => !value); setGridEditorOpen(false); setFogEditorOpen(false); setFogPreview(false); setWallStart(null); setTool('select'); }} title="Editar paredes e portas">Paredes</button>
+            <button type="button" className={fogEditorOpen ? 'active' : ''} onClick={() => { setFogEditorOpen((value) => !value); setGridEditorOpen(false); setWallEditorOpen(false); setFogPreview(false); }} title="Configurar Fog of War">Fog</button>
+            <button type="button" className={fogPreview ? 'vision-preview-active' : ''} disabled={!fogEnabled || !resolvedVisionActorId} onClick={() => { setFogPreview((value) => !value); setFogEditorOpen(false); setWallEditorOpen(false); }} title="Visualizar como o personagem selecionado">Visão</button>
           </>
         ) : null}
       </div>
@@ -495,11 +543,30 @@ export function MapStage({
         </div>
       ) : null}
 
+      {fogEditorOpen ? (
+        <div className="fog-config-panel">
+          <div className="fog-config-heading"><strong>Fog of War</strong><small>Visão por token</small></div>
+          <label className="fog-config-toggle"><input type="checkbox" checked={fogDraft.enabled} onChange={(event) => setFogDraft((fog) => ({ ...fog, enabled: event.target.checked }))} /> Ativar Fog nesta cena</label>
+          <label>Alcance de visão (células)<input type="number" min="1" max="60" step="1" value={fogDraft.visionRangeCells} onChange={(event) => setFogDraft((fog) => ({ ...fog, visionRangeCells: event.target.value }))} /></label>
+          <div className="fog-config-row">
+            <label>Opacidade explorada<input type="number" min="0" max="0.95" step="0.05" value={fogDraft.exploredOpacity} onChange={(event) => setFogDraft((fog) => ({ ...fog, exploredOpacity: event.target.value }))} /></label>
+            <label>Opacidade não vista<input type="number" min="0" max="1" step="0.05" value={fogDraft.unexploredOpacity} onChange={(event) => setFogDraft((fog) => ({ ...fog, unexploredOpacity: event.target.value }))} /></label>
+          </div>
+          <label className="fog-reset-toggle"><input type="checkbox" checked={resetExploration} onChange={(event) => setResetExploration(event.target.checked)} /> Limpar áreas exploradas ao salvar</label>
+          <small className="fog-config-help">Paredes e portas fechadas/trancadas bloqueiam a linha de visão. Portas abertas deixam a visão passar.</small>
+          <div className="fog-config-actions">
+            <button type="button" onClick={() => { setFogDraft(normalizeSceneFog(scene.fog ?? {})); setResetExploration(false); setFogEditorOpen(false); }}>Cancelar</button>
+            <button type="button" className="primary-button" disabled={fogSaving || busy} onClick={saveFog}>{fogSaving ? 'Salvando…' : 'Salvar Fog'}</button>
+          </div>
+        </div>
+      ) : null}
+
       <div className="map-hud map-hud-top">
         <span className="status-dot" aria-hidden="true" />
         <span>Renderer: {backend}</span>
         <span className="hud-divider" />
         <span>{busy ? 'Engine processando…' : 'Realtime autoritativo'}</span>
+        {!demoZonesEnabled ? <><span className="hud-divider" /><span className={`fog-status-chip ${fogEnabled ? 'active' : ''}`}>FOG {fogEnabled ? 'ON' : 'OFF'}</span></> : null}
       </div>
 
       <canvas
@@ -512,6 +579,15 @@ export function MapStage({
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerUp}
         onContextMenu={(event) => event.preventDefault()}
+      />
+
+      <FogOfWarOverlay
+        scene={scene}
+        tokens={authoritativeTokens}
+        actorId={resolvedVisionActorId}
+        viewport={viewport}
+        active={fogActive}
+        transientToken={dragVisionToken}
       />
 
       {canMoveAny && wallEditorOpen ? (
@@ -539,7 +615,7 @@ export function MapStage({
 
       <div className="map-hud map-hud-bottom">
         <span>Selecionado</span>
-        <strong>{wallEditorOpen ? `${wallDraft.length} segmentos` : selected}</strong>
+        <strong>{wallEditorOpen ? `${wallDraft.length} segmentos` : fogPreview ? `Visão: ${resolvedVisionActorId || 'selecione um ator'}` : selected}</strong>
       </div>
 
       {demoZonesEnabled ? (

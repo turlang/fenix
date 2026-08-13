@@ -100,6 +100,9 @@ jobs:
       - name: Test auth and campaign HTTP
         run: npm run test:auth-integration
 
+      - name: Test Fog HTTP authorization and privacy
+        run: npm run test:fog-integration
+
       - name: Test realtime WebSocket adapter
         run: npm run test:realtime-integration
 
