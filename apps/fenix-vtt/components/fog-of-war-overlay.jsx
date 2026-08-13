@@ -6,8 +6,11 @@ import {
   computeVisibilityPolygon,
   mergeExploredCells,
   normalizeSceneFog,
+  resolveTokenVisionProfile,
+  tokenVisionTint,
   visibleGridCells
 } from '../../../packages/scene-vision/src/index.js';
+import { AdvancedVisionEditor } from './advanced-vision-editor.jsx';
 import { DynamicLightingOverlay } from './dynamic-lighting-overlay.jsx';
 
 function exploredForActor(fog = {}, actorId = null) {
@@ -51,6 +54,12 @@ export function FogOfWarOverlay({
     scene?.fog?.exploredOpacity,
     scene?.fog?.unexploredOpacity
   ]);
+  const visionProfileSignature = JSON.stringify(scene?.visionProfiles?.[actorId] ?? {});
+  const visionProfile = useMemo(() => resolveTokenVisionProfile({
+    scene,
+    actorId,
+    fallbackRangeCells: fog.visionRangeCells
+  }), [scene?.id, actorId, fog.visionRangeCells, visionProfileSignature]);
   const persisted = useMemo(
     () => exploredForActor(scene?.fog, actorId),
     [scene?.fog, actorId]
@@ -74,7 +83,7 @@ export function FogOfWarOverlay({
       grid: scene.grid,
       sceneWidth: scene.width,
       sceneHeight: scene.height,
-      visionRangeCells: fog.visionRangeCells
+      visionRangeCells: visionProfile.rangeCells
     });
     setExploredCells((current) => {
       const merged = mergeExploredCells(current, discovered);
@@ -86,7 +95,7 @@ export function FogOfWarOverlay({
     actorToken?.y,
     actorToken?.id,
     fog.enabled,
-    fog.visionRangeCells,
+    visionProfile.rangeCells,
     scene?.id,
     scene?.width,
     scene?.height,
@@ -97,18 +106,16 @@ export function FogOfWarOverlay({
   ]);
 
   const visibility = useMemo(() => {
-    if (!active || !fog.enabled || !actorToken) return [];
+    if (!actorToken || !scene) return [];
     return computeVisibilityPolygon({
       origin: actorToken,
       walls: scene.walls ?? [],
       sceneWidth: scene.width,
       sceneHeight: scene.height,
-      maxDistance: fog.visionRangeCells * (Number(scene.grid?.size) || 70)
+      maxDistance: visionProfile.rangeCells * (Number(scene.grid?.size) || 70)
     });
   }, [
-    active,
-    fog.enabled,
-    fog.visionRangeCells,
+    visionProfile.rangeCells,
     actorToken?.x,
     actorToken?.y,
     actorToken?.id,
@@ -125,19 +132,43 @@ export function FogOfWarOverlay({
 
   if (!scene || !viewport) return null;
 
+  const transform = `translate(${-viewport.x * viewport.zoom}px, ${-viewport.y * viewport.zoom}px) scale(${viewport.zoom})`;
+  const currentPoints = visibility.map((point) => `${point.x},${point.y}`).join(' ');
+  const tint = tokenVisionTint(visionProfile.mode);
+  const advancedVisionEffect = active && currentPoints && tint.opacity > 0 ? (
+    <svg
+      className="fog-of-war-overlay advanced-vision-effect"
+      width={scene.width}
+      height={scene.height}
+      viewBox={`0 0 ${scene.width} ${scene.height}`}
+      style={{ transform }}
+      aria-hidden="true"
+    >
+      <polygon
+        className={`vision-mode-overlay vision-${visionProfile.mode}`}
+        points={currentPoints}
+        fill={tint.color}
+        opacity={tint.opacity}
+      />
+    </svg>
+  ) : null;
+
   const lighting = (
     <DynamicLightingOverlay
       scene={scene}
       tokens={lightingTokens}
       viewport={viewport}
-      active
+      active={true}
+      visionProfile={active ? visionProfile : null}
+      visionPolygon={active ? visibility : []}
     />
   );
+  const editor = <AdvancedVisionEditor scene={scene} actorId={actorId} tokens={lightingTokens} />;
 
-  if (!active || !fog.enabled) return lighting;
+  if (!active || !fog.enabled) {
+    return <>{lighting}{editor}</>;
+  }
 
-  const transform = `translate(${-viewport.x * viewport.zoom}px, ${-viewport.y * viewport.zoom}px) scale(${viewport.zoom})`;
-  const currentPoints = visibility.map((point) => `${point.x},${point.y}`).join(' ');
   const explored = exploredPath(exploredCells, scene.grid ?? {});
   const noToken = !actorToken || visibility.length < 3;
   const unexploredMask = `fog-unexplored-${id}`;
@@ -183,6 +214,8 @@ export function FogOfWarOverlay({
           />
         ) : null}
       </svg>
+      {advancedVisionEffect}
+      {editor}
     </>
   );
 }

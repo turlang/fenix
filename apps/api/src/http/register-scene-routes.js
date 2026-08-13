@@ -133,6 +133,7 @@ export function registerSceneRoutes(app, { authService, sceneService }) {
         visionRangeCells: request.body?.visionRangeCells,
         exploredOpacity: request.body?.exploredOpacity,
         unexploredOpacity: request.body?.unexploredOpacity,
+        visionProfiles: request.body?.visionProfiles,
         resetExploration: request.body?.resetExploration === true
       });
     } catch (error) {

@@ -5,6 +5,10 @@ import {
   computeSceneLightPolygons,
   normalizeSceneLighting
 } from '../../../packages/scene-lighting/src/index.js';
+import {
+  normalizeTokenVisionProfiles,
+  tokenVisionTint
+} from '../../../packages/scene-vision/src/index.js';
 import { useFenixSession } from './session-provider.jsx';
 
 function lightId() {
@@ -24,11 +28,33 @@ function editableLighting(input, scene) {
   };
 }
 
+function personalLightSources(scene) {
+  const profiles = normalizeTokenVisionProfiles(scene?.visionProfiles ?? {}, {
+    defaultRangeCells: Number(scene?.fog?.visionRangeCells) || 8
+  });
+  return Object.entries(profiles).flatMap(([actorId, profile]) => {
+    if (!profile.personalLight.enabled) return [];
+    return [{
+      id: `vision-personal-${actorId}`.slice(0, 120),
+      name: `Luz pessoal · ${actorId}`.slice(0, 120),
+      enabled: true,
+      x: 0,
+      y: 0,
+      radiusCells: profile.personalLight.radiusCells,
+      intensity: profile.personalLight.intensity,
+      color: profile.personalLight.color,
+      attachedTokenId: actorId
+    }];
+  });
+}
+
 export function DynamicLightingOverlay({
   scene,
   tokens = [],
   viewport,
-  active = true
+  active = true,
+  visionProfile = null,
+  visionPolygon = []
 }) {
   const rawId = useId();
   const id = rawId.replace(/[^a-zA-Z0-9_-]/g, '') || 'lighting';
@@ -37,16 +63,30 @@ export function DynamicLightingOverlay({
   const [saving, setSaving] = useState(false);
   const [draft, setDraft] = useState(() => editableLighting(scene?.lighting, scene));
   const lightingSignature = JSON.stringify(scene?.lighting ?? {});
+  const visionProfilesSignature = JSON.stringify(scene?.visionProfiles ?? {});
 
   useEffect(() => {
     if (!editorOpen) setDraft(editableLighting(scene?.lighting, scene));
   }, [scene?.id, lightingSignature, scene?.width, scene?.height, editorOpen]);
 
-  const lighting = useMemo(() => normalizeSceneLighting(scene?.lighting ?? {}, {
-    sceneWidth: scene?.width,
-    sceneHeight: scene?.height,
-    idFactory: lightId
-  }), [scene?.lighting, scene?.width, scene?.height]);
+  const lighting = useMemo(() => {
+    const base = normalizeSceneLighting(scene?.lighting ?? {}, {
+      sceneWidth: scene?.width,
+      sceneHeight: scene?.height,
+      idFactory: lightId
+    });
+    const baseIds = new Set(base.sources.map((source) => source.id));
+    const derived = personalLightSources(scene).filter((source) => !baseIds.has(source.id));
+    return normalizeSceneLighting({
+      enabled: base.enabled,
+      darkness: base.darkness,
+      sources: [...base.sources, ...derived].slice(0, 128)
+    }, {
+      sceneWidth: scene?.width,
+      sceneHeight: scene?.height,
+      idFactory: lightId
+    });
+  }, [lightingSignature, visionProfilesSignature, scene?.width, scene?.height, scene?.fog?.visionRangeCells]);
 
   const lights = useMemo(() => {
     if (!active || !lighting.enabled || !scene) return [];
@@ -105,6 +145,12 @@ export function DynamicLightingOverlay({
   const overlay = active && lighting.enabled && scene && viewport ? (() => {
     const transform = `translate(${-viewport.x * viewport.zoom}px, ${-viewport.y * viewport.zoom}px) scale(${viewport.zoom})`;
     const maskId = `darkness-mask-${id}`;
+    const visionPoints = Array.isArray(visionPolygon)
+      ? visionPolygon.map((point) => `${point.x},${point.y}`).join(' ')
+      : '';
+    const tint = tokenVisionTint(visionProfile?.mode);
+    const remainingDarkness = Math.round(255 * (1 - tint.darknessBypass));
+    const visionMaskFill = `rgb(${remainingDarkness},${remainingDarkness},${remainingDarkness})`;
     return (
       <svg
         className="dynamic-lighting-overlay"
@@ -131,6 +177,9 @@ export function DynamicLightingOverlay({
           ))}
           <mask id={maskId} maskUnits="userSpaceOnUse" x="0" y="0" width={scene.width} height={scene.height}>
             <rect width={scene.width} height={scene.height} fill="white" />
+            {visionPoints && tint.darknessBypass > 0 ? (
+              <polygon points={visionPoints} fill={visionMaskFill} />
+            ) : null}
             {lights.map(({ source, polygon }) => {
               const points = polygon.map((point) => `${point.x},${point.y}`).join(' ');
               return points ? (
@@ -188,7 +237,7 @@ export function DynamicLightingOverlay({
             <div className="lighting-config-panel">
               <div className="lighting-config-heading">
                 <strong>Iluminação dinâmica</strong>
-                <small>{draft.sources.length} fontes</small>
+                <small>{draft.sources.length} fontes manuais</small>
               </div>
               <label className="lighting-enable-toggle">
                 <input type="checkbox" checked={draft.enabled} onChange={(event) => setDraft((current) => ({ ...current, enabled: event.target.checked }))} />
@@ -225,7 +274,7 @@ export function DynamicLightingOverlay({
               </div>
 
               <button type="button" className="lighting-add-button" onClick={addSource}>+ Adicionar fonte na posição selecionada</button>
-              <small className="lighting-config-help">Paredes e portas fechadas/trancadas projetam sombra. Portas abertas deixam a luz atravessar. Fontes presas a tokens acompanham o movimento realtime.</small>
+              <small className="lighting-config-help">Paredes e portas fechadas/trancadas projetam sombra. Portas abertas deixam a luz atravessar. Fontes pessoais configuradas em “Sentidos” são derivadas automaticamente e acompanham o token.</small>
               <div className="lighting-config-actions">
                 <button type="button" onClick={() => { setDraft(editableLighting(scene.lighting, scene)); setEditorOpen(false); }}>Cancelar</button>
                 <button type="button" className="primary-button" disabled={saving || state.busy} onClick={saveLighting}>{saving ? 'Salvando…' : 'Salvar iluminação'}</button>
