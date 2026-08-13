@@ -220,10 +220,19 @@ export function MapStage({
 
   function handleWheel(event) {
     event.preventDefault();
-    const rect = event.currentTarget.getBoundingClientRect();
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
     const factor = event.deltaY < 0 ? 1.12 : 1 / 1.12;
     applyZoom(factor, event.clientX - rect.left, event.clientY - rect.top);
   }
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return undefined;
+    canvas.addEventListener('wheel', handleWheel, { passive: false });
+    return () => canvas.removeEventListener('wheel', handleWheel);
+  }, [scene.id, scene.width, scene.height]);
 
   function boundedWallPoint(point) {
     const base = snapWalls ? snapScenePoint(point, gridDraft) : point;
@@ -573,7 +582,6 @@ export function MapStage({
         ref={canvasRef}
         className="map-canvas"
         aria-label={`Canvas de ${scene.name}`}
-        onWheel={handleWheel}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
