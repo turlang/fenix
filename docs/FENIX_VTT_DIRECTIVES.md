@@ -21,6 +21,8 @@ Controles do canvas ocupam zonas exclusivas e não podem se sobrepor:
 
 Informação duplicada deve ser removida. Diagnósticos técnicos nunca têm prioridade visual sobre o jogo.
 
+Qualquer novo painel de canvas deve declarar qual dessas zonas ocupa. Se a zona já estiver ocupada pela camada ativa, o novo painel deve substituir, recolher ou reutilizar o controle existente em vez de sobrepor elementos.
+
 ## 4. Diferencial do produto
 O diferencial do Fênix é o Mestre IA, não o conjunto de botões do VTT.
 
