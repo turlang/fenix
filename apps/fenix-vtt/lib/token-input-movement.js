@@ -42,14 +42,19 @@ export function requestedTokenFromKeyboard(token, key, { gridSize = 70, fullCell
   };
 }
 
-export function resolveClientTokenMovement({ previousToken, requestedToken, scene } = {}) {
+export function resolveClientTokenMovement({
+  previousToken,
+  requestedToken,
+  scene,
+  ignoreWalls = false
+} = {}) {
   if (!requestedToken) return null;
   if (!previousToken || !scene) return { token: { ...requestedToken }, collision: null };
 
   const collision = resolveTokenMovement({
     from: previousToken,
     to: requestedToken,
-    walls: scene.walls ?? [],
+    walls: ignoreWalls ? [] : (scene.walls ?? []),
     sceneWidth: scene.width,
     sceneHeight: scene.height,
     tokenSize: requestedToken.size ?? previousToken.size
@@ -61,6 +66,9 @@ export function resolveClientTokenMovement({ previousToken, requestedToken, scen
       x: collision.position.x,
       y: collision.position.y
     },
-    collision
+    collision: {
+      ...collision,
+      ignoredWalls: ignoreWalls === true
+    }
   };
 }
