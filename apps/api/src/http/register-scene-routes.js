@@ -11,20 +11,13 @@ function sendError(reply, error, fallback = 'SCENE_REQUEST_FAILED') {
 }
 
 export function registerSceneRoutes(app, { authService, sceneService }) {
-  if (!app || !authService || !sceneService) {
-    throw new TypeError('app, authService e sceneService são obrigatórios.');
-  }
+  if (!app || !authService || !sceneService) throw new TypeError('app, authService e sceneService são obrigatórios.');
 
   app.get('/v1/campaigns/:campaignId/scenes', async (request, reply) => {
     try {
       const authenticated = requireAuthenticatedRequest(authService, request);
-      return sceneService.list({
-        campaignId: request.params.campaignId,
-        userId: authenticated.user.id
-      });
-    } catch (error) {
-      return sendError(reply, error);
-    }
+      return sceneService.list({ campaignId: request.params.campaignId, userId: authenticated.user.id });
+    } catch (error) { return sendError(reply, error); }
   });
 
   app.post('/v1/campaigns/:campaignId/assets', { bodyLimit: ASSET_UPLOAD_BODY_LIMIT }, async (request, reply) => {
@@ -38,39 +31,25 @@ export function registerSceneRoutes(app, { authService, sceneService }) {
         dataBase64: request.body?.dataBase64
       });
       return { asset };
-    } catch (error) {
-      return sendError(reply, error, 'CAMPAIGN_ASSET_UPLOAD_FAILED');
-    }
+    } catch (error) { return sendError(reply, error, 'CAMPAIGN_ASSET_UPLOAD_FAILED'); }
   });
 
   app.post('/v1/campaigns/:campaignId/assets/import-url', async (request, reply) => {
     try {
       const authenticated = requireAuthenticatedRequest(authService, request);
-      const asset = await sceneService.importMapUrl({
-        campaignId: request.params.campaignId,
-        userId: authenticated.user.id,
-        url: request.body?.url
-      });
+      const asset = await sceneService.importMapUrl({ campaignId: request.params.campaignId, userId: authenticated.user.id, url: request.body?.url });
       return { asset };
-    } catch (error) {
-      return sendError(reply, error, 'CAMPAIGN_REMOTE_MAP_IMPORT_FAILED');
-    }
+    } catch (error) { return sendError(reply, error, 'CAMPAIGN_REMOTE_MAP_IMPORT_FAILED'); }
   });
 
   app.get('/v1/campaigns/:campaignId/assets/:assetId', async (request, reply) => {
     try {
       const authenticated = requireAuthenticatedRequest(authService, request);
-      const { asset, buffer } = await sceneService.readAsset({
-        campaignId: request.params.campaignId,
-        userId: authenticated.user.id,
-        assetId: request.params.assetId
-      });
+      const { asset, buffer } = await sceneService.readAsset({ campaignId: request.params.campaignId, userId: authenticated.user.id, assetId: request.params.assetId });
       reply.header('Cache-Control', 'private, max-age=3600');
       reply.type(asset.mimeType);
       return reply.send(buffer);
-    } catch (error) {
-      return sendError(reply, error, 'CAMPAIGN_ASSET_READ_FAILED');
-    }
+    } catch (error) { return sendError(reply, error, 'CAMPAIGN_ASSET_READ_FAILED'); }
   });
 
   app.post('/v1/campaigns/:campaignId/scenes', async (request, reply) => {
@@ -86,9 +65,7 @@ export function registerSceneRoutes(app, { authService, sceneService }) {
         height: request.body?.height,
         gridSize: request.body?.gridSize
       });
-    } catch (error) {
-      return sendError(reply, error, 'CAMPAIGN_SCENE_CREATE_FAILED');
-    }
+    } catch (error) { return sendError(reply, error, 'CAMPAIGN_SCENE_CREATE_FAILED'); }
   });
 
   app.post('/v1/campaigns/:campaignId/scenes/:sceneId/grid', async (request, reply) => {
@@ -103,23 +80,21 @@ export function registerSceneRoutes(app, { authService, sceneService }) {
         offsetY: request.body?.offsetY,
         visible: request.body?.visible
       });
-    } catch (error) {
-      return sendError(reply, error, 'CAMPAIGN_SCENE_GRID_UPDATE_FAILED');
-    }
+    } catch (error) { return sendError(reply, error, 'CAMPAIGN_SCENE_GRID_UPDATE_FAILED'); }
   });
 
   app.post('/v1/campaigns/:campaignId/scenes/:sceneId/walls', async (request, reply) => {
     try {
       const authenticated = requireAuthenticatedRequest(authService, request);
-      return await sceneService.updateWalls({
-        campaignId: request.params.campaignId,
-        userId: authenticated.user.id,
-        sceneId: request.params.sceneId,
-        walls: request.body?.walls
-      });
-    } catch (error) {
-      return sendError(reply, error, 'CAMPAIGN_SCENE_WALLS_UPDATE_FAILED');
-    }
+      return await sceneService.updateWalls({ campaignId: request.params.campaignId, userId: authenticated.user.id, sceneId: request.params.sceneId, walls: request.body?.walls });
+    } catch (error) { return sendError(reply, error, 'CAMPAIGN_SCENE_WALLS_UPDATE_FAILED'); }
+  });
+
+  app.post('/v1/campaigns/:campaignId/scenes/:sceneId/regions', async (request, reply) => {
+    try {
+      const authenticated = requireAuthenticatedRequest(authService, request);
+      return await sceneService.updateRegions({ campaignId: request.params.campaignId, userId: authenticated.user.id, sceneId: request.params.sceneId, regions: request.body?.regions });
+    } catch (error) { return sendError(reply, error, 'CAMPAIGN_SCENE_REGIONS_UPDATE_FAILED'); }
   });
 
   app.post('/v1/campaigns/:campaignId/scenes/:sceneId/fog', async (request, reply) => {
@@ -137,9 +112,7 @@ export function registerSceneRoutes(app, { authService, sceneService }) {
         sceneElevation: request.body?.sceneElevation,
         resetExploration: request.body?.resetExploration === true
       });
-    } catch (error) {
-      return sendError(reply, error, 'CAMPAIGN_SCENE_FOG_UPDATE_FAILED');
-    }
+    } catch (error) { return sendError(reply, error, 'CAMPAIGN_SCENE_FOG_UPDATE_FAILED'); }
   });
 
   app.post('/v1/campaigns/:campaignId/scenes/:sceneId/lighting', async (request, reply) => {
@@ -153,21 +126,13 @@ export function registerSceneRoutes(app, { authService, sceneService }) {
         darkness: request.body?.darkness,
         sources: request.body?.sources
       });
-    } catch (error) {
-      return sendError(reply, error, 'CAMPAIGN_SCENE_LIGHTING_UPDATE_FAILED');
-    }
+    } catch (error) { return sendError(reply, error, 'CAMPAIGN_SCENE_LIGHTING_UPDATE_FAILED'); }
   });
 
   app.post('/v1/campaigns/:campaignId/scenes/:sceneId/activate', async (request, reply) => {
     try {
       const authenticated = requireAuthenticatedRequest(authService, request);
-      return await sceneService.activateScene({
-        campaignId: request.params.campaignId,
-        userId: authenticated.user.id,
-        sceneId: request.params.sceneId
-      });
-    } catch (error) {
-      return sendError(reply, error, 'CAMPAIGN_SCENE_ACTIVATE_FAILED');
-    }
+      return await sceneService.activateScene({ campaignId: request.params.campaignId, userId: authenticated.user.id, sceneId: request.params.sceneId });
+    } catch (error) { return sendError(reply, error, 'CAMPAIGN_SCENE_ACTIVATE_FAILED'); }
   });
 }

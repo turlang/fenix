@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { normalizeSceneWalls } from '../../scene-geometry/src/index.js';
 import { normalizeSceneLighting } from '../../scene-lighting/src/index.js';
-import { eyeElevation, normalizeSceneElevation } from '../../scene-elevation/src/index.js';
+import { eyeElevation, normalizeSceneElevation, normalizeSceneRegions } from '../../scene-elevation/src/index.js';
 import {
   mergeExploredCells,
   normalizeExploredCells,
@@ -45,10 +45,7 @@ function normalizeGrid(grid = {}) {
 }
 
 function sceneWalls(scene) {
-  return normalizeSceneWalls(scene.walls ?? [], {
-    sceneWidth: scene.width,
-    sceneHeight: scene.height
-  });
+  return normalizeSceneWalls(scene.walls ?? [], { sceneWidth: scene.width, sceneHeight: scene.height });
 }
 
 function normalizeExploredByActor(input = {}) {
@@ -64,11 +61,7 @@ function normalizeExploredByActor(input = {}) {
 
 function ensureSceneFog(scene) {
   const config = normalizeSceneFog(scene.fog ?? {});
-  const exploredByActor = normalizeExploredByActor(scene.fog?.exploredByActor);
-  scene.fog = {
-    ...config,
-    exploredByActor
-  };
+  scene.fog = { ...config, exploredByActor: normalizeExploredByActor(scene.fog?.exploredByActor) };
   return scene.fog;
 }
 
@@ -84,6 +77,15 @@ function ensureSceneLighting(scene) {
 function ensureSceneElevation(scene) {
   scene.elevation = structuredClone(normalizeSceneElevation(scene.elevation ?? {}));
   return scene.elevation;
+}
+
+function ensureSceneRegions(scene) {
+  scene.regions = structuredClone(normalizeSceneRegions(scene.regions ?? [], {
+    sceneWidth: scene.width,
+    sceneHeight: scene.height,
+    idFactory: randomUUID
+  }));
+  return scene.regions;
 }
 
 function ensureSceneVisionProfiles(scene) {
@@ -111,10 +113,7 @@ function publicFog(scene, membership = null) {
     });
   }
   const actorId = text(membership?.actorId, 200);
-  return Object.freeze({
-    ...base,
-    exploredCells: Object.freeze([...(fog.exploredByActor[actorId] ?? [])])
-  });
+  return Object.freeze({ ...base, exploredCells: Object.freeze([...(fog.exploredByActor[actorId] ?? [])]) });
 }
 
 function publicLighting(scene) {
@@ -128,10 +127,19 @@ function publicLighting(scene) {
 
 function publicElevation(scene) {
   const elevation = ensureSceneElevation(scene);
-  return Object.freeze({
-    ...elevation,
-    levels: Object.freeze(elevation.levels.map((level) => Object.freeze({ ...level })))
-  });
+  return Object.freeze({ ...elevation, levels: Object.freeze(elevation.levels.map((level) => Object.freeze({ ...level }))) });
+}
+
+function publicRegions(scene, membership = null) {
+  if (membership?.role !== 'gm') return Object.freeze([]);
+  return Object.freeze(ensureSceneRegions(scene).map((region) => Object.freeze({
+    ...region,
+    points: Object.freeze(region.points.map((point) => Object.freeze({ ...point }))),
+    axis: region.axis ? Object.freeze({
+      start: Object.freeze({ ...region.axis.start }),
+      end: Object.freeze({ ...region.axis.end })
+    }) : null
+  })));
 }
 
 function publicVisionProfiles(scene) {
@@ -161,6 +169,7 @@ function publicScene(scene, assets = [], membership = null) {
     fog: publicFog(scene, membership),
     lighting: publicLighting(scene),
     elevation: publicElevation(scene),
+    regions: publicRegions(scene, membership),
     visionProfiles: publicVisionProfiles(scene),
     backgroundAssetId: scene.backgroundAssetId ?? null,
     backgroundAsset: publicAsset(asset),
@@ -179,6 +188,7 @@ function ensureCollections(campaign) {
     ensureSceneFog(scene);
     ensureSceneLighting(scene);
     ensureSceneElevation(scene);
+    ensureSceneRegions(scene);
     ensureSceneVisionProfiles(scene);
   }
   return campaign;
@@ -218,6 +228,7 @@ export class CampaignSceneService {
     });
     return Object.freeze({
       sceneElevation: publicElevation(scene),
+      regions: Object.freeze(ensureSceneRegions(scene).map((region) => structuredClone(region))),
       profile: Object.freeze({ ...profile, personalLight: Object.freeze({ ...profile.personalLight }) })
     });
   }
@@ -225,21 +236,14 @@ export class CampaignSceneService {
   async uploadMap({ campaignId, userId, fileName, mimeType, dataBase64 } = {}) {
     const { campaign } = this.campaignService.requireRole(campaignId, userId, 'gm');
     ensureCollections(campaign);
-    const stored = await this.assetStorage.saveImage({
-      campaignId: campaign.id,
-      fileName,
-      mimeType,
-      dataBase64
-    });
+    const stored = await this.assetStorage.saveImage({ campaignId: campaign.id, fileName, mimeType, dataBase64 });
     return this.#registerAsset(campaign, userId, stored, { sourceType: 'upload' });
   }
 
   async importMapUrl({ campaignId, userId, url } = {}) {
     const { campaign } = this.campaignService.requireRole(campaignId, userId, 'gm');
     ensureCollections(campaign);
-    if (!this.remoteMapImporter) {
-      throw sceneError('Importação de mapa por URL não está disponível neste Engine.', 'REMOTE_MAP_IMPORT_UNAVAILABLE', 503);
-    }
+    if (!this.remoteMapImporter) throw sceneError('Importação de mapa por URL não está disponível neste Engine.', 'REMOTE_MAP_IMPORT_UNAVAILABLE', 503);
     const imported = await this.remoteMapImporter.importUrl(url);
     const stored = await this.assetStorage.saveImageBuffer({
       campaignId: campaign.id,
@@ -248,10 +252,7 @@ export class CampaignSceneService {
       buffer: imported.buffer
     });
     return this.#registerAsset(campaign, userId, stored, {
-      sourceType: 'remote-import',
-      sourceHost: imported.sourceHost,
-      width: imported.width,
-      height: imported.height
+      sourceType: 'remote-import', sourceHost: imported.sourceHost, width: imported.width, height: imported.height
     });
   }
 
@@ -281,16 +282,10 @@ export class CampaignSceneService {
       backgroundAssetId: asset.id,
       grid: normalizeGrid({ size: gridSize }),
       walls: [],
-      fog: {
-        ...normalizeSceneFog({ enabled: false }),
-        exploredByActor: {}
-      },
-      lighting: {
-        ...normalizeSceneLighting({ enabled: false, darkness: 0.78, sources: [] })
-      },
-      elevation: {
-        ...normalizeSceneElevation({ enabled: false })
-      },
+      fog: { ...normalizeSceneFog({ enabled: false }), exploredByActor: {} },
+      lighting: { ...normalizeSceneLighting({ enabled: false, darkness: 0.78, sources: [] }) },
+      elevation: { ...normalizeSceneElevation({ enabled: false }) },
+      regions: [],
       visionProfiles: {},
       createdAt: now,
       updatedAt: now
@@ -299,10 +294,7 @@ export class CampaignSceneService {
     if (!campaign.activeSceneId) campaign.activeSceneId = scene.id;
     campaign.updatedAt = now;
     await this.#persistCampaign(campaign);
-    return {
-      scene: publicScene(scene, campaign.assets, membership),
-      activeSceneId: campaign.activeSceneId
-    };
+    return { scene: publicScene(scene, campaign.assets, membership), activeSceneId: campaign.activeSceneId };
   }
 
   async updateGrid({ campaignId, userId, sceneId, size, offsetX, offsetY, visible } = {}) {
@@ -318,19 +310,14 @@ export class CampaignSceneService {
       offsetY: offsetY ?? scene.grid?.offsetY,
       visible: visible ?? scene.grid?.visible
     });
-    const gridGeometryChanged = previousGrid.size !== nextGrid.size
-      || previousGrid.offsetX !== nextGrid.offsetX
-      || previousGrid.offsetY !== nextGrid.offsetY;
+    const gridGeometryChanged = previousGrid.size !== nextGrid.size || previousGrid.offsetX !== nextGrid.offsetX || previousGrid.offsetY !== nextGrid.offsetY;
     scene.grid = nextGrid;
     if (gridGeometryChanged) ensureSceneFog(scene).exploredByActor = {};
     const now = new Date(this.now()).toISOString();
     scene.updatedAt = now;
     campaign.updatedAt = now;
     await this.#persistCampaign(campaign);
-    return {
-      scene: publicScene(scene, campaign.assets, membership),
-      activeSceneId: campaign.activeSceneId
-    };
+    return { scene: publicScene(scene, campaign.assets, membership), activeSceneId: campaign.activeSceneId };
   }
 
   async updateWalls({ campaignId, userId, sceneId, walls } = {}) {
@@ -338,33 +325,35 @@ export class CampaignSceneService {
     ensureCollections(campaign);
     const scene = campaign.scenes.find((item) => item.id === String(sceneId));
     if (!scene) throw sceneError('Cena não encontrada.', 'CAMPAIGN_SCENE_NOT_FOUND', 404);
-    const normalized = normalizeSceneWalls(walls, {
-      sceneWidth: scene.width,
-      sceneHeight: scene.height,
-      idFactory: randomUUID
-    });
+    const normalized = normalizeSceneWalls(walls, { sceneWidth: scene.width, sceneHeight: scene.height, idFactory: randomUUID });
     const now = new Date(this.now()).toISOString();
     scene.walls = normalized.map((wall) => structuredClone(wall));
     scene.updatedAt = now;
     campaign.updatedAt = now;
     await this.#persistCampaign(campaign);
-    return {
-      scene: publicScene(scene, campaign.assets, membership),
-      activeSceneId: campaign.activeSceneId
-    };
+    return { scene: publicScene(scene, campaign.assets, membership), activeSceneId: campaign.activeSceneId };
+  }
+
+  async updateRegions({ campaignId, userId, sceneId, regions } = {}) {
+    const { campaign, membership } = this.campaignService.requireRole(campaignId, userId, 'gm');
+    ensureCollections(campaign);
+    const scene = campaign.scenes.find((item) => item.id === String(sceneId));
+    if (!scene) throw sceneError('Cena não encontrada.', 'CAMPAIGN_SCENE_NOT_FOUND', 404);
+    scene.regions = structuredClone(normalizeSceneRegions(regions ?? [], {
+      sceneWidth: scene.width,
+      sceneHeight: scene.height,
+      idFactory: randomUUID
+    }));
+    const now = new Date(this.now()).toISOString();
+    scene.updatedAt = now;
+    campaign.updatedAt = now;
+    await this.#persistCampaign(campaign);
+    return { scene: publicScene(scene, campaign.assets, membership), activeSceneId: campaign.activeSceneId };
   }
 
   async updateFog({
-    campaignId,
-    userId,
-    sceneId,
-    enabled,
-    visionRangeCells,
-    exploredOpacity,
-    unexploredOpacity,
-    visionProfiles,
-    sceneElevation,
-    resetExploration = false
+    campaignId, userId, sceneId, enabled, visionRangeCells, exploredOpacity, unexploredOpacity,
+    visionProfiles, sceneElevation, resetExploration = false
   } = {}) {
     const { campaign, membership } = this.campaignService.requireRole(campaignId, userId, 'gm');
     ensureCollections(campaign);
@@ -378,29 +367,16 @@ export class CampaignSceneService {
       unexploredOpacity: unexploredOpacity ?? current.unexploredOpacity
     });
     const now = new Date(this.now()).toISOString();
-    scene.fog = {
-      ...config,
-      exploredByActor: resetExploration ? {} : normalizeExploredByActor(current.exploredByActor)
-    };
+    scene.fog = { ...config, exploredByActor: resetExploration ? {} : normalizeExploredByActor(current.exploredByActor) };
     if (visionProfiles !== undefined) {
-      scene.visionProfiles = structuredClone(normalizeTokenVisionProfiles(visionProfiles, {
-        defaultRangeCells: config.visionRangeCells
-      }));
-    } else {
-      ensureSceneVisionProfiles(scene);
-    }
-    if (sceneElevation !== undefined) {
-      scene.elevation = structuredClone(normalizeSceneElevation(sceneElevation));
-    } else {
-      ensureSceneElevation(scene);
-    }
+      scene.visionProfiles = structuredClone(normalizeTokenVisionProfiles(visionProfiles, { defaultRangeCells: config.visionRangeCells }));
+    } else ensureSceneVisionProfiles(scene);
+    if (sceneElevation !== undefined) scene.elevation = structuredClone(normalizeSceneElevation(sceneElevation));
+    else ensureSceneElevation(scene);
     scene.updatedAt = now;
     campaign.updatedAt = now;
     await this.#persistCampaign(campaign);
-    return {
-      scene: publicScene(scene, campaign.assets, membership),
-      activeSceneId: campaign.activeSceneId
-    };
+    return { scene: publicScene(scene, campaign.assets, membership), activeSceneId: campaign.activeSceneId };
   }
 
   async updateLighting({ campaignId, userId, sceneId, enabled, darkness, sources } = {}) {
@@ -413,20 +389,13 @@ export class CampaignSceneService {
       enabled: enabled ?? current.enabled,
       darkness: darkness ?? current.darkness,
       sources: sources ?? current.sources
-    }, {
-      sceneWidth: scene.width,
-      sceneHeight: scene.height,
-      idFactory: randomUUID
-    });
+    }, { sceneWidth: scene.width, sceneHeight: scene.height, idFactory: randomUUID });
     const now = new Date(this.now()).toISOString();
     scene.lighting = structuredClone(next);
     scene.updatedAt = now;
     campaign.updatedAt = now;
     await this.#persistCampaign(campaign);
-    return {
-      scene: publicScene(scene, campaign.assets, membership),
-      activeSceneId: campaign.activeSceneId
-    };
+    return { scene: publicScene(scene, campaign.assets, membership), activeSceneId: campaign.activeSceneId };
   }
 
   async recordExploration({ campaignId, userId, sceneId, actorId, x, y, elevation = undefined } = {}) {
@@ -436,15 +405,11 @@ export class CampaignSceneService {
     if (!scene) throw sceneError('Cena não encontrada.', 'CAMPAIGN_SCENE_NOT_FOUND', 404);
     const actor = text(actorId, 200);
     if (!actor) throw sceneError('actorId é obrigatório para explorar o fog.', 'CAMPAIGN_FOG_ACTOR_REQUIRED');
-    if (membership.role !== 'gm' && membership.actorId !== actor) {
-      throw sceneError('Jogador só pode explorar com o próprio personagem.', 'CAMPAIGN_FOG_ACTOR_FORBIDDEN', 403);
-    }
+    if (membership.role !== 'gm' && membership.actorId !== actor) throw sceneError('Jogador só pode explorar com o próprio personagem.', 'CAMPAIGN_FOG_ACTOR_FORBIDDEN', 403);
     const fog = ensureSceneFog(scene);
     if (!fog.enabled) return { changed: false, discoveredCells: [], totalExploredCells: 0 };
 
-    const visionProfile = normalizeTokenVisionProfile(ensureSceneVisionProfiles(scene)[actor] ?? {}, {
-      defaultRangeCells: fog.visionRangeCells
-    });
+    const visionProfile = normalizeTokenVisionProfile(ensureSceneVisionProfiles(scene)[actor] ?? {}, { defaultRangeCells: fog.visionRangeCells });
     const elevationConfig = ensureSceneElevation(scene);
     const observerElevation = eyeElevation(visionProfile, elevation ?? visionProfile.elevation);
     const discoveredCells = visibleGridCells({
@@ -460,20 +425,14 @@ export class CampaignSceneService {
     });
     const previous = fog.exploredByActor[actor] ?? [];
     const merged = mergeExploredCells(previous, discoveredCells);
-    if (merged.length === previous.length) {
-      return { changed: false, discoveredCells: [...discoveredCells], totalExploredCells: merged.length };
-    }
+    if (merged.length === previous.length) return { changed: false, discoveredCells: [...discoveredCells], totalExploredCells: merged.length };
 
     fog.exploredByActor[actor] = [...merged];
     const now = new Date(this.now()).toISOString();
     scene.updatedAt = now;
     campaign.updatedAt = now;
     await this.#persistCampaign(campaign);
-    return {
-      changed: true,
-      discoveredCells: [...discoveredCells],
-      totalExploredCells: merged.length
-    };
+    return { changed: true, discoveredCells: [...discoveredCells], totalExploredCells: merged.length };
   }
 
   async activateScene({ campaignId, userId, sceneId } = {}) {
@@ -484,21 +443,12 @@ export class CampaignSceneService {
     campaign.activeSceneId = scene.id;
     campaign.updatedAt = new Date(this.now()).toISOString();
     await this.#persistCampaign(campaign);
-    return {
-      scene: publicScene(scene, campaign.assets, membership),
-      activeSceneId: scene.id
-    };
+    return { scene: publicScene(scene, campaign.assets, membership), activeSceneId: scene.id };
   }
 
   async #registerAsset(campaign, userId, stored, metadata = {}) {
     const now = new Date(this.now()).toISOString();
-    const asset = {
-      ...stored,
-      kind: 'map-background',
-      ...metadata,
-      createdAt: now,
-      createdByUserId: String(userId)
-    };
+    const asset = { ...stored, kind: 'map-background', ...metadata, createdAt: now, createdByUserId: String(userId) };
     try {
       campaign.assets.push(asset);
       campaign.updatedAt = now;

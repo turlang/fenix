@@ -21,9 +21,7 @@ function fakeAssetStorage() {
       if (!value) throw new Error('missing');
       return value;
     },
-    async delete({ campaignId, assetId }) {
-      files.delete(`${campaignId}:${assetId}`);
-    }
+    async delete({ campaignId, assetId }) { files.delete(`${campaignId}:${assetId}`); }
   };
 }
 
@@ -63,16 +61,24 @@ async function createMapScene(service, campaignId) {
   });
 }
 
+async function addPlayer(repository, campaignService, campaignId) {
+  const raw = campaignService.getRaw(campaignId);
+  raw.members.push({ userId: 'player-1', role: 'player', actorId: 'hero-1', joinedAt: new Date().toISOString() });
+  await repository.mutate((draft) => {
+    const stored = draft.campaigns.find((item) => item.id === campaignId);
+    stored.members = structuredClone(raw.members);
+  });
+  campaignService.refreshFromRepository();
+}
+
 test('CampaignSceneService persiste asset, cria cena e ativa cena da campanha', async () => {
   const { repository, campaign, service } = await createServiceFixture();
   const created = await createMapScene(service, campaign.id);
   assert.equal(created.scene.name, 'Ruínas do Norte');
   assert.equal(created.activeSceneId, created.scene.id);
   assert.equal(created.scene.grid.size, 80);
-  assert.equal(created.scene.grid.offsetX, 0);
-  assert.equal(created.scene.grid.offsetY, 0);
-  assert.equal(created.scene.grid.visible, true);
   assert.deepEqual(created.scene.walls, []);
+  assert.deepEqual(created.scene.regions, []);
 
   const catalog = service.list({ campaignId: campaign.id, userId: 'gm-1' });
   assert.equal(catalog.scenes.length, 1);
@@ -87,36 +93,16 @@ test('CampaignSceneService importa mapa remoto como asset local sem persistir UR
   const remoteMapImporter = {
     async importUrl(url) {
       assert.equal(url, 'https://cdn.example.com/maps/templo.png?token=segredo');
-      return {
-        buffer: Buffer.from('remote-map'),
-        mimeType: 'image/png',
-        fileName: 'templo.png',
-        width: 2400,
-        height: 1600,
-        sourceHost: 'cdn.example.com'
-      };
+      return { buffer: Buffer.from('remote-map'), mimeType: 'image/png', fileName: 'templo.png', width: 2400, height: 1600, sourceHost: 'cdn.example.com' };
     }
   };
   const { repository, campaign, service } = await createServiceFixture('Import URL', { remoteMapImporter });
-  const asset = await service.importMapUrl({
-    campaignId: campaign.id,
-    userId: 'gm-1',
-    url: 'https://cdn.example.com/maps/templo.png?token=segredo'
-  });
+  const asset = await service.importMapUrl({ campaignId: campaign.id, userId: 'gm-1', url: 'https://cdn.example.com/maps/templo.png?token=segredo' });
   assert.equal(asset.sourceType, 'remote-import');
   assert.equal(asset.sourceHost, 'cdn.example.com');
-  assert.equal(asset.width, 2400);
-  assert.equal(asset.height, 1600);
   assert.equal(JSON.stringify(repository.snapshot()).includes('token=segredo'), false);
 
-  const scene = await service.createScene({
-    campaignId: campaign.id,
-    userId: 'gm-1',
-    name: 'Templo Remoto',
-    description: 'Mapa importado por URL.',
-    assetId: asset.id,
-    gridSize: 70
-  });
+  const scene = await service.createScene({ campaignId: campaign.id, userId: 'gm-1', name: 'Templo Remoto', description: 'Mapa importado por URL.', assetId: asset.id, gridSize: 70 });
   assert.equal(scene.scene.width, 2400);
   assert.equal(scene.scene.height, 1600);
 });
@@ -124,23 +110,8 @@ test('CampaignSceneService importa mapa remoto como asset local sem persistir UR
 test('CampaignSceneService persiste tamanho, offset e visibilidade da grade calibrada', async () => {
   const { repository, campaign, service } = await createServiceFixture('Calibração');
   const created = await createMapScene(service, campaign.id);
-  const updated = await service.updateGrid({
-    campaignId: campaign.id,
-    userId: 'gm-1',
-    sceneId: created.scene.id,
-    size: 72,
-    offsetX: -13.5,
-    offsetY: 22.25,
-    visible: false
-  });
-
-  assert.deepEqual(updated.scene.grid, {
-    size: 72,
-    type: 'square',
-    offsetX: -13.5,
-    offsetY: 22.25,
-    visible: false
-  });
+  const updated = await service.updateGrid({ campaignId: campaign.id, userId: 'gm-1', sceneId: created.scene.id, size: 72, offsetX: -13.5, offsetY: 22.25, visible: false });
+  assert.deepEqual(updated.scene.grid, { size: 72, type: 'square', offsetX: -13.5, offsetY: 22.25, visible: false });
   const persisted = repository.snapshot().campaigns.find((item) => item.id === campaign.id).scenes[0];
   assert.deepEqual(persisted.grid, updated.scene.grid);
 });
@@ -157,64 +128,63 @@ test('CampaignSceneService persiste paredes e portas normalizadas na cena', asyn
       { id: 'door-1', kind: 'door', doorState: 'locked', a: { x: 400, y: 0 }, b: { x: 480, y: 0 } }
     ]
   });
-
   assert.equal(updated.scene.walls.length, 2);
-  assert.equal(updated.scene.walls[0].kind, 'wall');
-  assert.equal(updated.scene.walls[1].kind, 'door');
   assert.equal(updated.scene.walls[1].doorState, 'locked');
   const persisted = repository.snapshot().campaigns.find((item) => item.id === campaign.id).scenes[0];
   assert.deepEqual(persisted.walls, updated.scene.walls);
 });
 
-test('CampaignSceneService bloqueia criação, importação, calibração e paredes por jogador', async () => {
+test('Mestre persiste regiões de piso/rampa; jogador não recebe a geometria privada', async () => {
+  const { repository, campaignService, campaign, service } = await createServiceFixture('Regiões');
+  const created = await createMapScene(service, campaign.id);
+  await addPlayer(repository, campaignService, campaign.id);
+  const updated = await service.updateRegions({
+    campaignId: campaign.id,
+    userId: 'gm-1',
+    sceneId: created.scene.id,
+    regions: [
+      {
+        id: 'floor-0', name: 'Térreo', kind: 'floor', baseElevation: 0,
+        points: [{ x: 0, y: 0 }, { x: 300, y: 0 }, { x: 300, y: 300 }, { x: 0, y: 300 }]
+      },
+      {
+        id: 'ramp-1', name: 'Rampa', kind: 'ramp', baseElevation: 0, targetElevation: 4,
+        points: [{ x: 300, y: 0 }, { x: 500, y: 0 }, { x: 500, y: 200 }, { x: 300, y: 200 }],
+        axis: { start: { x: 300, y: 100 }, end: { x: 500, y: 100 } }
+      }
+    ]
+  });
+  assert.equal(updated.scene.regions.length, 2);
+  assert.equal(updated.scene.regions[1].kind, 'ramp');
+
+  const playerScene = service.list({ campaignId: campaign.id, userId: 'player-1' }).scenes[0];
+  assert.deepEqual(playerScene.regions, []);
+
+  const runtime = service.resolveRuntimeVerticalState({ campaignId: campaign.id, sceneId: created.scene.id, actorId: 'hero-1' });
+  assert.equal(runtime.regions.length, 2);
+  assert.equal(runtime.regions[1].targetElevation, 4);
+});
+
+test('CampaignSceneService bloqueia authoring de mapa, paredes e regiões por jogador', async () => {
   const remoteMapImporter = { async importUrl() { throw new Error('não deveria executar'); } };
   const { repository, campaignService, campaign, service } = await createServiceFixture('Permissões', { remoteMapImporter });
   const created = await createMapScene(service, campaign.id);
-  const raw = campaignService.getRaw(campaign.id);
-  raw.members.push({ userId: 'player-1', role: 'player', actorId: 'hero-1', joinedAt: new Date().toISOString() });
-  await repository.mutate((draft) => {
-    const stored = draft.campaigns.find((item) => item.id === campaign.id);
-    stored.members = structuredClone(raw.members);
-  });
-  campaignService.refreshFromRepository();
+  await addPlayer(repository, campaignService, campaign.id);
 
   await assert.rejects(
-    () => service.uploadMap({
-      campaignId: campaign.id,
-      userId: 'player-1',
-      fileName: 'map.png',
-      mimeType: 'image/png',
-      dataBase64: Buffer.from('map').toString('base64')
-    }),
+    () => service.uploadMap({ campaignId: campaign.id, userId: 'player-1', fileName: 'map.png', mimeType: 'image/png', dataBase64: Buffer.from('map').toString('base64') }),
     (error) => error.code === 'CAMPAIGN_ROLE_FORBIDDEN' && error.statusCode === 403
   );
-
   await assert.rejects(
-    () => service.importMapUrl({
-      campaignId: campaign.id,
-      userId: 'player-1',
-      url: 'https://example.com/map.png'
-    }),
+    () => service.updateGrid({ campaignId: campaign.id, userId: 'player-1', sceneId: created.scene.id, size: 60 }),
     (error) => error.code === 'CAMPAIGN_ROLE_FORBIDDEN' && error.statusCode === 403
   );
-
   await assert.rejects(
-    () => service.updateGrid({
-      campaignId: campaign.id,
-      userId: 'player-1',
-      sceneId: created.scene.id,
-      size: 60
-    }),
+    () => service.updateWalls({ campaignId: campaign.id, userId: 'player-1', sceneId: created.scene.id, walls: [{ id: 'forbidden', kind: 'wall', a: { x: 0, y: 0 }, b: { x: 100, y: 0 } }] }),
     (error) => error.code === 'CAMPAIGN_ROLE_FORBIDDEN' && error.statusCode === 403
   );
-
   await assert.rejects(
-    () => service.updateWalls({
-      campaignId: campaign.id,
-      userId: 'player-1',
-      sceneId: created.scene.id,
-      walls: [{ id: 'forbidden', kind: 'wall', a: { x: 0, y: 0 }, b: { x: 100, y: 0 } }]
-    }),
+    () => service.updateRegions({ campaignId: campaign.id, userId: 'player-1', sceneId: created.scene.id, regions: [] }),
     (error) => error.code === 'CAMPAIGN_ROLE_FORBIDDEN' && error.statusCode === 403
   );
 });

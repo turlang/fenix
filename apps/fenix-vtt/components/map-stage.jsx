@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { WebGlMapRenderer, detectBrowserRendererBackend } from '../../../packages/webgl-map-renderer/src/index.js';
 import {
   SceneDoorState,
@@ -9,8 +9,13 @@ import {
   pointToWallDistance,
   snapScenePoint
 } from '../../../packages/scene-geometry/src/index.js';
+import {
+  SceneRegionKind,
+  normalizeSceneRegions
+} from '../../../packages/scene-elevation/src/index.js';
 import { normalizeSceneFog } from '../../../packages/scene-vision/src/index.js';
 import { FogOfWarOverlay } from './fog-of-war-overlay.jsx';
+import { useFenixSession } from './session-provider.jsx';
 import {
   createDemoRoomEnteredEvent,
   demoScene,
@@ -24,7 +29,22 @@ import {
   panViewport,
   zoomViewportAt
 } from '../lib/map-viewport.js';
+import { createFenixApiClient } from '../lib/fenix-api-client.js';
 import { resolveClientTokenMovement } from '../lib/token-input-movement.js';
+
+const SceneLayer = Object.freeze({
+  TOKENS: 'tokens',
+  WALLS: 'walls',
+  REGIONS: 'regions',
+  FOG: 'fog',
+  GRID: 'grid'
+});
+
+const REGION_LABELS = Object.freeze({
+  [SceneRegionKind.FLOOR]: 'Piso',
+  [SceneRegionKind.STAIRS]: 'Escada',
+  [SceneRegionKind.RAMP]: 'Rampa'
+});
 
 function sceneViewport(canvas, scene) {
   if (scene.id === demoScene.id) return demoViewport;
@@ -54,8 +74,114 @@ function cloneWalls(walls) {
   })) : [];
 }
 
+function cloneRegions(regions, scene) {
+  try {
+    return normalizeSceneRegions(regions ?? [], {
+      sceneWidth: scene?.width,
+      sceneHeight: scene?.height
+    }).map((region) => ({
+      ...region,
+      points: region.points.map((point) => ({ ...point })),
+      axis: region.axis ? {
+        start: { ...region.axis.start },
+        end: { ...region.axis.end }
+      } : null
+    }));
+  } catch {
+    return [];
+  }
+}
+
 function randomWallId() {
   return globalThis.crypto?.randomUUID?.() ?? `wall-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function randomRegionId() {
+  return globalThis.crypto?.randomUUID?.() ?? `region-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function rectanglePoints(a, b) {
+  const left = Math.min(Number(a.x), Number(b.x));
+  const right = Math.max(Number(a.x), Number(b.x));
+  const top = Math.min(Number(a.y), Number(b.y));
+  const bottom = Math.max(Number(a.y), Number(b.y));
+  return [
+    { x: left, y: top },
+    { x: right, y: top },
+    { x: right, y: bottom },
+    { x: left, y: bottom }
+  ];
+}
+
+function regionBounds(region) {
+  const xs = region?.points?.map((point) => Number(point.x)) ?? [0];
+  const ys = region?.points?.map((point) => Number(point.y)) ?? [0];
+  return {
+    x1: Math.min(...xs),
+    y1: Math.min(...ys),
+    x2: Math.max(...xs),
+    y2: Math.max(...ys)
+  };
+}
+
+function regionCenter(region) {
+  const b = regionBounds(region);
+  return { x: (b.x1 + b.x2) / 2, y: (b.y1 + b.y2) / 2 };
+}
+
+function pointInPolygon(point, points = []) {
+  let inside = false;
+  for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
+    const xi = Number(points[i]?.x); const yi = Number(points[i]?.y);
+    const xj = Number(points[j]?.x); const yj = Number(points[j]?.y);
+    const intersects = ((yi > point.y) !== (yj > point.y))
+      && (point.x < ((xj - xi) * (point.y - yi)) / ((yj - yi) || Number.EPSILON) + xi);
+    if (intersects) inside = !inside;
+  }
+  return inside;
+}
+
+function regionAtPoint(regions, point) {
+  return [...regions]
+    .sort((a, b) => Number(b.priority ?? 0) - Number(a.priority ?? 0))
+    .find((region) => pointInPolygon(point, region.points)) ?? null;
+}
+
+function regionForRectangle({ kind, start, end, baseElevation, levelHeight, id = randomRegionId(), name = null }) {
+  const points = rectanglePoints(start, end);
+  const b = regionBounds({ points });
+  const midY = (b.y1 + b.y2) / 2;
+  const targetElevation = kind === SceneRegionKind.FLOOR
+    ? baseElevation
+    : baseElevation + levelHeight;
+  return {
+    id,
+    name: name ?? `${REGION_LABELS[kind]} novo`,
+    kind,
+    enabled: true,
+    priority: 0,
+    points,
+    baseElevation,
+    targetElevation,
+    axis: kind === SceneRegionKind.FLOOR ? null : {
+      start: { x: b.x1, y: midY },
+      end: { x: b.x2, y: midY }
+    }
+  };
+}
+
+function translatedRegion(region, dx, dy, scene) {
+  const b = regionBounds(region);
+  const safeDx = Math.max(-b.x1, Math.min(Number(scene.width) - b.x2, dx));
+  const safeDy = Math.max(-b.y1, Math.min(Number(scene.height) - b.y2, dy));
+  return {
+    ...region,
+    points: region.points.map((point) => ({ x: point.x + safeDx, y: point.y + safeDy })),
+    axis: region.axis ? {
+      start: { x: region.axis.start.x + safeDx, y: region.axis.start.y + safeDy },
+      end: { x: region.axis.end.x + safeDx, y: region.axis.end.y + safeDy }
+    } : null
+  };
 }
 
 export function MapStage({
@@ -71,16 +197,20 @@ export function MapStage({
   movableActorId = null,
   visionActorId = null
 }) {
+  const { campaign } = useFenixSession();
+  const regionClient = useMemo(() => createFenixApiClient(), []);
   const canvasRef = useRef(null);
   const rendererRef = useRef(null);
   const frameRef = useRef(null);
   const dragRef = useRef(null);
   const panRef = useRef(null);
+  const regionGestureRef = useRef(null);
   const tokensRef = useRef(new Map(demoTokens.map((token) => [token.id, { ...token }])));
   const [backend, setBackend] = useState('detecting');
   const [selected, setSelected] = useState('Ayla');
   const [error, setError] = useState(null);
   const [viewport, setViewport] = useState(scene.id === demoScene.id ? demoViewport : { x: 0, y: 0, zoom: 1 });
+  const [activeLayer, setActiveLayer] = useState(SceneLayer.TOKENS);
   const [tool, setTool] = useState('select');
   const [gridEditorOpen, setGridEditorOpen] = useState(false);
   const [gridDraft, setGridDraft] = useState(() => normalizedGrid(scene.grid));
@@ -99,7 +229,18 @@ export function MapStage({
   const [fogPreview, setFogPreview] = useState(false);
   const [resetExploration, setResetExploration] = useState(false);
   const [dragVisionToken, setDragVisionToken] = useState(null);
+  const [regionMode, setRegionMode] = useState('select');
+  const [snapRegions, setSnapRegions] = useState(true);
+  const [regionVisible, setRegionVisible] = useState(true);
+  const [regionDraft, setRegionDraft] = useState(() => cloneRegions(scene.regions, scene));
+  const [regionPreview, setRegionPreview] = useState(null);
+  const [selectedRegionId, setSelectedRegionId] = useState(null);
+  const [regionsDirty, setRegionsDirty] = useState(false);
+  const [regionsSaving, setRegionsSaving] = useState(false);
   const demoZonesEnabled = scene.id === demoScene.id;
+  const regionSignature = JSON.stringify(scene.regions ?? []);
+
+  const interactionScene = useMemo(() => ({ ...scene, regions: regionDraft }), [scene, regionDraft]);
 
   useEffect(() => {
     setGridDraft(normalizedGrid(scene.grid));
@@ -113,6 +254,15 @@ export function MapStage({
     setFogPreview(false);
     setResetExploration(false);
     setDragVisionToken(null);
+    setActiveLayer(SceneLayer.TOKENS);
+    setTool('select');
+    setRegionMode('select');
+    setRegionDraft(cloneRegions(scene.regions, scene));
+    setRegionPreview(null);
+    setSelectedRegionId(null);
+    setRegionsDirty(false);
+    setRegionVisible(true);
+    regionGestureRef.current = null;
   }, [scene.id, scene.grid?.size, scene.grid?.offsetX, scene.grid?.offsetY, scene.grid?.visible]);
 
   useEffect(() => {
@@ -122,6 +272,10 @@ export function MapStage({
   useEffect(() => {
     if (!fogEditorOpen) setFogDraft(normalizeSceneFog(scene.fog ?? {}));
   }, [scene.fog, fogEditorOpen]);
+
+  useEffect(() => {
+    if (!regionsDirty) setRegionDraft(cloneRegions(scene.regions, scene));
+  }, [regionSignature, scene.width, scene.height, regionsDirty]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -235,8 +389,29 @@ export function MapStage({
     return () => canvas.removeEventListener('wheel', handleWheel);
   }, [scene.id, scene.width, scene.height]);
 
+  function activateLayer(layer) {
+    setActiveLayer(layer);
+    setTool('select');
+    setGridEditorOpen(layer === SceneLayer.GRID);
+    setWallEditorOpen(layer === SceneLayer.WALLS);
+    setFogEditorOpen(layer === SceneLayer.FOG);
+    setFogPreview(false);
+    setWallStart(null);
+    setRegionPreview(null);
+    regionGestureRef.current = null;
+    if (layer === SceneLayer.REGIONS) setRegionVisible(true);
+  }
+
   function boundedWallPoint(point) {
     const base = snapWalls ? snapScenePoint(point, gridDraft) : point;
+    return {
+      x: Math.max(0, Math.min(scene.width, Number(base.x) || 0)),
+      y: Math.max(0, Math.min(scene.height, Number(base.y) || 0))
+    };
+  }
+
+  function boundedRegionPoint(point) {
+    const base = snapRegions ? snapScenePoint(point, gridDraft) : point;
     return {
       x: Math.max(0, Math.min(scene.width, Number(base.x) || 0)),
       y: Math.max(0, Math.min(scene.height, Number(base.y) || 0))
@@ -304,9 +479,108 @@ export function MapStage({
     return true;
   }
 
+  function authoringBaseElevation() {
+    const token = (Array.isArray(authoritativeTokens) ? authoritativeTokens : [])
+      .find((item) => item?.id === visionActorId);
+    return Number.isFinite(Number(token?.elevation)) ? Number(token.elevation) : 0;
+  }
+
+  function makeRegion(kind, start, end, id = randomRegionId()) {
+    return regionForRectangle({
+      kind,
+      start,
+      end,
+      id,
+      baseElevation: authoringBaseElevation(),
+      levelHeight: Number(scene.elevation?.levelHeight) || 3,
+      name: `${REGION_LABELS[kind]} ${regionDraft.length + 1}`
+    });
+  }
+
+  function handleRegionPointerDown(event) {
+    const hit = rendererRef.current?.hitTest(event);
+    if (!hit?.world) return false;
+    const point = boundedRegionPoint(hit.world);
+
+    if (regionMode === 'erase') {
+      const target = regionAtPoint(regionDraft, point);
+      if (target) {
+        setRegionDraft((current) => current.filter((region) => region.id !== target.id));
+        setSelectedRegionId((current) => current === target.id ? null : current);
+        setRegionsDirty(true);
+      }
+      return true;
+    }
+
+    if ([SceneRegionKind.FLOOR, SceneRegionKind.STAIRS, SceneRegionKind.RAMP].includes(regionMode)) {
+      regionGestureRef.current = { type: 'draw', kind: regionMode, start: point };
+      setRegionPreview(makeRegion(regionMode, point, point));
+      event.currentTarget.setPointerCapture?.(event.pointerId);
+      return true;
+    }
+
+    const target = regionAtPoint(regionDraft, point);
+    setSelectedRegionId(target?.id ?? null);
+    if (target) {
+      regionGestureRef.current = {
+        type: 'move',
+        regionId: target.id,
+        start: point,
+        original: cloneRegions([target], scene)[0]
+      };
+      event.currentTarget.setPointerCapture?.(event.pointerId);
+    }
+    return true;
+  }
+
+  function handleRegionPointerMove(event) {
+    const gesture = regionGestureRef.current;
+    if (!gesture) return false;
+    const hit = rendererRef.current?.hitTest(event);
+    if (!hit?.world) return true;
+    const point = boundedRegionPoint(hit.world);
+
+    if (gesture.type === 'draw') {
+      setRegionPreview(makeRegion(gesture.kind, gesture.start, point));
+      return true;
+    }
+
+    if (gesture.type === 'move' && gesture.original) {
+      const dx = point.x - gesture.start.x;
+      const dy = point.y - gesture.start.y;
+      const moved = translatedRegion(gesture.original, dx, dy, scene);
+      setRegionDraft((current) => current.map((region) => region.id === moved.id ? moved : region));
+      setRegionsDirty(true);
+      return true;
+    }
+
+    return false;
+  }
+
+  function handleRegionPointerUp(event) {
+    const gesture = regionGestureRef.current;
+    regionGestureRef.current = null;
+    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+      event.currentTarget.releasePointerCapture?.(event.pointerId);
+    }
+    if (!gesture) return false;
+
+    if (gesture.type === 'draw' && regionPreview) {
+      const b = regionBounds(regionPreview);
+      if (b.x2 - b.x1 >= 4 && b.y2 - b.y1 >= 4) {
+        const finalized = { ...regionPreview, id: randomRegionId() };
+        setRegionDraft((current) => [...current, finalized]);
+        setSelectedRegionId(finalized.id);
+        setRegionsDirty(true);
+      }
+      setRegionPreview(null);
+    }
+    return true;
+  }
+
   function handlePointerDown(event) {
     if (busy) return;
-    const wantsPan = tool === 'pan' || event.button === 1;
+    const wantsPan = (activeLayer === SceneLayer.TOKENS && tool === 'pan') || event.button === 1;
     if (wantsPan) {
       panRef.current = { x: event.clientX, y: event.clientY };
       event.currentTarget.setPointerCapture?.(event.pointerId);
@@ -314,12 +588,21 @@ export function MapStage({
       return;
     }
 
-    if (wallEditorOpen && canMoveAny && event.button === 0) {
+    if (canMoveAny && activeLayer === SceneLayer.REGIONS && event.button === 0) {
+      if (handleRegionPointerDown(event)) {
+        event.preventDefault();
+        return;
+      }
+    }
+
+    if (canMoveAny && activeLayer === SceneLayer.WALLS && event.button === 0) {
       if (handleWallAuthoring(event)) {
         event.preventDefault();
         return;
       }
     }
+
+    if (activeLayer !== SceneLayer.TOKENS) return;
 
     const hit = rendererRef.current?.hitTest(event);
     if (!hit?.token) return;
@@ -350,9 +633,14 @@ export function MapStage({
       return;
     }
 
+    if (activeLayer === SceneLayer.REGIONS && regionGestureRef.current) {
+      handleRegionPointerMove(event);
+      return;
+    }
+
     const renderer = rendererRef.current;
     const drag = dragRef.current;
-    if (!renderer || !drag || busy || wallEditorOpen) return;
+    if (!renderer || !drag || busy || activeLayer !== SceneLayer.TOKENS) return;
     const hit = renderer.hitTest(event);
     const current = tokensRef.current.get(drag.tokenId);
     if (!current || !hit?.world) return;
@@ -361,7 +649,7 @@ export function MapStage({
     const resolved = resolveClientTokenMovement({
       previousToken: current,
       requestedToken: requested,
-      scene,
+      scene: interactionScene,
       ignoreWalls: canMoveAny
     });
     const moved = resolved?.token ?? requested;
@@ -381,12 +669,17 @@ export function MapStage({
       return;
     }
 
+    if (activeLayer === SceneLayer.REGIONS && regionGestureRef.current) {
+      handleRegionPointerUp(event);
+      return;
+    }
+
     const drag = dragRef.current;
     dragRef.current = null;
     if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
       event.currentTarget.releasePointerCapture?.(event.pointerId);
     }
-    if (!drag || wallEditorOpen) {
+    if (!drag || activeLayer !== SceneLayer.TOKENS) {
       setDragVisionToken(null);
       return;
     }
@@ -407,6 +700,7 @@ export function MapStage({
     try {
       await onGridCalibrated(scene.id, normalizedGrid(gridDraft));
       setGridEditorOpen(false);
+      activateLayer(SceneLayer.TOKENS);
     } finally {
       setGridSaving(false);
     }
@@ -420,7 +714,6 @@ export function MapStage({
       setWallDraft(cloneWalls(result?.scene?.walls ?? wallDraft));
       setWallHistory([]);
       setWallStart(null);
-      setWallEditorOpen(false);
     } finally {
       setWallsSaving(false);
     }
@@ -436,9 +729,27 @@ export function MapStage({
       });
       setFogDraft(normalizeSceneFog(result?.scene?.fog ?? fogDraft));
       setResetExploration(false);
-      setFogEditorOpen(false);
     } finally {
       setFogSaving(false);
+    }
+  }
+
+  async function saveRegions() {
+    if (!canMoveAny || demoZonesEnabled || regionsSaving || !campaign?.id) return;
+    setRegionsSaving(true);
+    try {
+      const normalized = normalizeSceneRegions(regionDraft, {
+        sceneWidth: scene.width,
+        sceneHeight: scene.height
+      });
+      const result = await regionClient.updateSceneRegions(campaign.id, scene.id, normalized);
+      setRegionDraft(cloneRegions(result?.scene?.regions ?? normalized, scene));
+      setRegionsDirty(false);
+      setError(null);
+    } catch (cause) {
+      setError(cause?.message || 'Não foi possível salvar as regiões desta cena.');
+    } finally {
+      setRegionsSaving(false);
     }
   }
 
@@ -446,7 +757,6 @@ export function MapStage({
     setWallDraft(cloneWalls(scene.walls));
     setWallHistory([]);
     setWallStart(null);
-    setWallEditorOpen(false);
   }
 
   function undoWallChange() {
@@ -456,6 +766,60 @@ export function MapStage({
       return history.slice(0, -1);
     });
     setWallStart(null);
+  }
+
+  function cancelRegions() {
+    setRegionDraft(cloneRegions(scene.regions, scene));
+    setRegionPreview(null);
+    setSelectedRegionId(null);
+    setRegionsDirty(false);
+    regionGestureRef.current = null;
+  }
+
+  function patchSelectedRegion(patch) {
+    if (!selectedRegionId) return;
+    setRegionDraft((current) => current.map((region) => region.id === selectedRegionId ? { ...region, ...patch } : region));
+    setRegionsDirty(true);
+  }
+
+  function changeSelectedRegionKind(nextKind) {
+    if (!selectedRegionId) return;
+    setRegionDraft((current) => current.map((region) => {
+      if (region.id !== selectedRegionId) return region;
+      const b = regionBounds(region);
+      const midY = (b.y1 + b.y2) / 2;
+      return {
+        ...region,
+        kind: nextKind,
+        targetElevation: nextKind === SceneRegionKind.FLOOR ? region.baseElevation : region.targetElevation,
+        axis: nextKind === SceneRegionKind.FLOOR ? null : (region.axis ?? {
+          start: { x: b.x1, y: midY },
+          end: { x: b.x2, y: midY }
+        })
+      };
+    }));
+    setRegionsDirty(true);
+  }
+
+  function reverseSelectedRegion() {
+    if (!selectedRegionId) return;
+    setRegionDraft((current) => current.map((region) => {
+      if (region.id !== selectedRegionId || !region.axis) return region;
+      return {
+        ...region,
+        baseElevation: region.targetElevation,
+        targetElevation: region.baseElevation,
+        axis: { start: { ...region.axis.end }, end: { ...region.axis.start } }
+      };
+    }));
+    setRegionsDirty(true);
+  }
+
+  function deleteSelectedRegion() {
+    if (!selectedRegionId) return;
+    setRegionDraft((current) => current.filter((region) => region.id !== selectedRegionId));
+    setSelectedRegionId(null);
+    setRegionsDirty(true);
   }
 
   function screenPoint(point) {
@@ -489,33 +853,77 @@ export function MapStage({
   const fogEnabled = scene.fog?.enabled === true;
   const fogActive = fogEnabled && (!canMoveAny || fogPreview);
   const resolvedVisionActorId = canMoveAny ? visionActorId : movableActorId;
+  const selectedRegion = regionDraft.find((region) => region.id === selectedRegionId) ?? null;
+  const regionTransform = `translate(${-viewport.x * viewport.zoom}px, ${-viewport.y * viewport.zoom}px) scale(${viewport.zoom})`;
+  const showRegionOverlay = canMoveAny && activeLayer === SceneLayer.REGIONS && regionVisible;
 
   return (
-    <section className={`map-stage map-tool-${tool} ${wallEditorOpen ? 'wall-authoring-active' : ''}`} aria-label="Mapa tático">
+    <section className={`map-stage map-tool-${tool} layer-${activeLayer} ${canMoveAny ? 'has-gm-controls' : ''}`} aria-label="Mapa tático">
       {scene.background ? (
         <div className="map-background-layer" style={backgroundStyle} aria-hidden="true" />
       ) : null}
 
-      <div className="map-camera-toolbar" role="toolbar" aria-label="Controles do mapa">
-        <button type="button" className={tool === 'select' ? 'active' : ''} onClick={() => setTool('select')} title="Selecionar e mover tokens">↖</button>
-        <button type="button" className={tool === 'pan' ? 'active' : ''} onClick={() => setTool('pan')} title="Mover câmera">✋</button>
-        <span className="map-toolbar-divider" />
+      <div className="map-camera-toolbar" role="toolbar" aria-label="Câmera do mapa">
         <button type="button" onClick={() => applyZoom(1 / 1.2)} title="Diminuir zoom">−</button>
         <span className="map-zoom-readout">{Math.round(viewport.zoom * 100)}%</span>
         <button type="button" onClick={() => applyZoom(1.2)} title="Aumentar zoom">+</button>
         <button type="button" onClick={fitScene} title="Ajustar mapa à tela">Ajustar</button>
-        {canMoveAny && !demoZonesEnabled ? (
-          <>
-            <button type="button" className={gridEditorOpen ? 'active' : ''} onClick={() => { setGridEditorOpen((value) => !value); setWallEditorOpen(false); setFogEditorOpen(false); }} title="Calibrar grade">Grade</button>
-            <button type="button" className={wallEditorOpen ? 'active' : ''} onClick={() => { setWallEditorOpen((value) => !value); setGridEditorOpen(false); setFogEditorOpen(false); setFogPreview(false); setWallStart(null); setTool('select'); }} title="Editar paredes e portas">Paredes</button>
-            <button type="button" className={fogEditorOpen ? 'active' : ''} onClick={() => { setFogEditorOpen((value) => !value); setGridEditorOpen(false); setWallEditorOpen(false); setFogPreview(false); }} title="Configurar Fog of War">Fog</button>
-            <button type="button" className={fogPreview ? 'vision-preview-active' : ''} disabled={!fogEnabled || !resolvedVisionActorId} onClick={() => { setFogPreview((value) => !value); setFogEditorOpen(false); setWallEditorOpen(false); }} title="Visualizar como o personagem selecionado">Visão</button>
-          </>
-        ) : null}
       </div>
 
-      {gridEditorOpen ? (
-        <div className="grid-calibration-panel">
+      {canMoveAny && !demoZonesEnabled ? (
+        <>
+          <nav className="scene-layer-controls" aria-label="Camadas da cena">
+            <button type="button" className={activeLayer === SceneLayer.TOKENS ? 'active' : ''} onClick={() => activateLayer(SceneLayer.TOKENS)} title="Controles de Tokens"><span>◉</span><small>Tokens</small></button>
+            <button type="button" className={activeLayer === SceneLayer.WALLS ? 'active' : ''} onClick={() => activateLayer(SceneLayer.WALLS)} title="Camada de Paredes"><span>╱</span><small>Paredes</small></button>
+            <button type="button" className={activeLayer === SceneLayer.REGIONS ? 'active' : ''} onClick={() => activateLayer(SceneLayer.REGIONS)} title="Camada de Regiões"><span>▦</span><small>Regiões</small></button>
+            <button type="button" className={activeLayer === SceneLayer.FOG ? 'active' : ''} onClick={() => activateLayer(SceneLayer.FOG)} title="Fog of War"><span>◐</span><small>Fog</small></button>
+            <button type="button" className={activeLayer === SceneLayer.GRID ? 'active' : ''} onClick={() => activateLayer(SceneLayer.GRID)} title="Configuração da Grade"><span>#</span><small>Grade</small></button>
+          </nav>
+
+          <div className="scene-tool-palette" role="toolbar" aria-label="Ferramentas da camada ativa">
+            <div className="scene-tool-palette-title">
+              <strong>{activeLayer === SceneLayer.TOKENS ? 'Tokens' : activeLayer === SceneLayer.WALLS ? 'Paredes' : activeLayer === SceneLayer.REGIONS ? 'Regiões' : activeLayer === SceneLayer.FOG ? 'Fog' : 'Grade'}</strong>
+              <small>{activeLayer === SceneLayer.REGIONS ? `${regionDraft.length} regiões` : activeLayer === SceneLayer.WALLS ? `${wallDraft.length} segmentos` : ''}</small>
+            </div>
+
+            {activeLayer === SceneLayer.TOKENS ? <>
+              <button type="button" className={tool === 'select' ? 'active' : ''} onClick={() => setTool('select')} title="Selecionar e mover tokens"><span>↖</span>Selecionar</button>
+              <button type="button" className={tool === 'pan' ? 'active' : ''} onClick={() => setTool('pan')} title="Mover câmera"><span>✋</span>Pan</button>
+            </> : null}
+
+            {activeLayer === SceneLayer.WALLS ? <>
+              <button type="button" className={wallMode === 'wall' ? 'active' : ''} onClick={() => { setWallMode('wall'); setWallStart(null); }}><span>╱</span>Parede</button>
+              <button type="button" className={wallMode === 'door' ? 'active' : ''} onClick={() => { setWallMode('door'); setWallStart(null); }}><span>▯</span>Porta</button>
+              <button type="button" className={wallMode === 'door-state' ? 'active' : ''} onClick={() => { setWallMode('door-state'); setWallStart(null); }}><span>↻</span>Estado</button>
+              <button type="button" className={wallMode === 'erase' ? 'active danger' : 'danger'} onClick={() => { setWallMode('erase'); setWallStart(null); }}><span>⌫</span>Apagar</button>
+              <button type="button" className={snapWalls ? 'toggle-on' : ''} onClick={() => setSnapWalls((value) => !value)}><span>⌗</span>Snap</button>
+            </> : null}
+
+            {activeLayer === SceneLayer.REGIONS ? <>
+              <button type="button" className={regionMode === 'select' ? 'active' : ''} onClick={() => setRegionMode('select')}><span>↖</span>Selecionar</button>
+              <button type="button" className={regionMode === SceneRegionKind.FLOOR ? 'active' : ''} onClick={() => setRegionMode(SceneRegionKind.FLOOR)}><span>▰</span>Piso</button>
+              <button type="button" className={regionMode === SceneRegionKind.STAIRS ? 'active' : ''} onClick={() => setRegionMode(SceneRegionKind.STAIRS)}><span>▟</span>Escada</button>
+              <button type="button" className={regionMode === SceneRegionKind.RAMP ? 'active' : ''} onClick={() => setRegionMode(SceneRegionKind.RAMP)}><span>◢</span>Rampa</button>
+              <button type="button" className={regionMode === 'erase' ? 'active danger' : 'danger'} onClick={() => setRegionMode('erase')}><span>⌫</span>Apagar</button>
+              <button type="button" className={regionVisible ? 'toggle-on' : ''} onClick={() => setRegionVisible((value) => !value)}><span>◉</span>Mostrar</button>
+              <button type="button" className={snapRegions ? 'toggle-on' : ''} onClick={() => setSnapRegions((value) => !value)}><span>⌗</span>Snap</button>
+            </> : null}
+
+            {activeLayer === SceneLayer.FOG ? <>
+              <button type="button" className={fogEditorOpen ? 'active' : ''} onClick={() => setFogEditorOpen(true)}><span>⚙</span>Configurar</button>
+              <button type="button" className={fogPreview ? 'active' : ''} disabled={!fogEnabled || !resolvedVisionActorId} onClick={() => setFogPreview((value) => !value)}><span>◉</span>Visão</button>
+            </> : null}
+
+            {activeLayer === SceneLayer.GRID ? <>
+              <button type="button" className="active" onClick={() => setGridEditorOpen(true)}><span>#</span>Calibrar</button>
+              <button type="button" className={gridDraft.visible !== false ? 'toggle-on' : ''} onClick={() => setGridDraft((grid) => ({ ...grid, visible: grid.visible === false }))}><span>◫</span>Mostrar</button>
+            </> : null}
+          </div>
+        </>
+      ) : null}
+
+      {gridEditorOpen && activeLayer === SceneLayer.GRID ? (
+        <div className="grid-calibration-panel scene-layer-inspector">
           <div className="grid-calibration-heading"><strong>Calibrar grade</strong><small>Preview em tempo real</small></div>
           <label>Tamanho (px)<input type="number" min="8" max="500" step="1" value={gridDraft.size} onChange={(event) => setGridDraft((grid) => ({ ...grid, size: event.target.value }))} /></label>
           <div className="grid-calibration-row">
@@ -530,17 +938,11 @@ export function MapStage({
         </div>
       ) : null}
 
-      {wallEditorOpen ? (
-        <div className="wall-authoring-panel">
+      {wallEditorOpen && activeLayer === SceneLayer.WALLS ? (
+        <div className="wall-authoring-panel scene-layer-inspector">
           <div className="wall-authoring-heading">
-            <div><strong>Paredes e portas</strong><small>{wallDraft.length} segmentos · dois cliques para desenhar</small></div>
-            <span>{wallStart ? 'Ponto inicial definido' : 'Pronto'}</span>
-          </div>
-          <div className="wall-authoring-tools">
-            <button type="button" className={wallMode === 'wall' ? 'active' : ''} onClick={() => { setWallMode('wall'); setWallStart(null); }}>Parede</button>
-            <button type="button" className={wallMode === 'door' ? 'active' : ''} onClick={() => { setWallMode('door'); setWallStart(null); }}>Porta</button>
-            <button type="button" className={wallMode === 'door-state' ? 'active' : ''} onClick={() => { setWallMode('door-state'); setWallStart(null); }}>Alternar porta</button>
-            <button type="button" className={wallMode === 'erase' ? 'active danger' : 'danger'} onClick={() => { setWallMode('erase'); setWallStart(null); }}>Apagar</button>
+            <div><strong>Paredes e portas</strong><small>{wallMode === 'wall' || wallMode === 'door' ? 'Clique no início e no fim do segmento' : 'Clique diretamente no segmento'}</small></div>
+            <span>{wallStart ? 'Ponto inicial' : 'Pronto'}</span>
           </div>
           <div className="wall-authoring-options">
             <label><input type="checkbox" checked={snapWalls} onChange={(event) => setSnapWalls(event.target.checked)} /> Snap na grade</label>
@@ -554,14 +956,14 @@ export function MapStage({
           </div>
           <div className="wall-authoring-actions">
             <button type="button" disabled={!wallHistory.length} onClick={undoWallChange}>Desfazer</button>
-            <button type="button" onClick={cancelWalls}>Cancelar</button>
-            <button type="button" className="primary-button" disabled={wallsSaving || busy} onClick={saveWalls}>{wallsSaving ? 'Salvando…' : 'Salvar paredes'}</button>
+            <button type="button" onClick={cancelWalls}>Reverter</button>
+            <button type="button" className="primary-button" disabled={wallsSaving || busy} onClick={saveWalls}>{wallsSaving ? 'Salvando…' : 'Salvar'}</button>
           </div>
         </div>
       ) : null}
 
-      {fogEditorOpen ? (
-        <div className="fog-config-panel">
+      {fogEditorOpen && activeLayer === SceneLayer.FOG ? (
+        <div className="fog-config-panel scene-layer-inspector">
           <div className="fog-config-heading"><strong>Fog of War</strong><small>Visão por token</small></div>
           <label className="fog-config-toggle"><input type="checkbox" checked={fogDraft.enabled} onChange={(event) => setFogDraft((fog) => ({ ...fog, enabled: event.target.checked }))} /> Ativar Fog nesta cena</label>
           <label>Alcance de visão (células)<input type="number" min="1" max="60" step="1" value={fogDraft.visionRangeCells} onChange={(event) => setFogDraft((fog) => ({ ...fog, visionRangeCells: event.target.value }))} /></label>
@@ -572,10 +974,48 @@ export function MapStage({
           <label className="fog-reset-toggle"><input type="checkbox" checked={resetExploration} onChange={(event) => setResetExploration(event.target.checked)} /> Limpar áreas exploradas ao salvar</label>
           <small className="fog-config-help">Paredes e portas fechadas/trancadas bloqueiam a linha de visão. Portas abertas deixam a visão passar.</small>
           <div className="fog-config-actions">
-            <button type="button" onClick={() => { setFogDraft(normalizeSceneFog(scene.fog ?? {})); setResetExploration(false); setFogEditorOpen(false); }}>Cancelar</button>
+            <button type="button" onClick={() => { setFogDraft(normalizeSceneFog(scene.fog ?? {})); setResetExploration(false); }}>Reverter</button>
             <button type="button" className="primary-button" disabled={fogSaving || busy} onClick={saveFog}>{fogSaving ? 'Salvando…' : 'Salvar Fog'}</button>
           </div>
         </div>
+      ) : null}
+
+      {activeLayer === SceneLayer.REGIONS && canMoveAny ? (
+        <aside className="scene-region-legend" aria-label="Legenda e propriedades das regiões">
+          <div className="scene-region-legend-heading">
+            <div><strong>Regiões</strong><small>Selecione no mapa ou na lista</small></div>
+            <span>{regionDraft.length}</span>
+          </div>
+          <div className="scene-region-list">
+            {regionDraft.length ? regionDraft.map((region) => (
+              <button type="button" key={region.id} className={`${selectedRegionId === region.id ? 'active' : ''} region-${region.kind}`} onClick={() => { setSelectedRegionId(region.id); setRegionMode('select'); }}>
+                <span className="region-swatch" />
+                <span><strong>{region.name}</strong><small>{REGION_LABELS[region.kind]} · {region.kind === SceneRegionKind.FLOOR ? `Z ${Number(region.baseElevation).toFixed(1)}` : `Z ${Number(region.baseElevation).toFixed(1)} → ${Number(region.targetElevation).toFixed(1)}`}</small></span>
+              </button>
+            )) : <div className="scene-region-empty"><strong>Nenhuma região</strong><small>Escolha Piso, Escada ou Rampa e arraste no mapa.</small></div>}
+          </div>
+
+          {selectedRegion ? (
+            <div className="scene-region-inspector">
+              <div className="scene-region-inspector-heading"><strong>Propriedades</strong><button type="button" className="danger" onClick={deleteSelectedRegion}>Excluir</button></div>
+              <label>Nome<input value={selectedRegion.name} onChange={(event) => patchSelectedRegion({ name: event.target.value })} /></label>
+              <label>Tipo<select value={selectedRegion.kind} onChange={(event) => changeSelectedRegionKind(event.target.value)}><option value={SceneRegionKind.FLOOR}>Piso</option><option value={SceneRegionKind.STAIRS}>Escada</option><option value={SceneRegionKind.RAMP}>Rampa</option></select></label>
+              <div className="scene-region-inspector-grid">
+                <label>Z inicial<input type="number" step="0.25" value={selectedRegion.baseElevation} onChange={(event) => patchSelectedRegion({ baseElevation: event.target.value, ...(selectedRegion.kind === SceneRegionKind.FLOOR ? { targetElevation: event.target.value } : {}) })} /></label>
+                {selectedRegion.kind !== SceneRegionKind.FLOOR ? <label>Z final<input type="number" step="0.25" value={selectedRegion.targetElevation} onChange={(event) => patchSelectedRegion({ targetElevation: event.target.value })} /></label> : null}
+                <label>Prioridade<input type="number" min="-100" max="100" value={selectedRegion.priority} onChange={(event) => patchSelectedRegion({ priority: event.target.value })} /></label>
+              </div>
+              <label className="scene-region-enabled"><input type="checkbox" checked={selectedRegion.enabled !== false} onChange={(event) => patchSelectedRegion({ enabled: event.target.checked })} /> Região ativa</label>
+              {selectedRegion.kind !== SceneRegionKind.FLOOR ? <button type="button" onClick={reverseSelectedRegion}>↔ Inverter subida</button> : null}
+              <small>Arraste a região selecionada no mapa para reposicionar. Coordenadas ficam implícitas no canvas.</small>
+            </div>
+          ) : <div className="scene-region-selection-help"><strong>Authoring direto</strong><small>Desenhe por arraste. Depois selecione a região para mover ou ajustar Z, tipo e prioridade.</small></div>}
+
+          <div className="scene-region-actions">
+            <button type="button" disabled={!regionsDirty} onClick={cancelRegions}>Reverter</button>
+            <button type="button" className="primary-button" disabled={!regionsDirty || regionsSaving || busy} onClick={saveRegions}>{regionsSaving ? 'Salvando…' : 'Salvar regiões'}</button>
+          </div>
+        </aside>
       ) : null}
 
       <div className="map-hud map-hud-top">
@@ -606,7 +1046,30 @@ export function MapStage({
         transientToken={dragVisionToken}
       />
 
-      {canMoveAny && wallEditorOpen ? (
+      {showRegionOverlay ? (
+        <svg className="scene-region-authoring-overlay" width={scene.width} height={scene.height} viewBox={`0 0 ${scene.width} ${scene.height}`} style={{ transform: regionTransform }} aria-label="Regiões da cena">
+          <defs>
+            <marker id="scene-region-arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3 z" /></marker>
+          </defs>
+          {regionDraft.map((region) => {
+            const c = regionCenter(region);
+            const selectedClass = selectedRegionId === region.id ? ' selected' : '';
+            return <g key={region.id} className={`scene-region-group region-${region.kind}${selectedClass}`}>
+              <polygon className="scene-region-shape" points={region.points.map((point) => `${point.x},${point.y}`).join(' ')} />
+              {region.axis ? <line className="scene-region-axis" x1={region.axis.start.x} y1={region.axis.start.y} x2={region.axis.end.x} y2={region.axis.end.y} markerEnd="url(#scene-region-arrow)" /> : null}
+              <text className="scene-region-label" x={c.x} y={c.y - 6} textAnchor="middle">{region.name}</text>
+              <text className="scene-region-label secondary" x={c.x} y={c.y + 10} textAnchor="middle">{region.kind === SceneRegionKind.FLOOR ? `Z ${Number(region.baseElevation).toFixed(1)}` : `Z ${Number(region.baseElevation).toFixed(1)} → ${Number(region.targetElevation).toFixed(1)}`}</text>
+              {selectedRegionId === region.id ? region.points.map((point, index) => <circle key={`${region.id}-handle-${index}`} className="scene-region-handle" cx={point.x} cy={point.y} r="5" />) : null}
+            </g>;
+          })}
+          {regionPreview ? <polygon className={`scene-region-shape preview region-${regionPreview.kind}`} points={regionPreview.points.map((point) => `${point.x},${point.y}`).join(' ')} /> : null}
+          {(Array.isArray(authoritativeTokens) ? authoritativeTokens : []).map((token) => Number.isFinite(Number(token?.elevation)) ? (
+            <g className="scene-region-token-z" key={`z-${token.id}`} transform={`translate(${Number(token.x) + 18} ${Number(token.y) - 24})`}><rect x="0" y="0" width="50" height="18" rx="6" /><text x="25" y="12" textAnchor="middle">Z {Number(token.elevation).toFixed(1)}</text></g>
+          ) : null)}
+        </svg>
+      ) : null}
+
+      {canMoveAny && activeLayer === SceneLayer.WALLS ? (
         <svg className="wall-authoring-overlay" aria-label="Geometria de paredes da cena">
           {wallDraft.map((wall) => {
             const a = screenPoint(wall.a);
@@ -626,19 +1089,16 @@ export function MapStage({
       <div className="map-room-label">
         <span className="eyebrow">Cena ativa</span>
         <strong>{scene.name}</strong>
-        <small>{canMoveAny ? 'Mestre · controle de todos os tokens' : `Jogador · controle de ${movableActorId || 'nenhum token'}`}</small>
+        <small>{canMoveAny ? 'Mestre · camadas de authoring' : `Jogador · controle de ${movableActorId || 'nenhum token'}`}</small>
       </div>
 
       <div className="map-hud map-hud-bottom">
-        <span>Selecionado</span>
-        <strong>{wallEditorOpen ? `${wallDraft.length} segmentos` : fogPreview ? `Visão: ${resolvedVisionActorId || 'selecione um ator'}` : selected}</strong>
+        <span>{activeLayer === SceneLayer.REGIONS ? 'Região' : activeLayer === SceneLayer.WALLS ? 'Paredes' : activeLayer === SceneLayer.FOG ? 'Fog' : activeLayer === SceneLayer.GRID ? 'Grade' : 'Selecionado'}</span>
+        <strong>{activeLayer === SceneLayer.REGIONS ? (selectedRegion?.name ?? `${regionDraft.length} regiões`) : activeLayer === SceneLayer.WALLS ? `${wallDraft.length} segmentos` : fogPreview ? `Visão: ${resolvedVisionActorId || 'selecione um ator'}` : selected}</strong>
       </div>
 
       {demoZonesEnabled ? (
-        <div className="room-zone-hint" aria-hidden="true">
-          <span>03</span>
-          <strong>Câmara Norte</strong>
-        </div>
+        <div className="room-zone-hint" aria-hidden="true"><span>03</span><strong>Câmara Norte</strong></div>
       ) : null}
 
       {error ? <div className="map-error" role="status">{error}</div> : null}

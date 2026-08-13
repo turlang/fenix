@@ -1,12 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  SceneRegionKind,
   TokenMovementMode,
   clampFlyingElevation,
   eyeElevation,
   levelForElevation,
   normalizeSceneElevation,
+  normalizeSceneRegions,
   normalizeTokenVerticalProfile,
+  pointInPolygon,
+  regionElevationAtPoint,
+  resolveGroundElevation,
   tokenVerticalBand,
   verticalBandsOverlap,
   wallContainsElevation,
@@ -52,4 +57,48 @@ test('voo limita a alteração de Z a um passo por comando', () => {
   assert.equal(clampFlyingElevation({ previousElevation: 4, requestedElevation: 50, verticalStep: 1 }), 5);
   assert.equal(clampFlyingElevation({ previousElevation: 4, requestedElevation: -50, verticalStep: 1 }), 3);
   assert.equal(clampFlyingElevation({ previousElevation: 4, requestedElevation: 4.5, verticalStep: 1 }), 4.5);
+});
+
+const regionPoints = Object.freeze([
+  { x: 0, y: 0 },
+  { x: 100, y: 0 },
+  { x: 100, y: 100 },
+  { x: 0, y: 100 }
+]);
+
+test('região de piso fixa Z e reconhece ponto interno', () => {
+  const [floor] = normalizeSceneRegions([{
+    id: 'floor-0',
+    name: 'Térreo',
+    kind: SceneRegionKind.FLOOR,
+    points: regionPoints,
+    baseElevation: 0
+  }], { sceneWidth: 300, sceneHeight: 200 });
+  assert.equal(pointInPolygon({ x: 50, y: 50 }, floor.points), true);
+  assert.equal(pointInPolygon({ x: 150, y: 50 }, floor.points), false);
+  assert.equal(regionElevationAtPoint(floor, { x: 50, y: 50 }), 0);
+});
+
+test('rampa interpola Z entre início e fim', () => {
+  const [ramp] = normalizeSceneRegions([{
+    id: 'ramp-0',
+    kind: SceneRegionKind.RAMP,
+    points: regionPoints,
+    baseElevation: 0,
+    targetElevation: 4,
+    axis: { start: { x: 0, y: 50 }, end: { x: 100, y: 50 } }
+  }], { sceneWidth: 300, sceneHeight: 200 });
+  assert.equal(regionElevationAtPoint(ramp, { x: 0, y: 50 }), 0);
+  assert.equal(regionElevationAtPoint(ramp, { x: 50, y: 50 }), 2);
+  assert.equal(regionElevationAtPoint(ramp, { x: 100, y: 50 }), 4);
+});
+
+test('prioridade escolhe região sobreposta para elevação automática', () => {
+  const regions = normalizeSceneRegions([
+    { id: 'base', kind: 'floor', priority: 0, points: regionPoints, baseElevation: 0 },
+    { id: 'top', kind: 'floor', priority: 10, points: regionPoints, baseElevation: 7 }
+  ], { sceneWidth: 300, sceneHeight: 200 });
+  const result = resolveGroundElevation({ regions, point: { x: 50, y: 50 }, fallbackElevation: 0 });
+  assert.equal(result.regionId, 'top');
+  assert.equal(result.elevation, 7);
 });

@@ -1,0 +1,30 @@
+.floor-region-overlay-toggle {
+  display: none;
+}
+
+.floor-region-live-overlay {
+  z-index: 5;
+}
+
+.floor-region-live-overlay marker path {
+  fill: rgba(255,255,255,.82);
+}
+
+.floor-region-token-z {
+  display: none;
+}
+
+.floor-region-token-z rect {
+  fill: rgba(8,11,13,.92);
+  stroke: rgba(230,177,83,.8);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.floor-region-token-z text {
+  fill: #f2c66f;
+  font: 700 9px/1 ui-monospace, SFMono-Regular, Consolas, monospace;
+  paint-order: stroke;
+  stroke: rgba(0,0,0,.9);
+  stroke-width: 2px;
+}
