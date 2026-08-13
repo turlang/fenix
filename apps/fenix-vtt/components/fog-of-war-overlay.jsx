@@ -13,13 +13,12 @@ import {
 import { eyeElevation, normalizeSceneElevation } from '../../../packages/scene-elevation/src/index.js';
 import { AdvancedVisionEditor } from './advanced-vision-editor.jsx';
 import { DynamicLightingOverlay } from './dynamic-lighting-overlay.jsx';
+import { FloorRegionOverlay } from './floor-region-overlay.jsx';
 
 function exploredForActor(fog = {}, actorId = null) {
   if (!actorId) return [];
   if (Array.isArray(fog.exploredCells)) return fog.exploredCells;
-  if (fog.exploredByActor && Array.isArray(fog.exploredByActor[actorId])) {
-    return fog.exploredByActor[actorId];
-  }
+  if (fog.exploredByActor && Array.isArray(fog.exploredByActor[actorId])) return fog.exploredByActor[actorId];
   return [];
 }
 
@@ -39,14 +38,7 @@ function exploredPath(cells, grid) {
   }).join('');
 }
 
-export function FogOfWarOverlay({
-  scene,
-  tokens = [],
-  actorId = null,
-  viewport,
-  active = false,
-  transientToken = null
-}) {
+export function FogOfWarOverlay({ scene, tokens = [], actorId = null, viewport, active = false, transientToken = null }) {
   const rawId = useId();
   const id = rawId.replace(/[^a-zA-Z0-9_-]/g, '') || 'fog';
   const fog = useMemo(() => normalizeSceneFog(scene?.fog ?? {}), [
@@ -63,10 +55,7 @@ export function FogOfWarOverlay({
     actorId,
     fallbackRangeCells: fog.visionRangeCells
   }), [scene?.id, actorId, fog.visionRangeCells, visionProfileSignature]);
-  const persisted = useMemo(
-    () => exploredForActor(scene?.fog, actorId),
-    [scene?.fog, actorId]
-  );
+  const persisted = useMemo(() => exploredForActor(scene?.fog, actorId), [scene?.fog, actorId]);
   const [exploredCells, setExploredCells] = useState(persisted);
 
   useEffect(() => {
@@ -96,24 +85,7 @@ export function FogOfWarOverlay({
       const merged = mergeExploredCells(current, discovered);
       return sameCells(current, merged) ? current : [...merged];
     });
-  }, [
-    active,
-    actorToken?.x,
-    actorToken?.y,
-    actorToken?.elevation,
-    actorToken?.id,
-    fog.enabled,
-    visionProfile.rangeCells,
-    observerElevation,
-    elevationConfig.enabled,
-    scene?.id,
-    scene?.width,
-    scene?.height,
-    scene?.grid?.size,
-    scene?.grid?.offsetX,
-    scene?.grid?.offsetY,
-    scene?.walls
-  ]);
+  }, [active, actorToken?.x, actorToken?.y, actorToken?.elevation, actorToken?.id, fog.enabled, visionProfile.rangeCells, observerElevation, elevationConfig.enabled, scene?.id, scene?.width, scene?.height, scene?.grid?.size, scene?.grid?.offsetX, scene?.grid?.offsetY, scene?.walls]);
 
   const visibility = useMemo(() => {
     if (!actorToken || !scene) return [];
@@ -126,19 +98,7 @@ export function FogOfWarOverlay({
       verticalEnabled: elevationConfig.enabled,
       elevation: observerElevation
     });
-  }, [
-    visionProfile.rangeCells,
-    observerElevation,
-    elevationConfig.enabled,
-    actorToken?.x,
-    actorToken?.y,
-    actorToken?.elevation,
-    actorToken?.id,
-    scene?.width,
-    scene?.height,
-    scene?.grid?.size,
-    scene?.walls
-  ]);
+  }, [visionProfile.rangeCells, observerElevation, elevationConfig.enabled, actorToken?.x, actorToken?.y, actorToken?.elevation, actorToken?.id, scene?.width, scene?.height, scene?.grid?.size, scene?.walls]);
 
   const lightingTokens = useMemo(() => {
     if (!transientToken?.id) return tokens;
@@ -151,20 +111,8 @@ export function FogOfWarOverlay({
   const currentPoints = visibility.map((point) => `${point.x},${point.y}`).join(' ');
   const tint = tokenVisionTint(visionProfile.mode);
   const advancedVisionEffect = active && currentPoints && tint.opacity > 0 ? (
-    <svg
-      className="fog-of-war-overlay advanced-vision-effect"
-      width={scene.width}
-      height={scene.height}
-      viewBox={`0 0 ${scene.width} ${scene.height}`}
-      style={{ transform }}
-      aria-hidden="true"
-    >
-      <polygon
-        className={`vision-mode-overlay vision-${visionProfile.mode}`}
-        points={currentPoints}
-        fill={tint.color}
-        opacity={tint.opacity}
-      />
+    <svg className="fog-of-war-overlay advanced-vision-effect" width={scene.width} height={scene.height} viewBox={`0 0 ${scene.width} ${scene.height}`} style={{ transform }} aria-hidden="true">
+      <polygon className={`vision-mode-overlay vision-${visionProfile.mode}`} points={currentPoints} fill={tint.color} opacity={tint.opacity} />
     </svg>
   ) : null;
 
@@ -178,11 +126,10 @@ export function FogOfWarOverlay({
       visionPolygon={active ? visibility : []}
     />
   );
+  const regionOverlay = <FloorRegionOverlay scene={scene} tokens={lightingTokens} viewport={viewport} />;
   const editor = <AdvancedVisionEditor scene={scene} actorId={actorId} tokens={lightingTokens} />;
 
-  if (!active || !fog.enabled) {
-    return <>{lighting}{editor}</>;
-  }
+  if (!active || !fog.enabled) return <>{lighting}{regionOverlay}{editor}</>;
 
   const explored = exploredPath(exploredCells, scene.grid ?? {});
   const noToken = !actorToken || visibility.length < 3;
@@ -192,14 +139,7 @@ export function FogOfWarOverlay({
   return (
     <>
       {lighting}
-      <svg
-        className="fog-of-war-overlay"
-        width={scene.width}
-        height={scene.height}
-        viewBox={`0 0 ${scene.width} ${scene.height}`}
-        style={{ transform }}
-        aria-hidden="true"
-      >
+      <svg className="fog-of-war-overlay" width={scene.width} height={scene.height} viewBox={`0 0 ${scene.width} ${scene.height}`} style={{ transform }} aria-hidden="true">
         <defs>
           <mask id={unexploredMask} maskUnits="userSpaceOnUse" x="0" y="0" width={scene.width} height={scene.height}>
             <rect width={scene.width} height={scene.height} fill="white" />
@@ -212,24 +152,11 @@ export function FogOfWarOverlay({
             {!noToken && currentPoints ? <polygon points={currentPoints} fill="black" /> : null}
           </mask>
         </defs>
-        <rect
-          className="fog-unexplored"
-          width={scene.width}
-          height={scene.height}
-          opacity={fog.unexploredOpacity}
-          mask={`url(#${unexploredMask})`}
-        />
-        {!noToken ? (
-          <rect
-            className="fog-explored"
-            width={scene.width}
-            height={scene.height}
-            opacity={fog.exploredOpacity}
-            mask={`url(#${exploredMask})`}
-          />
-        ) : null}
+        <rect className="fog-unexplored" width={scene.width} height={scene.height} opacity={fog.unexploredOpacity} mask={`url(#${unexploredMask})`} />
+        {!noToken ? <rect className="fog-explored" width={scene.width} height={scene.height} opacity={fog.exploredOpacity} mask={`url(#${exploredMask})`} /> : null}
       </svg>
       {advancedVisionEffect}
+      {regionOverlay}
       {editor}
     </>
   );
