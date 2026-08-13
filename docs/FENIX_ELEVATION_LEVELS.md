@@ -120,22 +120,38 @@ A geometria de Floor Regions é informação de authoring do Mestre:
 
 Assim a região de uma passagem, escada secreta ou piso oculto não precisa ser entregue ao navegador do jogador.
 
-## Visualização do Mestre
+## Scene Controls do Mestre
 
-O battlemap agora possui um controle GM-only **`Pisos · N`**.
+O fluxo de authoring foi reorganizado em um padrão de VTT por camadas. A barra vertical ativa uma camada por vez e abre uma paleta contextual própria:
 
-Quando ativo:
+- **Tokens** — selecionar/mover tokens e câmera;
+- **Paredes** — parede, porta, estado da porta, apagar e snap;
+- **Regiões** — selecionar, Piso, Escada, Rampa, apagar, mostrar e snap;
+- **Fog** — configuração e preview de visão;
+- **Grade** — calibração e visibilidade.
 
-- Piso aparece como região azul;
-- Escada aparece em amarelo;
-- Rampa aparece em verde;
-- Escadas/Rampas mostram uma seta indicando o sentido da subida;
-- cada região mostra nome e faixa de Z;
-- cada token mostra um badge `Z n.n` junto ao personagem.
+Isso evita misturar edição de cena com movimentação normal de personagem.
 
-Os badges Z permanecem visíveis para o Mestre quando o modelo de elevação está em uso, permitindo confirmar a transição sem depender do painel numérico. Mouse e WASD usam o mesmo helper de preview local das regiões; depois o Engine continua sendo a autoridade final.
+### Authoring visual de Regiões
 
-O painel **Sentidos → Pisos e transições** permanece como ajuste preciso de X/Y/Z, prioridade e direção. O overlay elimina a validação “às cegas”: depois de salvar, o Mestre pode ativar `Pisos` e comparar diretamente a geometria configurada com o battlemap.
+O caminho principal não depende mais de digitar X/Y:
+
+1. o Mestre ativa **Regiões**;
+2. escolhe **Piso**, **Escada** ou **Rampa**;
+3. clica e arrasta diretamente no battlemap;
+4. a área aparece como preview durante o arraste;
+5. ao soltar, a região entra no draft;
+6. com **Selecionar**, o Mestre pode clicar e arrastar a região para reposicioná-la;
+7. o inspector lateral permite alterar nome, tipo, Z inicial/final, prioridade, estado ativo e direção da subida;
+8. **Salvar regiões** persiste o draft pelo endpoint GM-only.
+
+Piso aparece em azul, Escada em amarelo e Rampa em verde. Escadas/Rampas mostram uma seta de subida e a região mostra sua faixa de Z.
+
+Os valores numéricos do editor avançado continuam disponíveis para ajustes de precisão, mas não são mais o fluxo obrigatório de posicionamento.
+
+### Validação do Z
+
+Na camada de Regiões, os tokens exibem badge de elevação. Mouse e WASD usam o mesmo preview local da geometria; o Engine continua sendo a autoridade final. Para validar uma transição física, salve primeiro a região, pois o browser pode conhecer um draft ainda não persistido.
 
 ## LOS, Fog e Lighting
 
@@ -161,7 +177,8 @@ Os gates cobrem:
 - Rampa/Escada interpolam Z;
 - prioridade de regiões;
 - preview local do GM reproduz Z de Piso/Rampa;
-- overlay visual GM-only contém regiões, direção de subida e badges Z;
+- Scene Controls expõem camadas e ferramentas contextuais;
+- Regiões são criadas e movidas diretamente no canvas;
 - capacidades táticas permanecem fora do `SessionDirector`.
 
 A CI mantém Node 20/22/24, validator modular, PostgreSQL, coordenação distribuída, idempotência, routing, HTTP, WebSocket e build standalone.
@@ -170,6 +187,10 @@ A CI mantém Node 20/22/24, validator modular, PostgreSQL, coordenação distrib
 
 Ainda não fazem parte desta fase:
 
+- redimensionamento por arraste dos handles de canto — os handles atuais indicam seleção;
+- polígonos livres, elipses e regiões compostas no authoring visual;
+- iluminação manual integrada à mesma barra de Scene Controls;
+- seleção múltipla, copiar/colar e undo/redo unificado entre camadas;
 - gravidade, queda e dano de queda;
 - teto/volume fechado completo;
 - portais verticais/alçapões automáticos;
@@ -178,7 +199,7 @@ Ainda não fazem parte desta fase:
 - renderer 3D/PBR;
 - pathfinding 3D.
 
-O motor de regiões aceita polígonos; a edição precisa atual continua baseada nos valores do painel e a visualização acontece diretamente sobre o mapa.
+O motor de regiões já aceita polígonos; nesta iteração a criação visual usa retângulos e a edição avançada continua disponível para precisão.
 
 ## Fronteira arquitetural
 
