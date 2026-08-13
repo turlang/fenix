@@ -1,4 +1,6 @@
 import { resolveTokenMovement } from '../../../packages/scene-collision/src/index.js';
+import { normalizeSceneElevation } from '../../../packages/scene-elevation/src/index.js';
+import { normalizeTokenVisionProfile } from '../../../packages/scene-vision/src/index.js';
 
 const DIRECTIONS = Object.freeze({
   w: Object.freeze({ x: 0, y: -1 }),
@@ -51,18 +53,35 @@ export function resolveClientTokenMovement({
   if (!requestedToken) return null;
   if (!previousToken || !scene) return { token: { ...requestedToken }, collision: null };
 
+  const profile = normalizeTokenVisionProfile(scene.visionProfiles?.[requestedToken.id] ?? {}, {
+    defaultRangeCells: Number(scene.fog?.visionRangeCells) || 8
+  });
+  const elevationConfig = normalizeSceneElevation(scene.elevation ?? {});
+  const tokenElevation = Number.isFinite(Number(requestedToken.elevation))
+    ? Number(requestedToken.elevation)
+    : Number.isFinite(Number(previousToken.elevation)) ? Number(previousToken.elevation) : profile.elevation;
+  const tokenHeight = Number.isFinite(Number(requestedToken.height))
+    ? Number(requestedToken.height)
+    : Number.isFinite(Number(previousToken.height)) ? Number(previousToken.height) : profile.height;
+
   const collision = resolveTokenMovement({
     from: previousToken,
     to: requestedToken,
     walls: ignoreWalls ? [] : (scene.walls ?? []),
     sceneWidth: scene.width,
     sceneHeight: scene.height,
-    tokenSize: requestedToken.size ?? previousToken.size
+    tokenSize: requestedToken.size ?? previousToken.size,
+    verticalEnabled: elevationConfig.enabled,
+    tokenElevation,
+    tokenHeight
   });
 
   return {
     token: {
       ...requestedToken,
+      elevation: tokenElevation,
+      height: tokenHeight,
+      movementMode: requestedToken.movementMode ?? previousToken.movementMode ?? profile.movementMode,
       x: collision.position.x,
       y: collision.position.y
     },
