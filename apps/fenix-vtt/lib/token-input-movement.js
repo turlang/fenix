@@ -1,6 +1,7 @@
 import { resolveTokenMovement } from '../../../packages/scene-collision/src/index.js';
 import { normalizeSceneElevation } from '../../../packages/scene-elevation/src/index.js';
 import { normalizeTokenVisionProfile } from '../../../packages/scene-vision/src/index.js';
+import { previewGroundElevation } from './floor-region-preview.js';
 
 const DIRECTIONS = Object.freeze({
   w: Object.freeze({ x: 0, y: -1 }),
@@ -63,6 +64,7 @@ export function resolveClientTokenMovement({
   const tokenHeight = Number.isFinite(Number(requestedToken.height))
     ? Number(requestedToken.height)
     : Number.isFinite(Number(previousToken.height)) ? Number(previousToken.height) : profile.height;
+  const movementMode = requestedToken.movementMode ?? previousToken.movementMode ?? profile.movementMode;
 
   const collision = resolveTokenMovement({
     from: previousToken,
@@ -75,19 +77,23 @@ export function resolveClientTokenMovement({
     tokenElevation,
     tokenHeight
   });
+  const moved = {
+    ...requestedToken,
+    elevation: tokenElevation,
+    height: tokenHeight,
+    movementMode,
+    x: collision.position.x,
+    y: collision.position.y
+  };
+  const groundPreview = previewGroundElevation(scene, moved, tokenElevation);
+  if (groundPreview) moved.elevation = groundPreview.elevation;
 
   return {
-    token: {
-      ...requestedToken,
-      elevation: tokenElevation,
-      height: tokenHeight,
-      movementMode: requestedToken.movementMode ?? previousToken.movementMode ?? profile.movementMode,
-      x: collision.position.x,
-      y: collision.position.y
-    },
+    token: moved,
     collision: {
       ...collision,
       ignoredWalls: ignoreWalls === true
-    }
+    },
+    groundPreview
   };
 }
