@@ -135,7 +135,7 @@ export function FogOfWarOverlay({
   const transform = `translate(${-viewport.x * viewport.zoom}px, ${-viewport.y * viewport.zoom}px) scale(${viewport.zoom})`;
   const currentPoints = visibility.map((point) => `${point.x},${point.y}`).join(' ');
   const tint = tokenVisionTint(visionProfile.mode);
-  const advancedVisionEffect = currentPoints && tint.opacity > 0 ? (
+  const advancedVisionEffect = active && currentPoints && tint.opacity > 0 ? (
     <svg
       className="fog-of-war-overlay advanced-vision-effect"
       width={scene.width}
@@ -159,14 +159,14 @@ export function FogOfWarOverlay({
       tokens={lightingTokens}
       viewport={viewport}
       active={true}
-      visionProfile={visionProfile}
-      visionPolygon={visibility}
+      visionProfile={active ? visionProfile : null}
+      visionPolygon={active ? visibility : []}
     />
   );
   const editor = <AdvancedVisionEditor scene={scene} actorId={actorId} tokens={lightingTokens} />;
 
   if (!active || !fog.enabled) {
-    return <>{lighting}{advancedVisionEffect}{editor}</>;
+    return <>{lighting}{editor}</>;
   }
 
   const explored = exploredPath(exploredCells, scene.grid ?? {});
