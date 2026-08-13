@@ -14,7 +14,7 @@ test('VTT expõe authoring de paredes somente ao Mestre e salva pelo Scene Manag
     source('apps/fenix-vtt/lib/fenix-api-client.js')
   ]);
 
-  for (const marker of ['Paredes', 'wall-authoring-panel', 'onWallsChanged', 'canMoveAny && wallEditorOpen']) {
+  for (const marker of ['Paredes', 'wall-authoring-panel', 'onWallsChanged', 'canMoveAny && activeLayer === SceneLayer.WALLS']) {
     assert.ok(mapStage.includes(marker), `MapStage sem marker ${marker}`);
   }
   assert.ok(shell.includes('onWallsChanged={updateSceneWalls}'));
@@ -23,9 +23,9 @@ test('VTT expõe authoring de paredes somente ao Mestre e salva pelo Scene Manag
   assert.ok(client.includes('/walls'));
 });
 
-test('editor inclui parede, porta, estado, apagar, desfazer e snap na grade', async () => {
+test('paleta contextual inclui parede, porta, estado, apagar, desfazer e snap na grade', async () => {
   const mapStage = await source('apps/fenix-vtt/components/map-stage.jsx');
-  for (const marker of ['Parede', 'Porta', 'Alternar porta', 'Apagar', 'Desfazer', 'Snap na grade', 'SceneDoorState.LOCKED']) {
+  for (const marker of ['Parede', 'Porta', '>Estado<', 'Apagar', 'Desfazer', 'Snap na grade', 'SceneDoorState.LOCKED']) {
     assert.ok(mapStage.includes(marker), `authoring sem controle ${marker}`);
   }
 });
