@@ -10,6 +10,7 @@ import {
   tokenVisionTint,
   visibleGridCells
 } from '../../../packages/scene-vision/src/index.js';
+import { eyeElevation, normalizeSceneElevation } from '../../../packages/scene-elevation/src/index.js';
 import { AdvancedVisionEditor } from './advanced-vision-editor.jsx';
 import { DynamicLightingOverlay } from './dynamic-lighting-overlay.jsx';
 
@@ -54,6 +55,8 @@ export function FogOfWarOverlay({
     scene?.fog?.exploredOpacity,
     scene?.fog?.unexploredOpacity
   ]);
+  const elevationSignature = JSON.stringify(scene?.elevation ?? {});
+  const elevationConfig = useMemo(() => normalizeSceneElevation(scene?.elevation ?? {}), [elevationSignature]);
   const visionProfileSignature = JSON.stringify(scene?.visionProfiles?.[actorId] ?? {});
   const visionProfile = useMemo(() => resolveTokenVisionProfile({
     scene,
@@ -74,6 +77,7 @@ export function FogOfWarOverlay({
     if (transientToken?.id === actorId) return transientToken;
     return (Array.isArray(tokens) ? tokens : []).find((token) => token?.id === actorId) ?? null;
   }, [actorId, tokens, transientToken]);
+  const observerElevation = eyeElevation(visionProfile, actorToken?.elevation ?? visionProfile.elevation);
 
   useEffect(() => {
     if (!active || !fog.enabled || !actorToken || !scene?.grid) return;
@@ -83,7 +87,10 @@ export function FogOfWarOverlay({
       grid: scene.grid,
       sceneWidth: scene.width,
       sceneHeight: scene.height,
-      visionRangeCells: visionProfile.rangeCells
+      visionRangeCells: visionProfile.rangeCells,
+      verticalEnabled: elevationConfig.enabled,
+      originElevation: observerElevation,
+      targetElevation: observerElevation
     });
     setExploredCells((current) => {
       const merged = mergeExploredCells(current, discovered);
@@ -93,9 +100,12 @@ export function FogOfWarOverlay({
     active,
     actorToken?.x,
     actorToken?.y,
+    actorToken?.elevation,
     actorToken?.id,
     fog.enabled,
     visionProfile.rangeCells,
+    observerElevation,
+    elevationConfig.enabled,
     scene?.id,
     scene?.width,
     scene?.height,
@@ -112,12 +122,17 @@ export function FogOfWarOverlay({
       walls: scene.walls ?? [],
       sceneWidth: scene.width,
       sceneHeight: scene.height,
-      maxDistance: visionProfile.rangeCells * (Number(scene.grid?.size) || 70)
+      maxDistance: visionProfile.rangeCells * (Number(scene.grid?.size) || 70),
+      verticalEnabled: elevationConfig.enabled,
+      elevation: observerElevation
     });
   }, [
     visionProfile.rangeCells,
+    observerElevation,
+    elevationConfig.enabled,
     actorToken?.x,
     actorToken?.y,
+    actorToken?.elevation,
     actorToken?.id,
     scene?.width,
     scene?.height,
