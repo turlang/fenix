@@ -22,6 +22,7 @@ test('zoom por scroll usa listener wheel não-passivo e não delegação passiva
   assert.match(mapStageSource, /addEventListener\('wheel', handleWheel, \{ passive: false \}\)/);
   assert.match(mapStageSource, /removeEventListener\('wheel', handleWheel\)/);
   assert.match(mapStageSource, /function handleWheel\(event\) \{\s*event\.preventDefault\(\)/);
+  assert.match(mapStageSource, /const canvas = canvasRef\.current;\s*if \(!canvas\) return;\s*const rect = canvas\.getBoundingClientRect\(\)/);
   assert.doesNotMatch(mapStageSource, /onWheel=\{handleWheel\}/);
   assert.match(mapStageSource, /zoomViewportAt\(current/);
 });
