@@ -47,12 +47,41 @@ test('guarda local impede atravessar parede mesmo sem realtime ativo', () => {
   const result = resolveClientTokenMovement({ previousToken, requestedToken, scene });
   assert.equal(result.collision.blocked, true);
   assert.equal(result.collision.wallId, 'wall-1');
+  assert.equal(result.collision.ignoredWalls, false);
   assert.ok(result.token.x <= 119.1);
 });
 
-test('VttShell aplica guarda local no drag e registra WASD global', () => {
+test('Mestre ignora paredes no cliente mas continua respeitando os limites da cena', () => {
+  const scene = {
+    width: 420,
+    height: 280,
+    walls: [{ id: 'wall-1', kind: 'wall', a: { x: 140, y: 0 }, b: { x: 140, y: 280 } }]
+  };
+  const previousToken = { id: 'hero-ayla', x: 70, y: 140, size: 40 };
+  const acrossWall = resolveClientTokenMovement({
+    previousToken,
+    requestedToken: { ...previousToken, x: 210 },
+    scene,
+    ignoreWalls: true
+  });
+  assert.equal(acrossWall.collision.blocked, false);
+  assert.equal(acrossWall.collision.ignoredWalls, true);
+  assert.equal(acrossWall.token.x, 210);
+
+  const outsideScene = resolveClientTokenMovement({
+    previousToken: acrossWall.token,
+    requestedToken: { ...acrossWall.token, x: 999 },
+    scene,
+    ignoreWalls: true
+  });
+  assert.equal(outsideScene.collision.boundaryAdjusted, true);
+  assert.ok(outsideScene.token.x < scene.width);
+});
+
+test('VttShell aplica guarda local no drag e registra WASD global com noclip do Mestre', () => {
   assert.match(shellSource, /onTokenMoved=\{handleMapTokenMoved\}/);
   assert.match(shellSource, /window\.addEventListener\('keydown', handleKeyboardMove\)/);
   assert.match(shellSource, /requestedTokenFromKeyboard\(token, event\.key/);
-  assert.match(shellSource, /resolveClientTokenMovement\(/);
+  assert.match(shellSource, /ignoreWalls: isGm/);
+  assert.match(shellSource, /resolveSafeToken\(requested\)/);
 });
