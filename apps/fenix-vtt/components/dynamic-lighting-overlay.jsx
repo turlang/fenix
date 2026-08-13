@@ -5,6 +5,7 @@ import {
   computeSceneLightPolygons,
   normalizeSceneLighting
 } from '../../../packages/scene-lighting/src/index.js';
+import { normalizeSceneElevation } from '../../../packages/scene-elevation/src/index.js';
 import {
   normalizeTokenVisionProfiles,
   tokenVisionTint
@@ -40,6 +41,7 @@ function personalLightSources(scene) {
       enabled: true,
       x: 0,
       y: 0,
+      elevation: profile.elevation,
       radiusCells: profile.personalLight.radiusCells,
       intensity: profile.personalLight.intensity,
       color: profile.personalLight.color,
@@ -64,6 +66,8 @@ export function DynamicLightingOverlay({
   const [draft, setDraft] = useState(() => editableLighting(scene?.lighting, scene));
   const lightingSignature = JSON.stringify(scene?.lighting ?? {});
   const visionProfilesSignature = JSON.stringify(scene?.visionProfiles ?? {});
+  const elevationSignature = JSON.stringify(scene?.elevation ?? {});
+  const elevationConfig = useMemo(() => normalizeSceneElevation(scene?.elevation ?? {}), [elevationSignature]);
 
   useEffect(() => {
     if (!editorOpen) setDraft(editableLighting(scene?.lighting, scene));
@@ -96,9 +100,10 @@ export function DynamicLightingOverlay({
       grid: scene.grid ?? {},
       sceneWidth: scene.width,
       sceneHeight: scene.height,
-      tokens
+      tokens,
+      verticalEnabled: elevationConfig.enabled
     });
-  }, [active, lighting, scene, tokens]);
+  }, [active, lighting, scene, tokens, elevationConfig.enabled]);
 
   function addSource() {
     const selectedToken = (Array.isArray(tokens) ? tokens : []).find((token) => token?.id === state.selectedActorId) ?? null;
@@ -110,6 +115,7 @@ export function DynamicLightingOverlay({
         enabled: true,
         x: selectedToken?.x ?? Math.round((Number(scene?.width) || 1000) / 2),
         y: selectedToken?.y ?? Math.round((Number(scene?.height) || 700) / 2),
+        elevation: selectedToken?.elevation ?? 0,
         radiusCells: 6,
         intensity: 1,
         color: '#f2c66f',
@@ -266,6 +272,7 @@ export function DynamicLightingOverlay({
                       <label>Raio (células)<input type="number" min="1" max="60" value={source.radiusCells} onChange={(event) => patchSource(source.id, { radiusCells: event.target.value })} /></label>
                       <label>X<input type="number" value={source.x} disabled={Boolean(source.attachedTokenId)} onChange={(event) => patchSource(source.id, { x: event.target.value })} /></label>
                       <label>Y<input type="number" value={source.y} disabled={Boolean(source.attachedTokenId)} onChange={(event) => patchSource(source.id, { y: event.target.value })} /></label>
+                      <label>Elevação Z<input type="number" min="-1000" max="10000" step="0.5" value={source.elevation} disabled={Boolean(source.attachedTokenId)} onChange={(event) => patchSource(source.id, { elevation: event.target.value })} /></label>
                       <label>Intensidade<input type="number" min="0.1" max="1" step="0.1" value={source.intensity} onChange={(event) => patchSource(source.id, { intensity: event.target.value })} /></label>
                       <label className="lighting-enable-toggle"><input type="checkbox" checked={source.enabled !== false} onChange={(event) => patchSource(source.id, { enabled: event.target.checked })} /> Fonte ativa</label>
                     </div>
@@ -274,7 +281,7 @@ export function DynamicLightingOverlay({
               </div>
 
               <button type="button" className="lighting-add-button" onClick={addSource}>+ Adicionar fonte na posição selecionada</button>
-              <small className="lighting-config-help">Paredes e portas fechadas/trancadas projetam sombra. Portas abertas deixam a luz atravessar. Fontes pessoais configuradas em “Sentidos” são derivadas automaticamente e acompanham o token.</small>
+              <small className="lighting-config-help">Com elevação ativa, sombras respeitam a faixa vertical das paredes. Uma luz acima do topo de uma barreira não é ocluída por ela. Fontes anexadas acompanham também o Z do token.</small>
               <div className="lighting-config-actions">
                 <button type="button" onClick={() => { setDraft(editableLighting(scene.lighting, scene)); setEditorOpen(false); }}>Cancelar</button>
                 <button type="button" className="primary-button" disabled={saving || state.busy} onClick={saveLighting}>{saving ? 'Salvando…' : 'Salvar iluminação'}</button>
