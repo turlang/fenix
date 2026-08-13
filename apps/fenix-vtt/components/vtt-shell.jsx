@@ -62,6 +62,7 @@ export function VttShell({ onExitCampaign = null, onLogout = null }) {
     activateScene,
     updateSceneGrid,
     updateSceneWalls,
+    updateSceneFog,
     resolveAssetUrl,
     selectActor,
     clearError,
@@ -236,7 +237,7 @@ export function VttShell({ onExitCampaign = null, onLogout = null }) {
                     <span className="scene-index">{String(index + 1).padStart(2, '0')}</span>
                     <span>
                       <strong>{scene.name}</strong>
-                      <small>{active ? `Cena ativa · ${(scene.walls ?? []).length} paredes` : `${scene.width} × ${scene.height}`}</small>
+                      <small>{active ? `Cena ativa · ${(scene.walls ?? []).length} paredes · Fog ${scene.fog?.enabled ? 'ON' : 'OFF'}` : `${scene.width} × ${scene.height}`}</small>
                     </span>
                   </button>
                 );
@@ -284,8 +285,10 @@ export function VttShell({ onExitCampaign = null, onLogout = null }) {
             onSelectedActor={selectActor}
             onGridCalibrated={updateSceneGrid}
             onWallsChanged={updateSceneWalls}
+            onFogChanged={updateSceneFog}
             canMoveAny={isGm}
             movableActorId={membership?.actorId ?? null}
+            visionActorId={state.selectedActorId}
           />
         </section>
 
