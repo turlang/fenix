@@ -79,6 +79,41 @@ test('Mestre ignora paredes no cliente mas continua respeitando os limites da ce
   assert.ok(outsideScene.token.x < scene.width);
 });
 
+test('preview local do Mestre mostra Z automático de piso e rampa', () => {
+  const scene = {
+    width: 420,
+    height: 280,
+    grid: { size: 70 },
+    walls: [],
+    fog: { visionRangeCells: 8 },
+    elevation: { enabled: true, levelHeight: 4, verticalStep: 1 },
+    visionProfiles: {
+      'hero-ayla': { elevation: 0, height: 1.8, movementMode: 'ground' }
+    },
+    regions: [
+      {
+        id: 'ramp-1', name: 'Rampa', kind: 'ramp', enabled: true, priority: 10,
+        points: [{ x: 70, y: 70 }, { x: 210, y: 70 }, { x: 210, y: 210 }, { x: 70, y: 210 }],
+        baseElevation: 0, targetElevation: 4,
+        axis: { start: { x: 70, y: 140 }, end: { x: 210, y: 140 } }
+      },
+      {
+        id: 'upper', name: 'Piso superior', kind: 'floor', enabled: true, priority: 5,
+        points: [{ x: 210, y: 70 }, { x: 350, y: 70 }, { x: 350, y: 210 }, { x: 210, y: 210 }],
+        baseElevation: 4, targetElevation: 4
+      }
+    ]
+  };
+  const start = { id: 'hero-ayla', x: 70, y: 140, size: 40, elevation: 0, height: 1.8, movementMode: 'ground' };
+  const halfway = resolveClientTokenMovement({ previousToken: start, requestedToken: { ...start, x: 140 }, scene, ignoreWalls: true });
+  assert.equal(halfway.token.elevation, 2);
+  assert.equal(halfway.groundPreview?.regionId, 'ramp-1');
+
+  const upper = resolveClientTokenMovement({ previousToken: halfway.token, requestedToken: { ...halfway.token, x: 280 }, scene, ignoreWalls: true });
+  assert.equal(upper.token.elevation, 4);
+  assert.equal(upper.groundPreview?.regionId, 'upper');
+});
+
 test('VttShell aplica guarda local no drag e registra WASD global com noclip do Mestre', () => {
   assert.match(shellSource, /onTokenMoved=\{handleMapTokenMoved\}/);
   assert.match(shellSource, /window\.addEventListener\('keydown', handleKeyboardMove\)/);
