@@ -122,6 +122,24 @@ export function registerSceneRoutes(app, { authService, sceneService }) {
     }
   });
 
+  app.post('/v1/campaigns/:campaignId/scenes/:sceneId/fog', async (request, reply) => {
+    try {
+      const authenticated = requireAuthenticatedRequest(authService, request);
+      return await sceneService.updateFog({
+        campaignId: request.params.campaignId,
+        userId: authenticated.user.id,
+        sceneId: request.params.sceneId,
+        enabled: request.body?.enabled,
+        visionRangeCells: request.body?.visionRangeCells,
+        exploredOpacity: request.body?.exploredOpacity,
+        unexploredOpacity: request.body?.unexploredOpacity,
+        resetExploration: request.body?.resetExploration === true
+      });
+    } catch (error) {
+      return sendError(reply, error, 'CAMPAIGN_SCENE_FOG_UPDATE_FAILED');
+    }
+  });
+
   app.post('/v1/campaigns/:campaignId/scenes/:sceneId/activate', async (request, reply) => {
     try {
       const authenticated = requireAuthenticatedRequest(authService, request);
