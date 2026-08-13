@@ -28,12 +28,14 @@ O token é tratado como um círculo para evitar que o centro atravesse uma pared
 
 ### Regras atuais
 
-- `wall` bloqueia movimento;
-- `door:closed` bloqueia movimento;
-- `door:locked` bloqueia movimento;
+- `wall` bloqueia movimento de jogadores;
+- `door:closed` bloqueia movimento de jogadores;
+- `door:locked` bloqueia movimento de jogadores;
 - `door:open` permite movimento;
-- os limites da cena também limitam o centro do token;
+- o Mestre possui **noclip administrativo** e ignora paredes/portas ao mover qualquer token;
+- o noclip do Mestre não ignora os limites externos da cena;
 - jogador continua autorizado apenas a mover seu próprio `actorId`;
+- o bypass nunca é aceito como flag do navegador: o `RealtimeSessionHub` decide a política exclusivamente pela identidade autenticada `role=gm`;
 - a posição transmitida e persistida é sempre a posição aceita pelo servidor.
 
 O evento `TOKEN_MOVED` inclui metadados de diagnóstico:
@@ -44,12 +46,15 @@ O evento `TOKEN_MOVED` inclui metadados de diagnóstico:
     "blocked": true,
     "boundaryAdjusted": false,
     "wallId": "wall-1",
-    "fraction": 0.36
+    "fraction": 0.36,
+    "ignoredWalls": false
   }
 }
 ```
 
-Se uma tentativa de movimento é bloqueada, qualquer `roomEntry` enviado junto é ignorado. Assim uma parede não pode ser atravessada apenas para disparar narração de uma sala do outro lado.
+Para movimento do Mestre, `ignoredWalls` é `true`. Isso permite diagnosticar noclip sem transferir a decisão de autoridade para o cliente.
+
+Se uma tentativa de movimento de jogador é bloqueada, qualquer `roomEntry` enviado junto é ignorado. Assim uma parede não pode ser atravessada apenas para disparar narração de uma sala do outro lado.
 
 ## Guarda local de colisão
 
@@ -69,7 +74,7 @@ RealtimeSessionHub (quando conectado)
 segunda validação autoritativa
 ```
 
-Portanto, uma parede salva bloqueia o token mesmo antes de `Iniciar sessão`; quando a sessão está ativa, o servidor continua sendo a autoridade final.
+Para jogadores, uma parede salva bloqueia o token mesmo antes de `Iniciar sessão`; quando a sessão está ativa, o servidor continua sendo a autoridade final. Para o Mestre, a guarda local é executada com paredes ignoradas, preservando somente os limites externos do mapa.
 
 ## Controles gamer de teclado
 
@@ -83,14 +88,16 @@ O token autorizado/selecionado pode ser movimentado por teclado:
 - `Shift + direção`: uma célula completa;
 - manter a tecla pressionada usa o repeat normal do navegador;
 - atalhos são ignorados enquanto o foco está em `input`, `textarea`, `select`, botão ou conteúdo editável;
-- Mestre move o ator selecionado;
-- jogador continua limitado ao próprio `actorId`.
+- Mestre move o ator selecionado com noclip de paredes/portas;
+- jogador continua limitado ao próprio `actorId` e à colisão da cena.
 
-Arraste e teclado passam pela mesma guarda local e depois pela mesma autoridade realtime quando a sessão está conectada.
+Arraste e teclado passam pela mesma política local e depois pela mesma autoridade realtime quando a sessão está conectada.
 
 ## Fog of War e colisão
 
-O registro de exploração continua acontecendo depois do comando realtime e usa `result.token.x/y`. Como `result.token` já contém a posição resolvida pelo Collision Engine, uma tentativa bloqueada não revela células atrás da parede.
+O registro de exploração continua acontecendo depois do comando realtime e usa `result.token.x/y`. Como `result.token` já contém a posição resolvida pelo Collision Engine, uma tentativa bloqueada de jogador não revela células atrás da parede.
+
+O noclip do Mestre não desativa LOS/Fog do personagem: ele é uma capacidade administrativa de movimentação, não uma alteração nas regras de visão do token.
 
 ### Estabilidade durante drag
 
@@ -183,6 +190,7 @@ CampaignSceneService
 
 RealtimeSessionHub
    ├── movimento autorizado
+   ├── política GM noclip / Player collision
    ├── collision resolution
    └── TOKEN_MOVED autoritativo
 
@@ -196,10 +204,12 @@ React / SVG
 
 O marco possui gates para:
 
-- colisão por parede e portas fechadas/trancadas;
-- passagem por porta aberta;
-- limites da cena;
-- room-entry bloqueado quando o movimento não atravessa a parede;
+- colisão de jogador por parede e portas fechadas/trancadas;
+- passagem de jogador por porta aberta;
+- noclip do Mestre através de paredes;
+- limites da cena preservados mesmo para o Mestre;
+- bypass decidido pelo papel autenticado, não por payload do cliente;
+- room-entry bloqueado quando o movimento de jogador não atravessa a parede;
 - guarda local de colisão mesmo sem realtime;
 - mapeamento WASD/setas e passo com Shift;
 - proteção para não capturar teclado em campos de texto;
