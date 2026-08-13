@@ -51,6 +51,43 @@ O evento `TOKEN_MOVED` inclui metadados de diagnóstico:
 
 Se uma tentativa de movimento é bloqueada, qualquer `roomEntry` enviado junto é ignorado. Assim uma parede não pode ser atravessada apenas para disparar narração de uma sala do outro lado.
 
+## Guarda local de colisão
+
+A validação física mostrou um caso importante: quando a sessão ainda está em `IDLE`, não existe WebSocket autoritativo para corrigir um drag local. O VTT agora aplica o mesmo `resolveTokenMovement()` antes de aceitar a posição final no cliente.
+
+Isso cria duas barreiras complementares:
+
+```text
+Arraste / WASD
+     ↓
+Client collision guard
+     ↓
+posição local segura
+     ↓
+RealtimeSessionHub (quando conectado)
+     ↓
+segunda validação autoritativa
+```
+
+Portanto, uma parede salva bloqueia o token mesmo antes de `Iniciar sessão`; quando a sessão está ativa, o servidor continua sendo a autoridade final.
+
+## Controles gamer de teclado
+
+O token autorizado/selecionado pode ser movimentado por teclado:
+
+- `W` ou `↑`: cima;
+- `A` ou `←`: esquerda;
+- `S` ou `↓`: baixo;
+- `D` ou `→`: direita;
+- movimento normal: 20% de uma célula por evento de tecla;
+- `Shift + direção`: uma célula completa;
+- manter a tecla pressionada usa o repeat normal do navegador;
+- atalhos são ignorados enquanto o foco está em `input`, `textarea`, `select`, botão ou conteúdo editável;
+- Mestre move o ator selecionado;
+- jogador continua limitado ao próprio `actorId`.
+
+Arraste e teclado passam pela mesma guarda local e depois pela mesma autoridade realtime quando a sessão está conectada.
+
 ## Fog of War e colisão
 
 O registro de exploração continua acontecendo depois do comando realtime e usa `result.token.x/y`. Como `result.token` já contém a posição resolvida pelo Collision Engine, uma tentativa bloqueada não revela células atrás da parede.
@@ -163,6 +200,9 @@ O marco possui gates para:
 - passagem por porta aberta;
 - limites da cena;
 - room-entry bloqueado quando o movimento não atravessa a parede;
+- guarda local de colisão mesmo sem realtime;
+- mapeamento WASD/setas e passo com Shift;
+- proteção para não capturar teclado em campos de texto;
 - normalização e persistência de iluminação;
 - sombras por LOS;
 - fonte anexada a token;
