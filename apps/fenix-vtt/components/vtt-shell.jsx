@@ -1,9 +1,14 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { MapStage } from './map-stage.jsx';
 import { useFenixSession } from './session-provider.jsx';
-import { demoScene } from '../lib/demo-scene.js';
+import { demoScene, demoTokens } from '../lib/demo-scene.js';
+import {
+  isEditableKeyboardTarget,
+  requestedTokenFromKeyboard,
+  resolveClientTokenMovement
+} from '../lib/token-input-movement.js';
 
 const actors = [
   { id: 'hero-ayla', name: 'Ayla', role: 'Jogadora', hp: '28 / 34' },
@@ -83,11 +88,73 @@ export function VttShell({ onExitCampaign = null, onLogout = null }) {
       ...activeScene,
       grid: realtimeScene?.grid ? { ...activeScene.grid, ...realtimeScene.grid } : activeScene.grid,
       walls: Array.isArray(realtimeScene?.walls) ? realtimeScene.walls : (activeScene.walls ?? []),
+      lighting: realtimeScene?.lighting ? { ...activeScene.lighting, ...realtimeScene.lighting } : activeScene.lighting,
       background: activeScene.backgroundAssetId
         ? resolveAssetUrl(activeScene.backgroundAssetId)
         : null
     };
   }, [activeScene, resolveAssetUrl, state.scene]);
+
+  function currentToken(actorId) {
+    return state.tokens.find((token) => token.id === actorId)
+      ?? demoTokens.find((token) => token.id === actorId)
+      ?? null;
+  }
+
+  function resolveSafeToken(requestedToken) {
+    const previousToken = currentToken(requestedToken?.id) ?? requestedToken;
+    return resolveClientTokenMovement({
+      previousToken,
+      requestedToken,
+      scene: mapScene
+    });
+  }
+
+  async function handleMapTokenMoved(token, metadata = {}) {
+    const resolved = resolveSafeToken(token);
+    if (!resolved?.token) return false;
+    const safeMetadata = resolved.collision?.blocked
+      ? { roomEntry: null, roomId: undefined }
+      : metadata;
+    return moveToken(resolved.token, safeMetadata);
+  }
+
+  useEffect(() => {
+    function handleKeyboardMove(event) {
+      if (state.busy || event.ctrlKey || event.metaKey || event.altKey) return;
+      if (isEditableKeyboardTarget(event.target)) return;
+
+      const actorId = isGm ? state.selectedActorId : membership?.actorId;
+      const token = currentToken(actorId);
+      if (!token) return;
+
+      const requested = requestedTokenFromKeyboard(token, event.key, {
+        gridSize: mapScene.grid?.size,
+        fullCell: event.shiftKey
+      });
+      if (!requested) return;
+
+      event.preventDefault();
+      const resolved = resolveClientTokenMovement({
+        previousToken: token,
+        requestedToken: requested,
+        scene: mapScene
+      });
+      if (!resolved?.token) return;
+      void Promise.resolve(moveToken(resolved.token)).catch(() => undefined);
+    }
+
+    window.addEventListener('keydown', handleKeyboardMove);
+    return () => window.removeEventListener('keydown', handleKeyboardMove);
+  }, [
+    isGm,
+    mapScene,
+    membership?.actorId,
+    moveToken,
+    state.busy,
+    state.selectedActorId,
+    state.tokens
+  ]);
 
   async function handleSessionButton() {
     try {
@@ -281,7 +348,7 @@ export function VttShell({ onExitCampaign = null, onLogout = null }) {
             scene={mapScene}
             busy={state.busy}
             authoritativeTokens={state.tokens}
-            onTokenMoved={moveToken}
+            onTokenMoved={handleMapTokenMoved}
             onSelectedActor={selectActor}
             onGridCalibrated={updateSceneGrid}
             onWallsChanged={updateSceneWalls}
