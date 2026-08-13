@@ -1,4 +1,6 @@
 import { normalizeSceneWalls } from '../../scene-geometry/src/index.js';
+import { resolveTokenMovement } from '../../scene-collision/src/index.js';
+import { normalizeSceneLighting } from '../../scene-lighting/src/index.js';
 
 const MAX_COORDINATE = 1_000_000;
 
@@ -260,10 +262,31 @@ export class RealtimeSessionHub {
 
   applyTokenMove(sessionId, identity, input = {}) {
     const session = this.ensureSession(sessionId);
-    const token = normalizeRealtimeToken(input.token ?? input);
-    if (identity.role !== RealtimeRole.GM && identity.actorId !== token.id) {
+    const requestedToken = normalizeRealtimeToken(input.token ?? input);
+    if (identity.role !== RealtimeRole.GM && identity.actorId !== requestedToken.id) {
       throw gatewayError('Jogador só pode mover o próprio token.', 'REALTIME_TOKEN_FORBIDDEN', 403);
     }
+
+    const previousToken = session.tokens.get(requestedToken.id) ?? null;
+    const collision = session.scene ? resolveTokenMovement({
+      from: previousToken,
+      to: requestedToken,
+      walls: session.scene.walls ?? [],
+      sceneWidth: session.scene.width,
+      sceneHeight: session.scene.height,
+      tokenSize: requestedToken.size
+    }) : {
+      position: { x: requestedToken.x, y: requestedToken.y },
+      blocked: false,
+      boundaryAdjusted: false,
+      wallId: null,
+      fraction: 1
+    };
+    const token = normalizeRealtimeToken({
+      ...requestedToken,
+      x: collision.position.x,
+      y: collision.position.y
+    });
 
     session.revision += 1;
     session.tokens.set(token.id, token);
@@ -273,15 +296,24 @@ export class RealtimeSessionHub {
         sessionId: session.id,
         revision: session.revision,
         token,
+        requested: { x: requestedToken.x, y: requestedToken.y },
+        collision: {
+          blocked: collision.blocked === true,
+          boundaryAdjusted: collision.boundaryAdjusted === true,
+          wallId: collision.wallId ?? null,
+          fraction: Number(collision.fraction) || 0
+        },
         by: identity.clientId
       }
     });
 
-    const roomEntry = input.roomEntry ?? null;
     const previousRoomId = session.tokenRooms.get(token.id) ?? null;
-    const explicitRoomId = Object.prototype.hasOwnProperty.call(input, 'roomId');
+    const roomEntry = collision.blocked ? null : input.roomEntry ?? null;
+    const explicitRoomId = !collision.blocked && Object.prototype.hasOwnProperty.call(input, 'roomId');
     const narratedRoomId = boundedText(roomEntry?.room?.id, 200) || null;
-    const nextRoomId = narratedRoomId ?? (explicitRoomId ? boundedText(input.roomId, 200) || null : previousRoomId);
+    const nextRoomId = collision.blocked
+      ? previousRoomId
+      : narratedRoomId ?? (explicitRoomId ? boundedText(input.roomId, 200) || null : previousRoomId);
     const roomChanged = nextRoomId !== previousRoomId;
     const shouldNarrate = Boolean(roomEntry && nextRoomId && roomChanged);
 
@@ -292,6 +324,8 @@ export class RealtimeSessionHub {
 
     return {
       token,
+      requestedToken,
+      collision,
       revision: session.revision,
       roomChanged,
       shouldNarrate,
@@ -319,7 +353,8 @@ export class RealtimeSessionHub {
       width,
       height,
       grid: scene?.grid ?? null,
-      walls: normalizeSceneWalls(scene?.walls ?? [], { sceneWidth: width, sceneHeight: height })
+      walls: normalizeSceneWalls(scene?.walls ?? [], { sceneWidth: width, sceneHeight: height }),
+      lighting: normalizeSceneLighting(scene?.lighting ?? {}, { sceneWidth: width, sceneHeight: height })
     };
     if (!normalized.id) throw gatewayError('Cena sem id.', 'REALTIME_SCENE_ID_REQUIRED');
     const session = this.ensureSession(sessionId);
@@ -441,7 +476,13 @@ export class RealtimeSessionGateway {
           type: message.type,
           revision: moved.revision,
           roomChanged: moved.roomChanged,
-          narrated: moved.shouldNarrate
+          narrated: moved.shouldNarrate,
+          collision: {
+            blocked: moved.collision?.blocked === true,
+            boundaryAdjusted: moved.collision?.boundaryAdjusted === true,
+            wallId: moved.collision?.wallId ?? null,
+            fraction: Number(moved.collision?.fraction) || 0
+          }
         });
         return moved;
       }
