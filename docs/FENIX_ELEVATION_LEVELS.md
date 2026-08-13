@@ -73,7 +73,7 @@ Portas abertas continuam sem bloquear visão/movimento. Portas fechadas ou tranc
 
 ### Compatibilidade legada
 
-Paredes criadas antes deste marco, sem faixa explícita, normalizam para uma faixa ampla (`-1000..10000`) e portanto continuam funcionando como barreiras 2D/infindas.
+Paredes criadas antes deste marco, sem faixa explícita, normalizam para uma faixa ampla (`-1000..10000`) e portanto continuam funcionando como barreiras 2D efetivamente infinitas.
 
 A UI oferece **Aplicar faixa padrão às paredes**. Essa ação converte explicitamente os segmentos atuais para `defaultWallBottom..defaultWallTop`. Não há migração silenciosa que faça um dungeon antigo começar a ser atravessável por voo.
 
@@ -166,6 +166,24 @@ No painel **Sentidos** do Mestre:
 - converter em lote as paredes atuais para a faixa padrão.
 
 Jogadores com perfil `flying` recebem controles `−Z` e `+Z`. Esses botões apenas solicitam movimento; o servidor continua sendo a autoridade.
+
+## Validação automatizada
+
+O gate deste marco deve provar em conjunto:
+
+- cenas antigas continuam 2D quando elevação está desativada;
+- paredes legadas sem faixa continuam bloqueando como antes;
+- colisão respeita a faixa corporal do token;
+- LOS horizontal passa sobre uma parede baixa somente quando o observador está acima dela;
+- um raio descendente volta a ser bloqueado se cruzar a faixa vertical da parede;
+- Fog persistente usa o Z aceito pelo Engine;
+- iluminação fixa/anexada usa Z e permanece ocluída na altura correta;
+- jogador não pode forjar Z, altura corporal ou modo de voo;
+- voo é limitado a um `verticalStep` por comando;
+- configuração de níveis/perfis continua GM-only via HTTP;
+- `scene-elevation` e demais capacidades táticas não aparecem no `SessionDirector`.
+
+A matriz de CI continua executando o Core em Node 20/22/24 e o job portátil com PostgreSQL, coordenação distribuída, idempotência, routing, HTTP, WebSocket e build standalone.
 
 ## Limites deliberados deste marco
 
