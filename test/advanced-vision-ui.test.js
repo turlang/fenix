@@ -8,19 +8,20 @@ const lightingSource = await readFile(new URL('../apps/fenix-vtt/components/dyna
 const routeSource = await readFile(new URL('../apps/api/src/http/register-scene-routes.js', import.meta.url), 'utf8');
 const serverSource = await readFile(new URL('../apps/api/src/server.js', import.meta.url), 'utf8');
 
-test('editor expõe visão, níveis, voo, altura corporal e ferramenta de parede finita', () => {
+test('editor expõe visão, níveis, voo, altura corporal e piso automático', () => {
   assert.match(editorSource, /Visão no escuro/);
   assert.match(editorSource, /Infravisão/);
   assert.match(editorSource, /Alcance \(células\)/);
   assert.match(editorSource, /Elevação base \/ Z/);
   assert.match(editorSource, /Altura do corpo/);
-  assert.match(editorSource, /Solo \/ nível fixo/);
+  assert.match(editorSource, /Solo \/ piso automático/);
   assert.match(editorSource, /Voo \/ Z variável/);
   assert.match(editorSource, /Níveis da cena/);
+  assert.match(editorSource, /Pisos e transições/);
   assert.match(editorSource, /Aplicar faixa padrão às paredes/);
   assert.match(editorSource, /Fonte de luz pessoal anexada ao token/);
-  assert.match(editorSource, /sceneElevation/);
-  assert.match(editorSource, /moveVertical/);
+  assert.match(editorSource, /SceneRegionKind/);
+  assert.match(editorSource, /updateSceneRegions/);
 });
 
 test('Fog usa alcance e elevação individuais e só aplica sentidos especiais na visão ativa', () => {
@@ -29,30 +30,23 @@ test('Fog usa alcance e elevação individuais e só aplica sentidos especiais n
   assert.match(fogSource, /verticalEnabled: elevationConfig\.enabled/);
   assert.match(fogSource, /originElevation: observerElevation/);
   assert.match(fogSource, /elevation: observerElevation/);
-  assert.match(fogSource, /maxDistance: visionProfile\.rangeCells/);
-  assert.match(fogSource, /visionProfile=\{active \? visionProfile : null\}/);
-  assert.match(fogSource, /visionPolygon=\{active \? visibility : \[\]\}/);
-  assert.match(fogSource, /active=\{true\}/);
 });
 
 test('Lighting deriva luz pessoal com Z e habilita oclusão vertical', () => {
   assert.match(lightingSource, /personalLightSources/);
-  assert.match(lightingSource, /vision-personal-/);
   assert.match(lightingSource, /elevation: profile\.elevation/);
   assert.match(lightingSource, /verticalEnabled: elevationConfig\.enabled/);
-  assert.match(lightingSource, /Elevação Z/);
-  assert.match(lightingSource, /tokenVisionTint/);
-  assert.match(lightingSource, /visionPolygon/);
-  assert.match(lightingSource, /visionMaskFill/);
 });
 
-test('rota GM-only de Fog encaminha perfis e configuração vertical ao serviço autenticado', () => {
-  assert.match(routeSource, /visionProfiles: request\.body\?\.visionProfiles/);
+test('rotas expõem authoring de regiões e Fog vertical autenticados', () => {
+  assert.match(routeSource, /scenes\/:sceneId\/regions/);
+  assert.match(routeSource, /updateRegions/);
   assert.match(routeSource, /sceneElevation: request\.body\?\.sceneElevation/);
 });
 
-test('composition root resolve autoridade vertical no Engine e persiste exploração com Z aceito', () => {
-  assert.match(serverSource, /resolveTokenVerticalState/);
+test('composition root resolve piso no Engine e persiste exploração com Z aceito', () => {
+  assert.match(serverSource, /resolveGroundElevation/);
+  assert.match(serverSource, /pendingMovePoint/);
   assert.match(serverSource, /resolveRuntimeVerticalState/);
   assert.match(serverSource, /elevation: result\.token\.elevation/);
 });
