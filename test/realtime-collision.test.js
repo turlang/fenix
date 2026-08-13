@@ -23,7 +23,7 @@ function harness() {
   return { hub, gateway, calls };
 }
 
-test('Hub aceita somente a posição segura e não narra sala atravessando parede', async () => {
+test('Hub aceita somente a posição segura do jogador e não narra sala atravessando parede', async () => {
   const { hub, gateway, calls } = harness();
   const gmEvents = [];
   const playerEvents = [];
@@ -66,6 +66,7 @@ test('Hub aceita somente a posição segura e não narra sala atravessando pared
 
   assert.equal(result.collision.blocked, true);
   assert.equal(result.collision.wallId, 'wall-1');
+  assert.equal(result.collision.ignoredWalls, false);
   assert.ok(result.token.x <= 119.1);
   assert.equal(result.roomChanged, false);
   assert.equal(result.shouldNarrate, false);
@@ -74,16 +75,62 @@ test('Hub aceita somente a posição segura e não narra sala atravessando pared
 
   const movedEvent = gmEvents.filter((event) => event.type === 'TOKEN_MOVED').at(-1);
   assert.equal(movedEvent.payload.collision.blocked, true);
+  assert.equal(movedEvent.payload.collision.ignoredWalls, false);
   assert.equal(movedEvent.payload.requested.x, 210);
   assert.equal(movedEvent.payload.token.x, result.token.x);
 
   const ack = playerEvents.filter((event) => event.type === 'ACK' && event.commandId === 'cross-wall').at(-1);
   assert.equal(ack.payload.collision.blocked, true);
+  assert.equal(ack.payload.collision.ignoredWalls, false);
   gm.disconnect();
   player.disconnect();
 });
 
-test('porta aberta permite movimento e porta fechada volta a bloquear', async () => {
+test('Mestre atravessa paredes em noclip mas continua limitado às bordas da cena', async () => {
+  const { gateway } = harness();
+  const gmEvents = [];
+  const gm = gateway.openPeer({
+    sessionId: 'session-1', clientId: 'gm', role: 'gm', send: (event) => gmEvents.push(event)
+  });
+
+  await gm.receive(JSON.stringify({
+    type: 'SCENE_UPDATE',
+    payload: {
+      scene: {
+        id: 'scene-1', name: 'Cripta', width: 420, height: 280,
+        grid: { size: 70 },
+        walls: [{ id: 'wall-1', kind: 'wall', a: { x: 140, y: 0 }, b: { x: 140, y: 280 } }],
+        lighting: { enabled: false, sources: [] }
+      }
+    }
+  }));
+
+  await gm.receive(JSON.stringify({
+    type: 'TOKEN_MOVE',
+    payload: { token: { id: 'hero-ayla', name: 'Ayla', x: 70, y: 140, size: 40 } }
+  }));
+  const acrossWall = await gm.receive(JSON.stringify({
+    type: 'TOKEN_MOVE',
+    commandId: 'gm-cross-wall',
+    payload: { token: { id: 'hero-ayla', name: 'Ayla', x: 210, y: 140, size: 40 } }
+  }));
+
+  assert.equal(acrossWall.collision.blocked, false);
+  assert.equal(acrossWall.collision.ignoredWalls, true);
+  assert.equal(acrossWall.token.x, 210);
+  const movedEvent = gmEvents.filter((event) => event.type === 'TOKEN_MOVED').at(-1);
+  assert.equal(movedEvent.payload.collision.ignoredWalls, true);
+
+  const outsideScene = await gm.receive(JSON.stringify({
+    type: 'TOKEN_MOVE',
+    payload: { token: { id: 'hero-ayla', name: 'Ayla', x: 999, y: 140, size: 40 } }
+  }));
+  assert.equal(outsideScene.collision.boundaryAdjusted, true);
+  assert.ok(outsideScene.token.x < 420);
+  gm.disconnect();
+});
+
+test('porta aberta permite movimento do jogador e porta fechada volta a bloquear', async () => {
   const { gateway } = harness();
   const gm = gateway.openPeer({ sessionId: 'session-1', clientId: 'gm', role: 'gm', send: () => undefined });
   const player = gateway.openPeer({ sessionId: 'session-1', clientId: 'player', role: 'player', actorId: 'hero-ayla', send: () => undefined });
