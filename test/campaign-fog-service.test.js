@@ -54,6 +54,18 @@ async function fixture() {
   return { repository, campaignService, campaign, service, sceneId: created.scene.id };
 }
 
+async function exploreFixture(service, campaignId, sceneId) {
+  await service.updateFog({ campaignId, userId: 'gm-1', sceneId, enabled: true });
+  return service.recordExploration({
+    campaignId,
+    userId: 'player-1',
+    sceneId,
+    actorId: 'hero-ayla',
+    x: 70,
+    y: 105
+  });
+}
+
 test('Fog persiste configuração, exploração por ator e mantém histórico privado para jogador', async () => {
   const { campaign, service, sceneId } = await fixture();
   const configured = await service.updateFog({
@@ -109,15 +121,7 @@ test('jogador não configura Fog nem registra exploração para outro personagem
 
 test('reset do Fog limpa exploração persistida', async () => {
   const { campaign, service, sceneId } = await fixture();
-  await service.updateFog({ campaignId: campaign.id, userId: 'gm-1', sceneId, enabled: true });
-  await service.recordExploration({
-    campaignId: campaign.id,
-    userId: 'player-1',
-    sceneId,
-    actorId: 'hero-ayla',
-    x: 70,
-    y: 105
-  });
+  await exploreFixture(service, campaign.id, sceneId);
   const reset = await service.updateFog({
     campaignId: campaign.id,
     userId: 'gm-1',
@@ -125,4 +129,27 @@ test('reset do Fog limpa exploração persistida', async () => {
     resetExploration: true
   });
   assert.deepEqual(reset.scene.fog.exploredByActor, {});
+});
+
+test('alterar geometria da grade limpa exploração; ocultar grade preserva memória', async () => {
+  const { campaign, service, sceneId } = await fixture();
+  await exploreFixture(service, campaign.id, sceneId);
+
+  const visibilityOnly = await service.updateGrid({
+    campaignId: campaign.id,
+    userId: 'gm-1',
+    sceneId,
+    visible: false
+  });
+  assert.ok(visibilityOnly.scene.fog.exploredByActor['hero-ayla']?.length > 0);
+
+  const recalibrated = await service.updateGrid({
+    campaignId: campaign.id,
+    userId: 'gm-1',
+    sceneId,
+    size: 68,
+    offsetX: 4,
+    offsetY: -2
+  });
+  assert.deepEqual(recalibrated.scene.fog.exploredByActor, {});
 });
