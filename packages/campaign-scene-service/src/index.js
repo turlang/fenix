@@ -1,5 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import { normalizeSceneWalls } from '../../scene-geometry/src/index.js';
+import {
+  mergeExploredCells,
+  normalizeExploredCells,
+  normalizeSceneFog,
+  visibleGridCells
+} from '../../scene-vision/src/index.js';
 
 function sceneError(message, code, statusCode = 400) {
   const error = new Error(message);
@@ -41,11 +47,55 @@ function sceneWalls(scene) {
   });
 }
 
+function normalizeExploredByActor(input = {}) {
+  const result = {};
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return result;
+  for (const [actorId, cells] of Object.entries(input)) {
+    const id = text(actorId, 200);
+    if (!id) continue;
+    result[id] = [...normalizeExploredCells(cells)];
+  }
+  return result;
+}
+
+function ensureSceneFog(scene) {
+  const config = normalizeSceneFog(scene.fog ?? {});
+  const exploredByActor = normalizeExploredByActor(scene.fog?.exploredByActor);
+  scene.fog = {
+    ...config,
+    exploredByActor
+  };
+  return scene.fog;
+}
+
+function publicFog(scene, membership = null) {
+  const fog = ensureSceneFog(scene);
+  const base = {
+    enabled: fog.enabled,
+    visionRangeCells: fog.visionRangeCells,
+    exploredOpacity: fog.exploredOpacity,
+    unexploredOpacity: fog.unexploredOpacity
+  };
+  if (membership?.role === 'gm') {
+    return Object.freeze({
+      ...base,
+      exploredByActor: Object.freeze(Object.fromEntries(
+        Object.entries(fog.exploredByActor).map(([actorId, cells]) => [actorId, Object.freeze([...cells])])
+      ))
+    });
+  }
+  const actorId = text(membership?.actorId, 200);
+  return Object.freeze({
+    ...base,
+    exploredCells: Object.freeze([...(fog.exploredByActor[actorId] ?? [])])
+  });
+}
+
 function publicAsset(asset) {
   return asset ? Object.freeze({ ...asset }) : null;
 }
 
-function publicScene(scene, assets = []) {
+function publicScene(scene, assets = [], membership = null) {
   const asset = assets.find((item) => item.id === scene.backgroundAssetId) ?? null;
   return Object.freeze({
     id: scene.id,
@@ -55,6 +105,7 @@ function publicScene(scene, assets = []) {
     height: scene.height,
     grid: Object.freeze(normalizeGrid(scene.grid)),
     walls: sceneWalls(scene),
+    fog: publicFog(scene, membership),
     backgroundAssetId: scene.backgroundAssetId ?? null,
     backgroundAsset: publicAsset(asset),
     createdAt: scene.createdAt,
@@ -69,6 +120,7 @@ function ensureCollections(campaign) {
   for (const scene of campaign.scenes) {
     scene.grid = normalizeGrid(scene.grid);
     if (!Array.isArray(scene.walls)) scene.walls = [];
+    ensureSceneFog(scene);
   }
   return campaign;
 }
@@ -86,11 +138,11 @@ export class CampaignSceneService {
   }
 
   list({ campaignId, userId } = {}) {
-    const { campaign } = this.campaignService.requireRole(campaignId, userId);
+    const { campaign, membership } = this.campaignService.requireRole(campaignId, userId);
     ensureCollections(campaign);
     return {
       activeSceneId: campaign.activeSceneId ?? campaign.scenes[0]?.id ?? null,
-      scenes: campaign.scenes.map((scene) => publicScene(scene, campaign.assets)),
+      scenes: campaign.scenes.map((scene) => publicScene(scene, campaign.assets, membership)),
       assets: campaign.assets.map(publicAsset)
     };
   }
@@ -138,7 +190,7 @@ export class CampaignSceneService {
   }
 
   async createScene({ campaignId, userId, name, description = '', assetId, width, height, gridSize = 70 } = {}) {
-    const { campaign } = this.campaignService.requireRole(campaignId, userId, 'gm');
+    const { campaign, membership } = this.campaignService.requireRole(campaignId, userId, 'gm');
     ensureCollections(campaign);
     const asset = campaign.assets.find((item) => item.id === String(assetId));
     if (!asset) throw sceneError('Envie um mapa válido antes de criar a cena.', 'CAMPAIGN_SCENE_ASSET_REQUIRED', 400);
@@ -154,6 +206,10 @@ export class CampaignSceneService {
       backgroundAssetId: asset.id,
       grid: normalizeGrid({ size: gridSize }),
       walls: [],
+      fog: {
+        ...normalizeSceneFog({ enabled: false }),
+        exploredByActor: {}
+      },
       createdAt: now,
       updatedAt: now
     };
@@ -162,13 +218,13 @@ export class CampaignSceneService {
     campaign.updatedAt = now;
     await this.#persistCampaign(campaign);
     return {
-      scene: publicScene(scene, campaign.assets),
+      scene: publicScene(scene, campaign.assets, membership),
       activeSceneId: campaign.activeSceneId
     };
   }
 
   async updateGrid({ campaignId, userId, sceneId, size, offsetX, offsetY, visible } = {}) {
-    const { campaign } = this.campaignService.requireRole(campaignId, userId, 'gm');
+    const { campaign, membership } = this.campaignService.requireRole(campaignId, userId, 'gm');
     ensureCollections(campaign);
     const scene = campaign.scenes.find((item) => item.id === String(sceneId));
     if (!scene) throw sceneError('Cena não encontrada.', 'CAMPAIGN_SCENE_NOT_FOUND', 404);
@@ -184,13 +240,13 @@ export class CampaignSceneService {
     campaign.updatedAt = now;
     await this.#persistCampaign(campaign);
     return {
-      scene: publicScene(scene, campaign.assets),
+      scene: publicScene(scene, campaign.assets, membership),
       activeSceneId: campaign.activeSceneId
     };
   }
 
   async updateWalls({ campaignId, userId, sceneId, walls } = {}) {
-    const { campaign } = this.campaignService.requireRole(campaignId, userId, 'gm');
+    const { campaign, membership } = this.campaignService.requireRole(campaignId, userId, 'gm');
     ensureCollections(campaign);
     const scene = campaign.scenes.find((item) => item.id === String(sceneId));
     if (!scene) throw sceneError('Cena não encontrada.', 'CAMPAIGN_SCENE_NOT_FOUND', 404);
@@ -205,13 +261,87 @@ export class CampaignSceneService {
     campaign.updatedAt = now;
     await this.#persistCampaign(campaign);
     return {
-      scene: publicScene(scene, campaign.assets),
+      scene: publicScene(scene, campaign.assets, membership),
       activeSceneId: campaign.activeSceneId
     };
   }
 
+  async updateFog({
+    campaignId,
+    userId,
+    sceneId,
+    enabled,
+    visionRangeCells,
+    exploredOpacity,
+    unexploredOpacity,
+    resetExploration = false
+  } = {}) {
+    const { campaign, membership } = this.campaignService.requireRole(campaignId, userId, 'gm');
+    ensureCollections(campaign);
+    const scene = campaign.scenes.find((item) => item.id === String(sceneId));
+    if (!scene) throw sceneError('Cena não encontrada.', 'CAMPAIGN_SCENE_NOT_FOUND', 404);
+    const current = ensureSceneFog(scene);
+    const config = normalizeSceneFog({
+      enabled: enabled ?? current.enabled,
+      visionRangeCells: visionRangeCells ?? current.visionRangeCells,
+      exploredOpacity: exploredOpacity ?? current.exploredOpacity,
+      unexploredOpacity: unexploredOpacity ?? current.unexploredOpacity
+    });
+    const now = new Date(this.now()).toISOString();
+    scene.fog = {
+      ...config,
+      exploredByActor: resetExploration ? {} : normalizeExploredByActor(current.exploredByActor)
+    };
+    scene.updatedAt = now;
+    campaign.updatedAt = now;
+    await this.#persistCampaign(campaign);
+    return {
+      scene: publicScene(scene, campaign.assets, membership),
+      activeSceneId: campaign.activeSceneId
+    };
+  }
+
+  async recordExploration({ campaignId, userId, sceneId, actorId, x, y } = {}) {
+    const { campaign, membership } = this.campaignService.requireRole(campaignId, userId);
+    ensureCollections(campaign);
+    const scene = campaign.scenes.find((item) => item.id === String(sceneId));
+    if (!scene) throw sceneError('Cena não encontrada.', 'CAMPAIGN_SCENE_NOT_FOUND', 404);
+    const actor = text(actorId, 200);
+    if (!actor) throw sceneError('actorId é obrigatório para explorar o fog.', 'CAMPAIGN_FOG_ACTOR_REQUIRED');
+    if (membership.role !== 'gm' && membership.actorId !== actor) {
+      throw sceneError('Jogador só pode explorar com o próprio personagem.', 'CAMPAIGN_FOG_ACTOR_FORBIDDEN', 403);
+    }
+    const fog = ensureSceneFog(scene);
+    if (!fog.enabled) return { changed: false, discoveredCells: [], totalExploredCells: 0 };
+
+    const discoveredCells = visibleGridCells({
+      origin: { x, y },
+      walls: sceneWalls(scene),
+      grid: scene.grid,
+      sceneWidth: scene.width,
+      sceneHeight: scene.height,
+      visionRangeCells: fog.visionRangeCells
+    });
+    const previous = fog.exploredByActor[actor] ?? [];
+    const merged = mergeExploredCells(previous, discoveredCells);
+    if (merged.length === previous.length) {
+      return { changed: false, discoveredCells: [...discoveredCells], totalExploredCells: merged.length };
+    }
+
+    fog.exploredByActor[actor] = [...merged];
+    const now = new Date(this.now()).toISOString();
+    scene.updatedAt = now;
+    campaign.updatedAt = now;
+    await this.#persistCampaign(campaign);
+    return {
+      changed: true,
+      discoveredCells: [...discoveredCells],
+      totalExploredCells: merged.length
+    };
+  }
+
   async activateScene({ campaignId, userId, sceneId } = {}) {
-    const { campaign } = this.campaignService.requireRole(campaignId, userId, 'gm');
+    const { campaign, membership } = this.campaignService.requireRole(campaignId, userId, 'gm');
     ensureCollections(campaign);
     const scene = campaign.scenes.find((item) => item.id === String(sceneId));
     if (!scene) throw sceneError('Cena não encontrada.', 'CAMPAIGN_SCENE_NOT_FOUND', 404);
@@ -219,7 +349,7 @@ export class CampaignSceneService {
     campaign.updatedAt = new Date(this.now()).toISOString();
     await this.#persistCampaign(campaign);
     return {
-      scene: publicScene(scene, campaign.assets),
+      scene: publicScene(scene, campaign.assets, membership),
       activeSceneId: scene.id
     };
   }
