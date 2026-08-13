@@ -106,7 +106,8 @@ export function VttShell({ onExitCampaign = null, onLogout = null }) {
     return resolveClientTokenMovement({
       previousToken,
       requestedToken,
-      scene: mapScene
+      scene: mapScene,
+      ignoreWalls: isGm
     });
   }
 
@@ -135,11 +136,7 @@ export function VttShell({ onExitCampaign = null, onLogout = null }) {
       if (!requested) return;
 
       event.preventDefault();
-      const resolved = resolveClientTokenMovement({
-        previousToken: token,
-        requestedToken: requested,
-        scene: mapScene
-      });
+      const resolved = resolveSafeToken(requested);
       if (!resolved?.token) return;
       void Promise.resolve(moveToken(resolved.token)).catch(() => undefined);
     }
