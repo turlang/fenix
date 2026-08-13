@@ -160,6 +160,13 @@ export class FenixApiClient {
     });
   }
 
+  updateSceneLighting(campaignId, sceneId, lighting) {
+    return this.request(`/v1/campaigns/${encodeURIComponent(campaignId)}/scenes/${encodeURIComponent(sceneId)}/lighting`, {
+      method: 'POST',
+      body: lighting
+    });
+  }
+
   activateScene(campaignId, sceneId) {
     return this.request(`/v1/campaigns/${encodeURIComponent(campaignId)}/scenes/${encodeURIComponent(sceneId)}/activate`, {
       method: 'POST'
