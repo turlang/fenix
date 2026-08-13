@@ -8,24 +8,16 @@ import { createFenixRepositoryFromEnv } from '../../../packages/persistence-repo
 import { createAssetStorageFromEnv } from '../../../packages/asset-storage/src/index.js';
 import { RemoteMapImporter } from '../../../packages/remote-map-importer/src/index.js';
 import { AuthService } from '../../../packages/auth-service/src/index.js';
-import {
-  CampaignService,
-  createAuthenticatedPeerAuthorizer
-} from '../../../packages/campaign-service/src/index.js';
+import { CampaignService, createAuthenticatedPeerAuthorizer } from '../../../packages/campaign-service/src/index.js';
 import { CampaignSceneService } from '../../../packages/campaign-scene-service/src/index.js';
 import { CampaignRuntimeRegistry } from '../../../packages/campaign-runtime-registry/src/index.js';
-import {
-  PostgresRuntimeLeaseManager,
-  PostgresStateBus
-} from '../../../packages/distributed-runtime-coordination/src/index.js';
+import { PostgresRuntimeLeaseManager, PostgresStateBus } from '../../../packages/distributed-runtime-coordination/src/index.js';
 import { createCommandLedger } from '../../../packages/distributed-command-ledger/src/index.js';
 import { RuntimeObservability } from '../../../packages/runtime-observability/src/index.js';
 import { OwnerAwareRuntimeRouter } from '../../../packages/owner-aware-runtime-router/src/index.js';
-import {
-  parseRealtimeMessage,
-  RealtimeSessionGateway,
-  RealtimeSessionHub
-} from '../../../packages/realtime-session-gateway/src/index.js';
+import { resolveTokenMovement } from '../../../packages/scene-collision/src/index.js';
+import { TokenMovementMode, resolveGroundElevation } from '../../../packages/scene-elevation/src/index.js';
+import { parseRealtimeMessage, RealtimeSessionGateway, RealtimeSessionHub } from '../../../packages/realtime-session-gateway/src/index.js';
 import { createApiApp } from './app.js';
 import { createOwnerAwareWebSocketProxy } from './realtime/owner-aware-websocket-proxy.js';
 
@@ -87,12 +79,7 @@ const remoteMapImporter = new RemoteMapImporter({
   timeoutMs: config.remoteMapTimeoutMs,
   maxRedirects: config.remoteMapMaxRedirects
 });
-const sceneService = new CampaignSceneService({
-  campaignService,
-  repository,
-  assetStorage,
-  remoteMapImporter
-});
+const sceneService = new CampaignSceneService({ campaignService, repository, assetStorage, remoteMapImporter });
 
 const runtimeRouter = leaseManager && config.internalRoutingSecret
   ? new OwnerAwareRuntimeRouter({
@@ -108,12 +95,7 @@ const runtimeRouter = leaseManager && config.internalRoutingSecret
     })
   : null;
 const realtimeProxy = runtimeRouter?.enabled
-  ? createOwnerAwareWebSocketProxy({
-      ownerRouter: runtimeRouter,
-      maxRouteRetries: config.runtimeRoutingMaxRetries,
-      observability: runtimeObservability,
-      logger
-    })
+  ? createOwnerAwareWebSocketProxy({ ownerRouter: runtimeRouter, maxRouteRetries: config.runtimeRoutingMaxRetries, observability: runtimeObservability, logger })
   : null;
 
 const narrator = createNarrativeProviderFromEnv({ logger });
@@ -130,13 +112,7 @@ const sessionService = new CampaignRuntimeRegistry({
   leaseManager,
   reconcileIntervalMs: config.runtimeReconcileMs,
   logger,
-  runtimeFactory: () => createSessionRuntime({
-    narrator,
-    narrationMemory,
-    audioNarrationService,
-    narrationOutputPort: realtimeHub,
-    logger
-  })
+  runtimeFactory: () => createSessionRuntime({ narrator, narrationMemory, audioNarrationService, narrationOutputPort: realtimeHub, logger })
 });
 await sessionService.initialize();
 
@@ -154,10 +130,7 @@ const unsubscribeCoordination = coordinationBus?.subscribe((event) => {
     campaignService.refreshFromRepository();
     await sessionService.reconcile({ refreshRepository: false });
   }).catch((error) => {
-    logger.error?.('[Fênix][Coordination] falha ao aplicar invalidação distribuída', {
-      type: event?.type,
-      message: error.message
-    });
+    logger.error?.('[Fênix][Coordination] falha ao aplicar invalidação distribuída', { type: event?.type, message: error.message });
   });
   return coordinationRefresh;
 }) ?? (() => undefined);
@@ -168,6 +141,7 @@ const realtimeGateway = {
   openPeer(input) {
     const sessionId = String(input?.sessionId ?? '');
     const clientId = String(input?.clientId ?? '');
+    let pendingMovePoint = null;
     const scopedSessionService = {
       getStatus: () => sessionService.getStatus({ sessionId }),
       processAction: (payload) => sessionService.processAction({ ...payload, sessionId }),
@@ -181,11 +155,14 @@ const realtimeGateway = {
         const campaign = campaignService.findCampaignBySessionId?.(sessionId) ?? null;
         const sceneId = realtimeHub.getSnapshot(sessionId).scene?.id ?? campaign?.activeSceneId ?? null;
         if (!campaign?.id || !sceneId || !actorId) return {};
-        return sceneService.resolveRuntimeVerticalState({
-          campaignId: campaign.id,
-          sceneId,
-          actorId
-        });
+        const vertical = sceneService.resolveRuntimeVerticalState({ campaignId: campaign.id, sceneId, actorId });
+        if (!pendingMovePoint || vertical.profile?.movementMode !== TokenMovementMode.GROUND || vertical.sceneElevation?.enabled !== true) return vertical;
+        const ground = resolveGroundElevation({ regions: vertical.regions, point: pendingMovePoint, fallbackElevation: vertical.profile.elevation });
+        return {
+          ...vertical,
+          profile: { ...vertical.profile, elevation: ground.elevation },
+          groundTransition: ground
+        };
       },
       logger
     });
@@ -195,49 +172,81 @@ const realtimeGateway = {
       receive: async (raw) => {
         const ownership = await sessionService.assertOwnership({ sessionId });
         const message = parseRealtimeMessage(raw);
-        return commandLedger.execute({
-          campaignId: ownership.campaignId,
-          sessionId,
-          commandId: message.commandId,
-          commandType: `ws:${message.type}`,
-          request: message,
-          ownerId: instanceId,
-          generation: ownership.leaseGeneration,
-          onReplay: async () => {
-            realtimeHub.sendTo(sessionId, clientId, {
-              type: 'ACK',
-              commandId: message.commandId,
-              payload: { type: message.type, replayed: true }
+        pendingMovePoint = null;
+        if (message.type === 'TOKEN_MOVE') {
+          const requested = message.payload?.token ?? message.payload ?? {};
+          const actorId = String(requested.id ?? '');
+          const sceneSnapshot = realtimeHub.getSnapshot(sessionId);
+          const scene = sceneSnapshot.scene;
+          const vertical = actorId && scene?.id
+            ? sceneService.resolveRuntimeVerticalState({ campaignId: ownership.campaignId, sceneId: scene.id, actorId })
+            : null;
+          if (vertical?.sceneElevation?.enabled && vertical.profile?.movementMode === TokenMovementMode.GROUND) {
+            const targetGround = resolveGroundElevation({
+              regions: vertical.regions,
+              point: { x: Number(requested.x) || 0, y: Number(requested.y) || 0 },
+              fallbackElevation: vertical.profile.elevation
             });
-          },
-          execute: async () => {
-            const result = await peer.receive(raw);
-            if (message.type === 'TOKEN_MOVE' && result?.token) {
-              const sceneId = realtimeHub.getSnapshot(sessionId).scene?.id ?? null;
-              if (sceneId) {
-                await sceneService.recordExploration({
-                  campaignId: ownership.campaignId,
-                  userId: peer.identity.userId,
-                  sceneId,
-                  actorId: result.token.id,
-                  x: result.token.x,
-                  y: result.token.y,
-                  elevation: result.token.elevation
-                }).catch((error) => {
-                  logger.warn?.('[Fênix][Fog] falha ao persistir exploração autoritativa', {
+            const previous = sceneSnapshot.tokens.find((token) => token.id === actorId) ?? null;
+            const preflight = resolveTokenMovement({
+              from: previous,
+              to: requested,
+              walls: peer.identity.role === 'gm' ? [] : (scene.walls ?? []),
+              sceneWidth: scene.width,
+              sceneHeight: scene.height,
+              tokenSize: requested.size,
+              verticalEnabled: true,
+              tokenElevation: targetGround.elevation,
+              tokenHeight: vertical.profile.height
+            });
+            pendingMovePoint = preflight.position;
+          } else {
+            pendingMovePoint = { x: Number(requested.x) || 0, y: Number(requested.y) || 0 };
+          }
+        }
+        try {
+          return await commandLedger.execute({
+            campaignId: ownership.campaignId,
+            sessionId,
+            commandId: message.commandId,
+            commandType: `ws:${message.type}`,
+            request: message,
+            ownerId: instanceId,
+            generation: ownership.leaseGeneration,
+            onReplay: async () => {
+              realtimeHub.sendTo(sessionId, clientId, { type: 'ACK', commandId: message.commandId, payload: { type: message.type, replayed: true } });
+            },
+            execute: async () => {
+              const result = await peer.receive(raw);
+              if (message.type === 'TOKEN_MOVE' && result?.token) {
+                const sceneId = realtimeHub.getSnapshot(sessionId).scene?.id ?? null;
+                if (sceneId) {
+                  await sceneService.recordExploration({
                     campaignId: ownership.campaignId,
-                    sessionId,
+                    userId: peer.identity.userId,
                     sceneId,
                     actorId: result.token.id,
-                    code: error?.code,
-                    message: error?.message
+                    x: result.token.x,
+                    y: result.token.y,
+                    elevation: result.token.elevation
+                  }).catch((error) => {
+                    logger.warn?.('[Fênix][Fog] falha ao persistir exploração autoritativa', {
+                      campaignId: ownership.campaignId,
+                      sessionId,
+                      sceneId,
+                      actorId: result.token.id,
+                      code: error?.code,
+                      message: error?.message
+                    });
                   });
-                });
+                }
               }
+              return result;
             }
-            return result;
-          }
-        });
+          });
+        } finally {
+          pendingMovePoint = null;
+        }
       }
     };
   },
@@ -245,11 +254,7 @@ const realtimeGateway = {
     return realtimeHub.sendTo(sessionId, clientId, {
       type: 'ERROR',
       commandId,
-      payload: {
-        code: error?.code || 'REALTIME_ERROR',
-        message: error?.message || 'Falha realtime.',
-        status: Number(error?.statusCode) || 500
-      }
+      payload: { code: error?.code || 'REALTIME_ERROR', message: error?.message || 'Falha realtime.', status: Number(error?.statusCode) || 500 }
     });
   }
 };
