@@ -1,4 +1,5 @@
 import { pointToWallDistance, wallBlocksMovement } from '../../scene-geometry/src/index.js';
+import { tokenVerticalBand, wallIntersectsVerticalBand } from '../../scene-elevation/src/index.js';
 
 const EPSILON = 0.001;
 const MAX_SWEEP_STEPS = 2_000;
@@ -30,10 +31,11 @@ function clampCenter(input, sceneWidth, sceneHeight, radius) {
   };
 }
 
-function blockersAt(position, walls, radius) {
+function blockersAt(position, walls, radius, { verticalEnabled = false, tokenBand = null } = {}) {
   const matches = [];
   for (const wall of Array.isArray(walls) ? walls : []) {
     if (!wallBlocksMovement(wall)) continue;
+    if (verticalEnabled && tokenBand && !wallIntersectsVerticalBand(wall, tokenBand, { enabled: true })) continue;
     if (pointToWallDistance(position, wall) <= radius + EPSILON) matches.push(wall);
   }
   return matches;
@@ -53,12 +55,17 @@ export function resolveTokenMovement({
   sceneWidth,
   sceneHeight,
   tokenSize = 70,
-  padding = 1
+  padding = 1,
+  verticalEnabled = false,
+  tokenElevation = 0,
+  tokenHeight = 1.8
 } = {}) {
   const radius = tokenRadius(tokenSize, padding);
   const target = clampCenter(point(toInput), sceneWidth, sceneHeight, radius);
   const boundaryAdjusted = Math.abs(target.x - finite(toInput?.x)) > EPSILON
     || Math.abs(target.y - finite(toInput?.y)) > EPSILON;
+  const tokenBand = tokenVerticalBand({ elevation: tokenElevation, height: tokenHeight });
+  const blockerOptions = { verticalEnabled: verticalEnabled === true, tokenBand };
 
   if (!fromInput) {
     return Object.freeze({
@@ -68,7 +75,9 @@ export function resolveTokenMovement({
       boundaryAdjusted,
       wallId: null,
       fraction: 1,
-      radius
+      radius,
+      verticalEnabled: verticalEnabled === true,
+      tokenBand
     });
   }
 
@@ -84,11 +93,13 @@ export function resolveTokenMovement({
       boundaryAdjusted,
       wallId: null,
       fraction: 1,
-      radius
+      radius,
+      verticalEnabled: verticalEnabled === true,
+      tokenBand
     });
   }
 
-  const initialBlockers = new Set(blockersAt(start, walls, radius).map((wall) => wall.id));
+  const initialBlockers = new Set(blockersAt(start, walls, radius, blockerOptions).map((wall) => wall.id));
   const stepLength = Math.max(1, radius * 0.3);
   const steps = Math.min(MAX_SWEEP_STEPS, Math.max(1, Math.ceil(distance / stepLength)));
   let previous = start;
@@ -97,7 +108,7 @@ export function resolveTokenMovement({
   for (let index = 1; index <= steps; index += 1) {
     const t = index / steps;
     const candidate = lerp(start, target, t);
-    const collisions = blockersAt(candidate, walls, radius).filter((wall) => {
+    const collisions = blockersAt(candidate, walls, radius, blockerOptions).filter((wall) => {
       if (!initialBlockers.has(wall.id)) return true;
       const previousDistance = pointToWallDistance(previous, wall);
       const nextDistance = pointToWallDistance(candidate, wall);
@@ -115,7 +126,7 @@ export function resolveTokenMovement({
     for (let iteration = 0; iteration < 14; iteration += 1) {
       const mid = (low + high) / 2;
       const probe = lerp(start, target, mid);
-      const blocked = blockersAt(probe, walls, radius).some((wall) => {
+      const blocked = blockersAt(probe, walls, radius, blockerOptions).some((wall) => {
         if (!initialBlockers.has(wall.id)) return true;
         return pointToWallDistance(probe, wall) + EPSILON < pointToWallDistance(start, wall);
       });
@@ -133,7 +144,9 @@ export function resolveTokenMovement({
       boundaryAdjusted,
       wallId: collisions[0]?.id ?? null,
       fraction: Math.round(low * 10_000) / 10_000,
-      radius
+      radius,
+      verticalEnabled: verticalEnabled === true,
+      tokenBand
     });
   }
 
@@ -144,6 +157,8 @@ export function resolveTokenMovement({
     boundaryAdjusted,
     wallId: null,
     fraction: 1,
-    radius
+    radius,
+    verticalEnabled: verticalEnabled === true,
+    tokenBand
   });
 }
