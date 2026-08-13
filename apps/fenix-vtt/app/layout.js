@@ -7,6 +7,7 @@ import './fog-of-war.css';
 import './dynamic-lighting.css';
 import './advanced-vision.css';
 import './floor-region-visual.css';
+import './scene-controls.css';
 
 export const metadata = {
   title: 'Fênix VTT',
