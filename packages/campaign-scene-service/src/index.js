@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { normalizeSceneWalls } from '../../scene-geometry/src/index.js';
+import { normalizeSceneLighting } from '../../scene-lighting/src/index.js';
 import {
   mergeExploredCells,
   normalizeExploredCells,
@@ -68,6 +69,15 @@ function ensureSceneFog(scene) {
   return scene.fog;
 }
 
+function ensureSceneLighting(scene) {
+  scene.lighting = structuredClone(normalizeSceneLighting(scene.lighting ?? {}, {
+    sceneWidth: scene.width,
+    sceneHeight: scene.height,
+    idFactory: randomUUID
+  }));
+  return scene.lighting;
+}
+
 function publicFog(scene, membership = null) {
   const fog = ensureSceneFog(scene);
   const base = {
@@ -91,6 +101,15 @@ function publicFog(scene, membership = null) {
   });
 }
 
+function publicLighting(scene) {
+  const lighting = ensureSceneLighting(scene);
+  return Object.freeze({
+    enabled: lighting.enabled,
+    darkness: lighting.darkness,
+    sources: Object.freeze(lighting.sources.map((source) => Object.freeze({ ...source })))
+  });
+}
+
 function publicAsset(asset) {
   return asset ? Object.freeze({ ...asset }) : null;
 }
@@ -106,6 +125,7 @@ function publicScene(scene, assets = [], membership = null) {
     grid: Object.freeze(normalizeGrid(scene.grid)),
     walls: sceneWalls(scene),
     fog: publicFog(scene, membership),
+    lighting: publicLighting(scene),
     backgroundAssetId: scene.backgroundAssetId ?? null,
     backgroundAsset: publicAsset(asset),
     createdAt: scene.createdAt,
@@ -121,6 +141,7 @@ function ensureCollections(campaign) {
     scene.grid = normalizeGrid(scene.grid);
     if (!Array.isArray(scene.walls)) scene.walls = [];
     ensureSceneFog(scene);
+    ensureSceneLighting(scene);
   }
   return campaign;
 }
@@ -210,6 +231,9 @@ export class CampaignSceneService {
         ...normalizeSceneFog({ enabled: false }),
         exploredByActor: {}
       },
+      lighting: {
+        ...normalizeSceneLighting({ enabled: false, darkness: 0.78, sources: [] })
+      },
       createdAt: now,
       updatedAt: now
     };
@@ -298,6 +322,32 @@ export class CampaignSceneService {
       ...config,
       exploredByActor: resetExploration ? {} : normalizeExploredByActor(current.exploredByActor)
     };
+    scene.updatedAt = now;
+    campaign.updatedAt = now;
+    await this.#persistCampaign(campaign);
+    return {
+      scene: publicScene(scene, campaign.assets, membership),
+      activeSceneId: campaign.activeSceneId
+    };
+  }
+
+  async updateLighting({ campaignId, userId, sceneId, enabled, darkness, sources } = {}) {
+    const { campaign, membership } = this.campaignService.requireRole(campaignId, userId, 'gm');
+    ensureCollections(campaign);
+    const scene = campaign.scenes.find((item) => item.id === String(sceneId));
+    if (!scene) throw sceneError('Cena não encontrada.', 'CAMPAIGN_SCENE_NOT_FOUND', 404);
+    const current = ensureSceneLighting(scene);
+    const next = normalizeSceneLighting({
+      enabled: enabled ?? current.enabled,
+      darkness: darkness ?? current.darkness,
+      sources: sources ?? current.sources
+    }, {
+      sceneWidth: scene.width,
+      sceneHeight: scene.height,
+      idFactory: randomUUID
+    });
+    const now = new Date(this.now()).toISOString();
+    scene.lighting = structuredClone(next);
     scene.updatedAt = now;
     campaign.updatedAt = now;
     await this.#persistCampaign(campaign);
