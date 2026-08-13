@@ -1,4 +1,9 @@
 import { wallBlocksVision } from '../../scene-geometry/src/index.js';
+import {
+  TokenMovementMode,
+  normalizeTokenVerticalProfile,
+  wallContainsElevation
+} from '../../scene-elevation/src/index.js';
 
 const EPSILON = 1e-6;
 const DEFAULT_RAY_STEPS = 96;
@@ -40,17 +45,18 @@ function normalizedActorId(value) {
   return String(value ?? '').trim().replace(/\s+/g, ' ').slice(0, 200);
 }
 
-function blockingSegments(walls = [], sceneWidth, sceneHeight) {
+function blockingSegments(walls = [], sceneWidth, sceneHeight, { verticalEnabled = false, elevation = 0 } = {}) {
   const width = Math.max(1, finite(sceneWidth, 1));
   const height = Math.max(1, finite(sceneHeight, 1));
   const segments = (Array.isArray(walls) ? walls : [])
     .filter((wall) => wallBlocksVision(wall))
-    .map((wall) => ({ a: normalizedPoint(wall.a), b: normalizedPoint(wall.b) }));
+    .filter((wall) => !verticalEnabled || wallContainsElevation(wall, elevation, { enabled: true }))
+    .map((wall) => ({ a: normalizedPoint(wall.a), b: normalizedPoint(wall.b), wall }));
   segments.push(
-    { a: { x: 0, y: 0 }, b: { x: width, y: 0 } },
-    { a: { x: width, y: 0 }, b: { x: width, y: height } },
-    { a: { x: width, y: height }, b: { x: 0, y: height } },
-    { a: { x: 0, y: height }, b: { x: 0, y: 0 } }
+    { a: { x: 0, y: 0 }, b: { x: width, y: 0 }, boundary: true },
+    { a: { x: width, y: 0 }, b: { x: width, y: height }, boundary: true },
+    { a: { x: width, y: height }, b: { x: 0, y: height }, boundary: true },
+    { a: { x: 0, y: height }, b: { x: 0, y: 0 }, boundary: true }
   );
   return segments;
 }
@@ -93,10 +99,13 @@ export function normalizeTokenVisionProfile(input = {}, { defaultRangeCells = 8 
   const personalLight = input.personalLight && typeof input.personalLight === 'object'
     ? input.personalLight
     : {};
+  const vertical = normalizeTokenVerticalProfile(input);
   return Object.freeze({
     mode,
     rangeCells: Math.round(clamp(finite(input.rangeCells, defaultRangeCells), 1, 60)),
-    elevation: Math.round(clamp(finite(input.elevation, 0), -1000, 10000) * 100) / 100,
+    elevation: vertical.elevation,
+    height: vertical.height,
+    movementMode: vertical.movementMode,
     personalLight: Object.freeze({
       enabled: personalLight.enabled === true,
       radiusCells: Math.round(clamp(finite(personalLight.radiusCells, 4), 1, 60)),
@@ -105,6 +114,8 @@ export function normalizeTokenVisionProfile(input = {}, { defaultRangeCells = 8 
     })
   });
 }
+
+export { TokenMovementMode };
 
 export function normalizeTokenVisionProfiles(input = {}, { defaultRangeCells = 8 } = {}) {
   if (input == null) return Object.freeze({});
@@ -176,7 +187,12 @@ export function mergeExploredCells(existing, discovered, options = {}) {
   ], options);
 }
 
-export function hasLineOfSight(originInput, targetInput, walls = [], { maxDistance = Number.POSITIVE_INFINITY } = {}) {
+export function hasLineOfSight(originInput, targetInput, walls = [], {
+  maxDistance = Number.POSITIVE_INFINITY,
+  verticalEnabled = false,
+  originElevation = 0,
+  targetElevation = originElevation
+} = {}) {
   const origin = normalizedPoint(originInput);
   const target = normalizedPoint(targetInput);
   const dx = target.x - origin.x;
@@ -185,11 +201,19 @@ export function hasLineOfSight(originInput, targetInput, walls = [], { maxDistan
   if (distance <= EPSILON) return true;
   if (Number.isFinite(maxDistance) && distance > maxDistance + EPSILON) return false;
   const direction = { x: dx / distance, y: dy / distance };
+  const startZ = finite(originElevation);
+  const endZ = finite(targetElevation, startZ);
   for (const wall of Array.isArray(walls) ? walls : []) {
     if (!wallBlocksVision(wall)) continue;
     const segment = { a: normalizedPoint(wall.a), b: normalizedPoint(wall.b) };
     const hit = raySegmentDistance(origin, direction, segment);
-    if (hit != null && hit < distance - 0.001) return false;
+    if (hit == null || hit >= distance - 0.001) continue;
+    if (verticalEnabled) {
+      const fraction = clamp(hit / distance, 0, 1);
+      const rayElevation = startZ + (endZ - startZ) * fraction;
+      if (!wallContainsElevation(wall, rayElevation, { enabled: true })) continue;
+    }
+    return false;
   }
   return true;
 }
@@ -200,7 +224,9 @@ export function computeVisibilityPolygon({
   sceneWidth,
   sceneHeight,
   maxDistance = Number.POSITIVE_INFINITY,
-  raySteps = DEFAULT_RAY_STEPS
+  raySteps = DEFAULT_RAY_STEPS,
+  verticalEnabled = false,
+  elevation = 0
 } = {}) {
   const width = Math.max(1, finite(sceneWidth, 1));
   const height = Math.max(1, finite(sceneHeight, 1));
@@ -210,7 +236,7 @@ export function computeVisibilityPolygon({
   };
   const fallbackDistance = Math.hypot(width, height) * 2;
   const radius = Number.isFinite(maxDistance) ? Math.max(1, finite(maxDistance, 1)) : fallbackDistance;
-  const segments = blockingSegments(walls, width, height);
+  const segments = blockingSegments(walls, width, height, { verticalEnabled, elevation });
   const angles = new Set();
   const epsilonAngle = 0.00001;
 
@@ -248,7 +274,10 @@ export function visibleGridCells({
   grid = {},
   sceneWidth,
   sceneHeight,
-  visionRangeCells = 8
+  visionRangeCells = 8,
+  verticalEnabled = false,
+  originElevation = 0,
+  targetElevation = originElevation
 } = {}) {
   const width = Math.max(1, finite(sceneWidth, 1));
   const height = Math.max(1, finite(sceneHeight, 1));
@@ -270,7 +299,12 @@ export function visibleGridCells({
       };
       if (center.x < 0 || center.y < 0 || center.x > width || center.y > height) continue;
       if (Math.hypot(center.x - origin.x, center.y - origin.y) > maxDistance + size * 0.75) continue;
-      if (hasLineOfSight(origin, center, walls, { maxDistance: maxDistance + size * 0.75 })) {
+      if (hasLineOfSight(origin, center, walls, {
+        maxDistance: maxDistance + size * 0.75,
+        verticalEnabled,
+        originElevation,
+        targetElevation
+      })) {
         keys.push(`${col}:${row}`);
       }
     }
