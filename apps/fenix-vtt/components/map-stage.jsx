@@ -24,6 +24,7 @@ import {
   panViewport,
   zoomViewportAt
 } from '../lib/map-viewport.js';
+import { resolveClientTokenMovement } from '../lib/token-input-movement.js';
 
 function sceneViewport(canvas, scene) {
   if (scene.id === demoScene.id) return demoViewport;
@@ -354,14 +355,21 @@ export function MapStage({
     if (!renderer || !drag || busy || wallEditorOpen) return;
     const hit = renderer.hitTest(event);
     const current = tokensRef.current.get(drag.tokenId);
-    if (!current) return;
+    if (!current || !hit?.world) return;
 
-    const moved = { ...current, x: hit.world.x, y: hit.world.y };
+    const requested = { ...current, x: hit.world.x, y: hit.world.y };
+    const resolved = resolveClientTokenMovement({
+      previousToken: current,
+      requestedToken: requested,
+      scene,
+      ignoreWalls: canMoveAny
+    });
+    const moved = resolved?.token ?? requested;
     tokensRef.current.set(moved.id, moved);
     renderer.upsertToken(moved);
     setDragVisionToken(moved);
 
-    const zone = roomZoneAt(hit.world);
+    const zone = roomZoneAt({ x: moved.x, y: moved.y });
     drag.roomId = zone?.room?.id ?? null;
     drag.roomEntry = zone ? createDemoRoomEnteredEvent(zone) : null;
   }
