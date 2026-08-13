@@ -17,6 +17,7 @@
     "test:realtime-integration": "node integration-tests/realtime-websocket.mjs",
     "test:auth-integration": "node integration-tests/auth-campaign-http.mjs",
     "test:fog-integration": "node integration-tests/fog-http.mjs",
+    "test:lighting-integration": "node integration-tests/lighting-http.mjs",
     "test:postgres-integration": "node integration-tests/postgres-persistence.mjs",
     "test:coordination-integration": "node integration-tests/distributed-runtime-coordination.mjs",
     "test:routing-integration": "node integration-tests/owner-aware-runtime-routing.mjs",
