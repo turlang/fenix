@@ -81,9 +81,9 @@ function ensureSceneLighting(scene) {
 }
 
 function ensureSceneVisionProfiles(scene) {
-  const fog = ensureSceneFog(scene);
+  const fogConfig = normalizeSceneFog(scene.fog ?? {});
   scene.visionProfiles = structuredClone(normalizeTokenVisionProfiles(scene.visionProfiles ?? {}, {
-    defaultRangeCells: fog.visionRangeCells
+    defaultRangeCells: fogConfig.visionRangeCells
   }));
   return scene.visionProfiles;
 }
