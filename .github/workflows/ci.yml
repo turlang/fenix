@@ -103,6 +103,9 @@ jobs:
       - name: Test Fog HTTP authorization and privacy
         run: npm run test:fog-integration
 
+      - name: Test Lighting HTTP authorization
+        run: npm run test:lighting-integration
+
       - name: Test realtime WebSocket adapter
         run: npm run test:realtime-integration
 
