@@ -3,6 +3,13 @@ import { wallBlocksVision } from '../../scene-geometry/src/index.js';
 const EPSILON = 1e-6;
 const DEFAULT_RAY_STEPS = 96;
 const MAX_EXPLORED_CELLS = 20_000;
+const DEFAULT_PERSONAL_LIGHT_COLOR = '#f2c66f';
+
+export const TokenVisionMode = Object.freeze({
+  NORMAL: 'normal',
+  DARKVISION: 'darkvision',
+  INFRAVISION: 'infravision'
+});
 
 function visionError(message, code, statusCode = 400) {
   const error = new Error(message);
@@ -22,6 +29,15 @@ function clamp(value, min, max) {
 
 function normalizedPoint(input = {}) {
   return { x: finite(input.x), y: finite(input.y) };
+}
+
+function normalizedColor(value) {
+  const candidate = String(value ?? '').trim();
+  return /^#[0-9a-fA-F]{6}$/.test(candidate) ? candidate.toLowerCase() : DEFAULT_PERSONAL_LIGHT_COLOR;
+}
+
+function normalizedActorId(value) {
+  return String(value ?? '').trim().replace(/\s+/g, ' ').slice(0, 200);
 }
 
 function blockingSegments(walls = [], sceneWidth, sceneHeight) {
@@ -67,6 +83,63 @@ function uniqueSortedAngles(angles) {
     if (!result.length || Math.abs(angle - result[result.length - 1]) > 1e-7) result.push(angle);
   }
   return result;
+}
+
+export function normalizeTokenVisionProfile(input = {}, { defaultRangeCells = 8 } = {}) {
+  const requestedMode = String(input.mode ?? TokenVisionMode.NORMAL).trim().toLowerCase();
+  const mode = Object.values(TokenVisionMode).includes(requestedMode)
+    ? requestedMode
+    : TokenVisionMode.NORMAL;
+  const personalLight = input.personalLight && typeof input.personalLight === 'object'
+    ? input.personalLight
+    : {};
+  return Object.freeze({
+    mode,
+    rangeCells: Math.round(clamp(finite(input.rangeCells, defaultRangeCells), 1, 60)),
+    elevation: Math.round(clamp(finite(input.elevation, 0), -1000, 10000) * 100) / 100,
+    personalLight: Object.freeze({
+      enabled: personalLight.enabled === true,
+      radiusCells: Math.round(clamp(finite(personalLight.radiusCells, 4), 1, 60)),
+      intensity: Math.round(clamp(finite(personalLight.intensity, 0.85), 0.1, 1) * 100) / 100,
+      color: normalizedColor(personalLight.color)
+    })
+  });
+}
+
+export function normalizeTokenVisionProfiles(input = {}, { defaultRangeCells = 8 } = {}) {
+  if (input == null) return Object.freeze({});
+  if (typeof input !== 'object' || Array.isArray(input)) {
+    throw visionError('visionProfiles precisa ser um objeto por actorId.', 'SCENE_VISION_PROFILES_INVALID');
+  }
+  const entries = Object.entries(input);
+  if (entries.length > 256) {
+    throw visionError('Uma cena aceita no máximo 256 perfis de visão.', 'SCENE_VISION_PROFILE_LIMIT', 413);
+  }
+  const normalized = {};
+  for (const [rawActorId, profile] of entries) {
+    const actorId = normalizedActorId(rawActorId);
+    if (!actorId) continue;
+    normalized[actorId] = normalizeTokenVisionProfile(profile, { defaultRangeCells });
+  }
+  return Object.freeze(normalized);
+}
+
+export function resolveTokenVisionProfile({ scene = null, actorId = null, fallbackRangeCells = 8 } = {}) {
+  const id = normalizedActorId(actorId);
+  const profile = id && scene?.visionProfiles && typeof scene.visionProfiles === 'object'
+    ? scene.visionProfiles[id]
+    : null;
+  return normalizeTokenVisionProfile(profile ?? {}, { defaultRangeCells: fallbackRangeCells });
+}
+
+export function tokenVisionTint(mode) {
+  if (mode === TokenVisionMode.DARKVISION) {
+    return Object.freeze({ color: '#a9b6c8', opacity: 0.16, darknessBypass: 0.78 });
+  }
+  if (mode === TokenVisionMode.INFRAVISION) {
+    return Object.freeze({ color: '#ff7043', opacity: 0.2, darknessBypass: 0.88 });
+  }
+  return Object.freeze({ color: '#ffffff', opacity: 0, darknessBypass: 0 });
 }
 
 export function normalizeSceneFog(input = {}) {
