@@ -28,15 +28,17 @@ O token é tratado como um círculo para evitar que o centro atravesse uma pared
 
 ### Regras atuais
 
-- `wall` bloqueia movimento de jogadores;
-- `door:closed` bloqueia movimento de jogadores;
-- `door:locked` bloqueia movimento de jogadores;
+- `wall` bloqueia movimento de jogador;
+- `door:closed` bloqueia movimento de jogador;
+- `door:locked` bloqueia movimento de jogador;
 - `door:open` permite movimento;
-- o Mestre possui **noclip administrativo** e ignora paredes/portas ao mover qualquer token;
+- Mestre/GM possui noclip administrativo e ignora paredes/portas ao mover tokens;
 - o noclip do Mestre não ignora os limites externos da cena;
+- os limites da cena limitam o centro do token para Mestre e jogador;
 - jogador continua autorizado apenas a mover seu próprio `actorId`;
-- o bypass nunca é aceito como flag do navegador: o `RealtimeSessionHub` decide a política exclusivamente pela identidade autenticada `role=gm`;
 - a posição transmitida e persistida é sempre a posição aceita pelo servidor.
+
+O bypass do Mestre é decidido novamente pelo `RealtimeSessionHub` a partir da identidade autenticada `role=gm`; não existe flag de noclip confiada ao navegador. O client replica a mesma política apenas para manter a interação local consistente antes da sessão realtime iniciar.
 
 O evento `TOKEN_MOVED` inclui metadados de diagnóstico:
 
@@ -46,35 +48,34 @@ O evento `TOKEN_MOVED` inclui metadados de diagnóstico:
     "blocked": true,
     "boundaryAdjusted": false,
     "wallId": "wall-1",
-    "fraction": 0.36,
-    "ignoredWalls": false
+    "fraction": 0.36
   }
 }
 ```
-
-Para movimento do Mestre, `ignoredWalls` é `true`. Isso permite diagnosticar noclip sem transferir a decisão de autoridade para o cliente.
 
 Se uma tentativa de movimento de jogador é bloqueada, qualquer `roomEntry` enviado junto é ignorado. Assim uma parede não pode ser atravessada apenas para disparar narração de uma sala do outro lado.
 
 ## Guarda local de colisão
 
-A validação física mostrou um caso importante: quando a sessão ainda está em `IDLE`, não existe WebSocket autoritativo para corrigir um drag local. O VTT agora aplica o mesmo `resolveTokenMovement()` antes de aceitar a posição final no cliente.
+A validação física mostrou um caso importante: quando a sessão ainda está em `IDLE`, não existe WebSocket autoritativo para corrigir um drag local. O VTT agora aplica o mesmo `resolveTokenMovement()` antes de aceitar a posição final no cliente para jogadores; para o Mestre usa `{ ignoreWalls: true }`, preservando somente os bounds da cena.
 
 Isso cria duas barreiras complementares:
 
 ```text
 Arraste / WASD
      ↓
-Client collision guard
+Client movement policy
+     ├─ jogador: colisão completa
+     └─ Mestre: noclip de paredes
      ↓
-posição local segura
+posição local aceita
      ↓
 RealtimeSessionHub (quando conectado)
      ↓
-segunda validação autoritativa
+segunda validação pela identidade autenticada
 ```
 
-Para jogadores, uma parede salva bloqueia o token mesmo antes de `Iniciar sessão`; quando a sessão está ativa, o servidor continua sendo a autoridade final. Para o Mestre, a guarda local é executada com paredes ignoradas, preservando somente os limites externos do mapa.
+Portanto, uma parede salva bloqueia o jogador mesmo antes de `Iniciar sessão`; quando a sessão está ativa, o servidor continua sendo a autoridade final. O Mestre atravessa paredes nos dois modos.
 
 ## Controles gamer de teclado
 
@@ -88,16 +89,20 @@ O token autorizado/selecionado pode ser movimentado por teclado:
 - `Shift + direção`: uma célula completa;
 - manter a tecla pressionada usa o repeat normal do navegador;
 - atalhos são ignorados enquanto o foco está em `input`, `textarea`, `select`, botão ou conteúdo editável;
-- Mestre move o ator selecionado com noclip de paredes/portas;
+- Mestre move o ator selecionado em noclip de paredes/portas;
 - jogador continua limitado ao próprio `actorId` e à colisão da cena.
 
 Arraste e teclado passam pela mesma política local e depois pela mesma autoridade realtime quando a sessão está conectada.
 
+## Zoom por scroll
+
+O zoom do mapa por roda do mouse é registrado diretamente no `canvas` com `addEventListener('wheel', ..., { passive: false })`. Isso permite cancelar o scroll da página com `preventDefault()` sem provocar o erro do Chrome `Unable to preventDefault inside passive event listener invocation`.
+
+O listener é removido no cleanup do componente/troca de cena. O cálculo de zoom continua usando `zoomViewportAt()`, preservando o ponto do mundo sob o cursor e os mesmos limites de zoom usados pelos botões `+` e `−`.
+
 ## Fog of War e colisão
 
-O registro de exploração continua acontecendo depois do comando realtime e usa `result.token.x/y`. Como `result.token` já contém a posição resolvida pelo Collision Engine, uma tentativa bloqueada de jogador não revela células atrás da parede.
-
-O noclip do Mestre não desativa LOS/Fog do personagem: ele é uma capacidade administrativa de movimentação, não uma alteração nas regras de visão do token.
+O registro de exploração continua acontecendo depois do comando realtime e usa `result.token.x/y`. Como `result.token` já contém a posição resolvida pelo Collision Engine, uma tentativa bloqueada não revela células atrás da parede.
 
 ### Estabilidade durante drag
 
@@ -190,8 +195,7 @@ CampaignSceneService
 
 RealtimeSessionHub
    ├── movimento autorizado
-   ├── política GM noclip / Player collision
-   ├── collision resolution
+   ├── collision resolution / GM noclip
    └── TOKEN_MOVED autoritativo
 
 React / SVG
@@ -204,15 +208,15 @@ React / SVG
 
 O marco possui gates para:
 
-- colisão de jogador por parede e portas fechadas/trancadas;
-- passagem de jogador por porta aberta;
-- noclip do Mestre através de paredes;
-- limites da cena preservados mesmo para o Mestre;
-- bypass decidido pelo papel autenticado, não por payload do cliente;
-- room-entry bloqueado quando o movimento de jogador não atravessa a parede;
+- colisão por parede e portas fechadas/trancadas para jogador;
+- passagem por porta aberta;
+- noclip do Mestre através de paredes mantendo bounds da cena;
+- limites da cena;
+- room-entry bloqueado quando o movimento do jogador não atravessa a parede;
 - guarda local de colisão mesmo sem realtime;
 - mapeamento WASD/setas e passo com Shift;
 - proteção para não capturar teclado em campos de texto;
+- wheel zoom por listener nativo não-passivo, sem `onWheel` passivo do React;
 - normalização e persistência de iluminação;
 - sombras por LOS;
 - fonte anexada a token;
