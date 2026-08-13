@@ -1,14 +1,12 @@
-# Fênix VTT — Elevação, Níveis e Voo 2.5D
+# Fênix VTT — Elevação, Níveis, Pisos e Transições 2.5D
 
 ## Objetivo
 
-Este marco transforma o antigo campo `elevation` em parte autoritativa do runtime tático. O standalone continua sendo um mapa 2D, mas movimento, colisão, linha de visão, Fog of War e iluminação passam a considerar uma terceira coordenada lógica `Z`.
+O Fênix VTT usa um modelo tático 2.5D: o battlemap continua 2D, mas movimento, colisão, LOS, Fog e iluminação consideram a coordenada lógica `Z`.
 
-O modelo é deliberadamente **2.5D**: não há malha 3D de piso, física de queda ou renderer volumétrico. A coordenada vertical modifica regras táticas e oclusão sem substituir o battlemap 2D.
+Além de níveis nomeados e voo, a cena agora pode possuir **regiões de piso, escadas e rampas**. Tokens em modo Solo recebem sua elevação automaticamente da região em que terminam o movimento. Tokens em Voo continuam usando o controle vertical autoritativo por `verticalStep`.
 
-## Configuração vertical da cena
-
-Cada cena pode carregar:
+## Configuração vertical
 
 ```js
 {
@@ -27,13 +25,110 @@ Cada cena pode carregar:
 }
 ```
 
-`levels` são referências nomeadas para o Mestre e para a UI. Eles não criam automaticamente superfícies físicas no mapa. Um token pode estar em qualquer Z válido; o nível mais próximo é usado como contexto visual.
+`levels` continuam sendo referências nomeadas. A geometria física do piso é descrita separadamente por `scene.regions`.
 
-A configuração permanece desligada por padrão. Quando `elevation.enabled === false`, colisão e LOS preservam o comportamento 2D anterior.
+## Floor Regions
+
+Uma região pode ser `floor`, `stairs` ou `ramp`:
+
+```js
+{
+  id: 'stairs-east',
+  name: 'Escada leste',
+  kind: 'stairs',
+  enabled: true,
+  priority: 10,
+  points: [
+    { x: 300, y: 100 },
+    { x: 500, y: 100 },
+    { x: 500, y: 220 },
+    { x: 300, y: 220 }
+  ],
+  baseElevation: 0,
+  targetElevation: 4,
+  axis: {
+    start: { x: 300, y: 160 },
+    end: { x: 500, y: 160 }
+  }
+}
+```
+
+O domínio aceita polígonos de até 64 pontos e até 128 regiões por cena. A UI desta fase cria regiões retangulares, mas a persistência e o motor não ficam limitados a retângulos.
+
+### Piso
+
+`floor` possui Z fixo:
+
+```text
+qualquer ponto dentro da região → baseElevation
+```
+
+Exemplo: uma passarela com `baseElevation = 4` coloca automaticamente um token em Solo em Z 4 quando ele termina o movimento dentro daquela região.
+
+### Escada e rampa
+
+`stairs` e `ramp` usam um eixo orientado `start → end`. O Engine projeta a posição do token nesse eixo e interpola:
+
+```text
+Z = baseElevation + (targetElevation - baseElevation) × progresso
+```
+
+Assim, uma rampa de Z 0 para Z 4 produz aproximadamente Z 2 no meio do percurso. Inverter o eixo e os extremos de Z inverte a direção da subida.
+
+### Regiões sobrepostas
+
+Quando mais de uma região contém o mesmo ponto, a resolução é determinística:
+
+1. maior `priority`;
+2. menor área do polígono;
+3. `id` como desempate estável.
+
+Isso permite colocar uma escada de prioridade alta dentro de uma região maior de piso.
+
+## Autoridade do Engine
+
+A geometria de região não é autoridade do browser. O fluxo de um token em Solo é:
+
+```text
+Browser solicita TOKEN_MOVE (X/Y)
+        ↓
+Engine autentica session + membership + actorId
+        ↓
+Engine lê scene.regions persistidas
+        ↓
+preflight usa colisão autoritativa para obter o ponto XY seguro
+        ↓
+resolveGroundElevation(ponto seguro)
+        ↓
+perfil vertical entregue ao RealtimeSessionGateway recebe o Z calculado
+        ↓
+Gateway aplica novamente suas regras autoritativas de token/collision
+        ↓
+TOKEN_MOVED contém somente o token aceito
+        ↓
+Fog persiste exploração usando X/Y/Z aceitos
+```
+
+Consequências:
+
+- jogador não escolhe o Z de um token em Solo;
+- uma região atrás de uma parede não deve alterar prematuramente o Z quando a colisão interrompe o movimento antes dela;
+- `height` e `movementMode` continuam vindos do perfil persistido;
+- tokens em Voo ignoram Floor Regions e continuam limitados a um `verticalStep` por comando;
+- o Mestre conserva o noclip existente para paredes.
+
+## Privacidade das regiões
+
+Regiões podem revelar informação estrutural do mapa, como passagens, pisos secretos ou transições entre andares. Por isso:
+
+- Mestre recebe `scene.regions` completas;
+- jogador recebe `scene.regions = []` no catálogo HTTP;
+- o Engine ainda usa as regiões privadas para calcular o Z do token do jogador;
+- `POST /v1/campaigns/:campaignId/scenes/:sceneId/regions` é GM-only.
+
+O jogador observa somente o resultado autoritativo do próprio token, não o polígono que produziu a transição.
 
 ## Perfil vertical do personagem
-
-O perfil de visão por `actorId` passa a incluir:
 
 ```js
 {
@@ -43,16 +138,13 @@ O perfil de visão por `actorId` passa a incluir:
 }
 ```
 
-- `elevation`: Z/base do corpo.
-- `height`: altura corporal usada para colisão vertical e altura dos olhos.
-- `ground`: o servidor fixa o token no Z configurado pelo Mestre.
-- `flying`: o jogador pode subir/descer, mas o Engine limita cada comando a `scene.elevation.verticalStep`.
+- `ground`: Z vem do piso automático quando houver região; fora de regiões usa o Z-base persistido.
+- `flying`: Z é variável, porém cada comando continua limitado pelo `verticalStep`.
+- `height`: define a faixa corporal e contribui para a altura dos olhos.
 
-O navegador nunca é a autoridade do Z. Mesmo que um jogador envie `elevation: 999`, o Gateway resolve novamente o perfil persistido antes de aceitar o movimento.
+## Paredes e portas
 
-## Paredes e portas com faixa vertical
-
-Cada segmento pode carregar:
+Paredes continuam podendo ter:
 
 ```js
 {
@@ -61,146 +153,65 @@ Cada segmento pode carregar:
 }
 ```
 
-Uma parede só bloqueia um token quando sua faixa vertical cruza a faixa corporal do token.
+Uma barreira só bloqueia quando a faixa corporal/raio vertical cruza sua faixa. Portas abertas não bloqueiam; portas fechadas e trancadas usam a mesma regra vertical.
 
-Exemplo:
+Paredes antigas sem faixa explícita permanecem efetivamente infinitas para preservar compatibilidade.
 
-- parede: `Z 0..3`;
-- personagem no chão: `Z 0..1.8` → bloqueado;
-- personagem voando: `Z 4..5.8` → passa acima.
+## Fog e iluminação
 
-Portas abertas continuam sem bloquear visão/movimento. Portas fechadas ou trancadas usam a mesma regra vertical da parede.
+O Fog continua sendo calculado após o movimento aceito e recebe o Z final do token. Portanto, ao subir uma escada/rampa o ponto de observação usado pelo LOS acompanha a nova elevação.
 
-### Compatibilidade legada
+Fontes de luz anexadas continuam seguindo X/Y/Z autoritativos dos tokens. Oclusão vertical de paredes permanece compartilhada com as regras de visão.
 
-Paredes criadas antes deste marco, sem faixa explícita, normalizam para uma faixa ampla (`-1000..10000`) e portanto continuam funcionando como barreiras 2D efetivamente infinitas.
+## Authoring atual
 
-A UI oferece **Aplicar faixa padrão às paredes**. Essa ação converte explicitamente os segmentos atuais para `defaultWallBottom..defaultWallTop`. Não há migração silenciosa que faça um dungeon antigo começar a ser atravessável por voo.
+No painel **Sentidos** do Mestre existe a seção **Pisos e transições** com:
 
-## Colisão autoritativa
+- `+ Piso`;
+- `+ Escada`;
+- `+ Rampa`;
+- nome e tipo;
+- ativar/desativar;
+- X1/Y1/X2/Y2 do retângulo;
+- Z inicial;
+- Z final para escada/rampa;
+- prioridade;
+- **Inverter subida**.
 
-O fluxo permanece:
-
-```text
-Browser solicita TOKEN_MOVE
-        ↓
-RealtimeSessionGateway autentica actorId
-        ↓
-Engine resolve perfil vertical persistido
-        ↓
-Z solicitado é fixado/clampado
-        ↓
-scene-collision testa XY + faixa vertical
-        ↓
-Hub persiste e transmite somente o token aceito
-```
-
-Jogadores não podem:
-
-- mover outro `actorId`;
-- trocar `movementMode` pelo payload;
-- alterar `height` pelo payload;
-- subir/descer mais do que `verticalStep` em um comando;
-- usar Z forjado para atravessar uma parede.
-
-O Mestre mantém o noclip existente para paredes, mas ainda respeita os limites XY da cena.
-
-## Linha de visão vertical
-
-`hasLineOfSight` interpola a altura do raio entre observador e alvo. Quando o raio cruza um segmento no plano XY, a parede só bloqueia se a altura do raio naquele ponto estiver dentro de `bottomElevation..topElevation`.
-
-Isso permite, por exemplo:
-
-- enxergar sobre um muro baixo;
-- perder visão ao olhar de um ponto alto para um alvo baixo quando a linha descendente cruza o muro;
-- manter portas e paredes infinitas de cenas legadas com o comportamento anterior.
-
-O polígono de visão do token usa a altura dos olhos aproximada como:
-
-```text
-eyeZ = tokenZ + height × 0.9
-```
-
-## Fog of War
-
-A exploração persistente continua sendo derivada pelo Engine após um `TOKEN_MOVE` autorizado. O browser não escolhe células exploradas.
-
-Agora o Engine também recebe o Z **aceito** do token e calcula `visibleGridCells` na altura dos olhos. Portanto, um personagem que efetivamente esteja acima de um muro baixo pode explorar células que um personagem no térreo não alcança visualmente.
-
-A privacidade existente permanece:
-
-- GM recebe `exploredByActor`;
-- jogador recebe apenas `exploredCells` do próprio `membership.actorId`.
-
-## Dynamic Lighting vertical
-
-Fontes de luz passam a ter `elevation`.
-
-- fonte fixa usa seu próprio Z;
-- fonte anexada a token acompanha `x`, `y` e `elevation` do token realtime;
-- o polígono da luz usa a mesma geometria vertical de LOS;
-- uma luz acima do topo de um muro baixo pode iluminar o outro lado;
-- uma luz dentro da faixa vertical do muro continua projetando sombra.
-
-## Pontes, passarelas e mezaninos
-
-A primeira modelagem recomendada é:
-
-1. criar um nível nomeado, por exemplo `Ponte · Z 4`;
-2. configurar o personagem em `ground` com base `Z 4` quando ele estiver sobre a ponte, ou usar `flying` quando o deslocamento vertical for livre;
-3. definir guarda-corpos/paredes da ponte com faixa, por exemplo `Z 4..6`;
-4. manter paredes do piso inferior em sua faixa correspondente.
-
-O motor então permite que personagens abaixo da ponte ignorem guarda-corpos elevados, enquanto personagens sobre a ponte colidem com eles.
-
-## UI atual
-
-No painel **Sentidos** do Mestre:
-
-- ativar/desativar 2.5D;
-- configurar altura entre níveis;
-- configurar passo de voo;
-- definir faixa padrão das paredes;
-- criar/remover níveis nomeados;
-- configurar Z base, altura corporal e modo Solo/Voo do personagem;
-- converter em lote as paredes atuais para a faixa padrão.
-
-Jogadores com perfil `flying` recebem controles `−Z` e `+Z`. Esses botões apenas solicitam movimento; o servidor continua sendo a autoridade.
+Novas regiões nascem próximas ao personagem selecionado para acelerar o authoring. O domínio já suporta polígonos arbitrários, porém desenho poligonal click-to-click sobre o mapa fica para um refinamento posterior.
 
 ## Validação automatizada
 
-O gate deste marco deve provar em conjunto:
+Os gates deste marco cobrem:
 
-- cenas antigas continuam 2D quando elevação está desativada;
-- paredes legadas sem faixa continuam bloqueando como antes;
-- colisão respeita a faixa corporal do token;
-- LOS horizontal passa sobre uma parede baixa somente quando o observador está acima dela;
-- um raio descendente volta a ser bloqueado se cruzar a faixa vertical da parede;
-- Fog persistente usa o Z aceito pelo Engine;
-- iluminação fixa/anexada usa Z e permanece ocluída na altura correta;
-- jogador não pode forjar Z, altura corporal ou modo de voo;
-- voo é limitado a um `verticalStep` por comando;
-- configuração de níveis/perfis continua GM-only via HTTP;
-- `scene-elevation` e demais capacidades táticas não aparecem no `SessionDirector`.
+- normalização de `floor`, `stairs` e `ramp`;
+- point-in-polygon;
+- piso com Z fixo;
+- interpolação de rampa;
+- prioridade de regiões sobrepostas;
+- persistência GM-only;
+- jogador recebendo lista vazia de regiões;
+- runtime interno recebendo a geometria completa;
+- resolução server-side antes do movimento;
+- Fog usando o Z aceito;
+- compatibilidade dos gates anteriores de voo, colisão, LOS, iluminação e infraestrutura distribuída.
 
-A matriz de CI continua executando o Core em Node 20/22/24 e o job portátil com PostgreSQL, coordenação distribuída, idempotência, routing, HTTP, WebSocket e build standalone.
+## Limites deliberados
 
-## Limites deliberados deste marco
+Ainda não fazem parte desta fase:
 
-Ainda não fazem parte do modelo:
-
-- polígonos de piso/áreas que detectam automaticamente se o token está sobre uma ponte;
-- escadas e rampas com interpolação automática de Z;
-- queda, gravidade ou dano de queda;
-- teto e volume fechado completos;
+- desenho poligonal direto click-to-click no battlemap;
+- malha 3D ou renderer volumétrico;
+- gravidade, queda e dano de queda;
+- salto/climb automático baseado em regras de sistema;
+- detecção física de teto;
 - oclusão token-contra-token;
-- visão em cone/altura da cabeça diferenciada por pose;
-- floors renderizados como camadas separadas de imagem;
-- renderer 3D, PBR ou sombras volumétricas;
-- pathfinding 3D.
+- pathfinding 3D;
+- imagens de battlemap separadas por andar;
+- bloqueio automático de toda diferença abrupta de Z entre pisos sem uma escada/rampa explícita.
 
-Essas capacidades podem evoluir sobre `scene-elevation` sem levar regras gráficas ao `SessionDirector` ou ao Shared Core narrativo.
+Para mapas táticos, a recomendação é sobrepor a região de escada/rampa ao corredor de transição e usar `priority` maior que os pisos adjacentes.
 
 ## Fronteira arquitetural
 
-`scene-elevation`, `scene-collision`, `scene-vision` e `scene-lighting` são capacidades táticas externas ao pipeline narrativo. O `SessionDirector` continua responsável somente pela orquestração de intenção, regras, narração e publicação e não deve importar ou conhecer conceitos de Z, voo, paredes ou iluminação.
+As capacidades permanecem fora do pipeline narrativo. `scene-elevation`, `scene-collision`, `scene-vision` e `scene-lighting` são serviços táticos puros; `CampaignSceneService` persiste authoring; o composition root resolve estado autoritativo; o `SessionDirector` continua sem conhecer Z, regiões, paredes, Fog ou iluminação.
