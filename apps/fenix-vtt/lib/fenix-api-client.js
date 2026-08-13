@@ -10,6 +10,16 @@ function randomCommandId() {
   return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
+function arrayBufferToBase64(buffer) {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+  }
+  return globalThis.btoa(binary);
+}
+
 export class FenixApiError extends Error {
   constructor(message, { status = 0, code = 'FENIX_API_ERROR', retryAfter = null, cause = null } = {}) {
     super(message, { cause });
@@ -35,13 +45,13 @@ export class FenixApiClient {
   constructor({ baseUrl = resolveFenixApiBaseUrl(), fetchImpl = globalThis.fetch, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
     if (typeof fetchImpl !== 'function') throw new TypeError('fetchImpl deve ser uma função.');
     this.baseUrl = trimTrailingSlash(baseUrl);
-    this.fetchImpl = fetchImpl;
+    this.fetchImpl = fetchImpl.bind(globalThis);
     this.timeoutMs = Math.max(1000, Number(timeoutMs) || DEFAULT_TIMEOUT_MS);
   }
 
-  async request(path, { method = 'GET', body = undefined } = {}) {
+  async request(path, { method = 'GET', body = undefined, timeoutMs = this.timeoutMs } = {}) {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
     try {
       const response = await this.fetchImpl(`${this.baseUrl}${path}`, {
         method,
@@ -95,6 +105,77 @@ export class FenixApiClient {
   inspectInvite(token) { return this.request('/v1/invites/inspect', { method: 'POST', body: { token } }); }
   acceptInvite(token) { return this.request('/v1/invites/accept', { method: 'POST', body: { token } }); }
   registerInvite(input) { return this.request('/v1/invites/register', { method: 'POST', body: input }); }
+
+  listScenes(campaignId) {
+    return this.request(`/v1/campaigns/${encodeURIComponent(campaignId)}/scenes`);
+  }
+
+  async uploadMapAsset(campaignId, file) {
+    if (!file?.arrayBuffer) throw new TypeError('Selecione um arquivo de mapa válido.');
+    const buffer = await file.arrayBuffer();
+    return this.request(`/v1/campaigns/${encodeURIComponent(campaignId)}/assets`, {
+      method: 'POST',
+      timeoutMs: Math.max(this.timeoutMs, 60000),
+      body: {
+        fileName: file.name,
+        mimeType: file.type,
+        dataBase64: arrayBufferToBase64(buffer)
+      }
+    });
+  }
+
+  importMapUrl(campaignId, url) {
+    return this.request(`/v1/campaigns/${encodeURIComponent(campaignId)}/assets/import-url`, {
+      method: 'POST',
+      timeoutMs: Math.max(this.timeoutMs, 60000),
+      body: { url }
+    });
+  }
+
+  createScene(campaignId, input) {
+    return this.request(`/v1/campaigns/${encodeURIComponent(campaignId)}/scenes`, {
+      method: 'POST',
+      body: input
+    });
+  }
+
+  updateSceneGrid(campaignId, sceneId, grid) {
+    return this.request(`/v1/campaigns/${encodeURIComponent(campaignId)}/scenes/${encodeURIComponent(sceneId)}/grid`, {
+      method: 'POST',
+      body: grid
+    });
+  }
+
+  updateSceneWalls(campaignId, sceneId, walls) {
+    return this.request(`/v1/campaigns/${encodeURIComponent(campaignId)}/scenes/${encodeURIComponent(sceneId)}/walls`, {
+      method: 'POST',
+      body: { walls }
+    });
+  }
+
+  updateSceneFog(campaignId, sceneId, fog) {
+    return this.request(`/v1/campaigns/${encodeURIComponent(campaignId)}/scenes/${encodeURIComponent(sceneId)}/fog`, {
+      method: 'POST',
+      body: fog
+    });
+  }
+
+  updateSceneLighting(campaignId, sceneId, lighting) {
+    return this.request(`/v1/campaigns/${encodeURIComponent(campaignId)}/scenes/${encodeURIComponent(sceneId)}/lighting`, {
+      method: 'POST',
+      body: lighting
+    });
+  }
+
+  activateScene(campaignId, sceneId) {
+    return this.request(`/v1/campaigns/${encodeURIComponent(campaignId)}/scenes/${encodeURIComponent(sceneId)}/activate`, {
+      method: 'POST'
+    });
+  }
+
+  assetUrl(campaignId, assetId) {
+    return `${this.baseUrl}/v1/campaigns/${encodeURIComponent(campaignId)}/assets/${encodeURIComponent(assetId)}`;
+  }
 
   status(campaignId = null) {
     const suffix = campaignId ? `?campaignId=${encodeURIComponent(campaignId)}` : '';

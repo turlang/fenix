@@ -1,8 +1,13 @@
 import assert from 'node:assert/strict';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { createConfig } from '../packages/config/src/index.js';
 import { InMemoryFenixRepository } from '../packages/persistence-repository/src/index.js';
+import { LocalAssetStorage } from '../packages/asset-storage/src/index.js';
 import { AuthService } from '../packages/auth-service/src/index.js';
 import { CampaignService } from '../packages/campaign-service/src/index.js';
+import { CampaignSceneService } from '../packages/campaign-scene-service/src/index.js';
 import { createApiApp } from '../apps/api/src/app.js';
 
 function cookieFrom(response) {
@@ -11,12 +16,29 @@ function cookieFrom(response) {
   return String(value).split(';')[0];
 }
 
+const assetRoot = await mkdtemp(join(tmpdir(), 'fenix-http-assets-'));
 const repository = new InMemoryFenixRepository();
 await repository.initialize();
 const authService = new AuthService({ repository, logger: {} });
 await authService.initialize();
 const campaignService = new CampaignService({ repository, authService, logger: {} });
 await campaignService.initialize();
+const assetStorage = new LocalAssetStorage({ rootDir: assetRoot, maxBytes: 1024 * 1024 });
+await assetStorage.initialize();
+const remoteMapImporter = {
+  async importUrl(url) {
+    assert.equal(url, 'https://cdn.example.com/maps/remoto.png?temporary=secret');
+    return {
+      buffer: Buffer.from('remote-map-bytes'),
+      mimeType: 'image/png',
+      fileName: 'remoto.png',
+      width: 1280,
+      height: 720,
+      sourceHost: 'cdn.example.com'
+    };
+  }
+};
+const sceneService = new CampaignSceneService({ campaignService, repository, assetStorage, remoteMapImporter });
 
 let sessionStartCalls = 0;
 const sessionService = {
@@ -39,7 +61,8 @@ const app = await createApiApp({
   narrator: null,
   audioNarrationService: null,
   authService,
-  campaignService
+  campaignService,
+  sceneService
 });
 
 try {
@@ -84,6 +107,129 @@ try {
   const campaign = createdCampaign.json().campaign;
   assert.equal(campaign.membership.role, 'gm');
 
+  const mapBytes = Buffer.from('fake-map-image');
+  const uploadedMap = await app.inject({
+    method: 'POST',
+    url: `/v1/campaigns/${campaign.id}/assets`,
+    headers: { cookie: gmCookie },
+    payload: {
+      fileName: 'templo.webp',
+      mimeType: 'image/webp',
+      dataBase64: mapBytes.toString('base64')
+    }
+  });
+  assert.equal(uploadedMap.statusCode, 200);
+  const asset = uploadedMap.json().asset;
+  assert.equal(asset.mimeType, 'image/webp');
+
+  const remoteMap = await app.inject({
+    method: 'POST',
+    url: `/v1/campaigns/${campaign.id}/assets/import-url`,
+    headers: { cookie: gmCookie },
+    payload: { url: 'https://cdn.example.com/maps/remoto.png?temporary=secret' }
+  });
+  assert.equal(remoteMap.statusCode, 200);
+  const remoteAsset = remoteMap.json().asset;
+  assert.equal(remoteAsset.sourceType, 'remote-import');
+  assert.equal(remoteAsset.sourceHost, 'cdn.example.com');
+  assert.equal(remoteAsset.width, 1280);
+  assert.equal(remoteAsset.height, 720);
+  assert.equal(JSON.stringify(repository.snapshot()).includes('temporary=secret'), false);
+
+  const createdScene = await app.inject({
+    method: 'POST',
+    url: `/v1/campaigns/${campaign.id}/scenes`,
+    headers: { cookie: gmCookie },
+    payload: {
+      name: 'Templo em Ruínas',
+      description: 'Um templo de pedra com altar quebrado e duas colunas.',
+      assetId: asset.id,
+      width: 1920,
+      height: 1080,
+      gridSize: 70
+    }
+  });
+  assert.equal(createdScene.statusCode, 200);
+  const scene = createdScene.json().scene;
+  assert.equal(scene.backgroundAssetId, asset.id);
+  assert.deepEqual(scene.grid, { size: 70, type: 'square', offsetX: 0, offsetY: 0, visible: true });
+  assert.deepEqual(scene.walls, []);
+
+  const remoteScene = await app.inject({
+    method: 'POST',
+    url: `/v1/campaigns/${campaign.id}/scenes`,
+    headers: { cookie: gmCookie },
+    payload: {
+      name: 'Mapa por URL',
+      description: 'Cena importada do CDN.',
+      assetId: remoteAsset.id,
+      gridSize: 64
+    }
+  });
+  assert.equal(remoteScene.statusCode, 200);
+  assert.equal(remoteScene.json().scene.width, 1280);
+  assert.equal(remoteScene.json().scene.height, 720);
+
+  const calibratedGrid = await app.inject({
+    method: 'POST',
+    url: `/v1/campaigns/${campaign.id}/scenes/${scene.id}/grid`,
+    headers: { cookie: gmCookie },
+    payload: { size: 68, offsetX: 14, offsetY: -9, visible: true }
+  });
+  assert.equal(calibratedGrid.statusCode, 200);
+  assert.deepEqual(calibratedGrid.json().scene.grid, {
+    size: 68,
+    type: 'square',
+    offsetX: 14,
+    offsetY: -9,
+    visible: true
+  });
+
+  const authoredWalls = await app.inject({
+    method: 'POST',
+    url: `/v1/campaigns/${campaign.id}/scenes/${scene.id}/walls`,
+    headers: { cookie: gmCookie },
+    payload: {
+      walls: [
+        { id: 'wall-1', kind: 'wall', a: { x: 0, y: 0 }, b: { x: 500, y: 0 } },
+        { id: 'door-1', kind: 'door', doorState: 'closed', a: { x: 500, y: 0 }, b: { x: 580, y: 0 } }
+      ]
+    }
+  });
+  assert.equal(authoredWalls.statusCode, 200);
+  assert.equal(authoredWalls.json().scene.walls.length, 2);
+  assert.equal(authoredWalls.json().scene.walls[1].doorState, 'closed');
+
+  const readAsset = await app.inject({
+    method: 'GET',
+    url: `/v1/campaigns/${campaign.id}/assets/${asset.id}`,
+    headers: { cookie: gmCookie }
+  });
+  assert.equal(readAsset.statusCode, 200);
+  assert.equal(readAsset.headers['content-type'], 'image/webp');
+  assert.equal(readAsset.rawPayload.toString(), mapBytes.toString());
+
+  const readRemoteAsset = await app.inject({
+    method: 'GET',
+    url: `/v1/campaigns/${campaign.id}/assets/${remoteAsset.id}`,
+    headers: { cookie: gmCookie }
+  });
+  assert.equal(readRemoteAsset.statusCode, 200);
+  assert.equal(readRemoteAsset.headers['content-type'], 'image/png');
+  assert.equal(readRemoteAsset.rawPayload.toString(), 'remote-map-bytes');
+
+  const sceneCatalog = await app.inject({
+    method: 'GET',
+    url: `/v1/campaigns/${campaign.id}/scenes`,
+    headers: { cookie: gmCookie }
+  });
+  assert.equal(sceneCatalog.statusCode, 200);
+  assert.equal(sceneCatalog.json().scenes.length, 2);
+  assert.equal(sceneCatalog.json().scenes[0].name, 'Templo em Ruínas');
+  assert.equal(sceneCatalog.json().scenes[0].grid.offsetX, 14);
+  assert.equal(sceneCatalog.json().scenes[0].walls.length, 2);
+  assert.equal(sceneCatalog.json().activeSceneId, scene.id);
+
   const inviteResponse = await app.inject({
     method: 'POST',
     url: `/v1/campaigns/${campaign.id}/invites`,
@@ -109,6 +255,51 @@ try {
   const playerCookie = cookieFrom(playerRegistration);
   assert.equal(playerRegistration.json().campaign.membership.role, 'player');
   assert.equal(playerRegistration.json().campaign.membership.actorId, 'hero-ayla');
+
+  const playerSceneCatalog = await app.inject({
+    method: 'GET',
+    url: `/v1/campaigns/${campaign.id}/scenes`,
+    headers: { cookie: playerCookie }
+  });
+  assert.equal(playerSceneCatalog.statusCode, 200);
+  assert.equal(playerSceneCatalog.json().scenes.length, 2);
+  assert.equal(playerSceneCatalog.json().scenes[0].walls.length, 2);
+
+  const playerMapUpload = await app.inject({
+    method: 'POST',
+    url: `/v1/campaigns/${campaign.id}/assets`,
+    headers: { cookie: playerCookie },
+    payload: {
+      fileName: 'nao-autorizado.png',
+      mimeType: 'image/png',
+      dataBase64: Buffer.from('x').toString('base64')
+    }
+  });
+  assert.equal(playerMapUpload.statusCode, 403);
+
+  const playerRemoteImport = await app.inject({
+    method: 'POST',
+    url: `/v1/campaigns/${campaign.id}/assets/import-url`,
+    headers: { cookie: playerCookie },
+    payload: { url: 'https://cdn.example.com/maps/remoto.png?temporary=secret' }
+  });
+  assert.equal(playerRemoteImport.statusCode, 403);
+
+  const playerGridChange = await app.inject({
+    method: 'POST',
+    url: `/v1/campaigns/${campaign.id}/scenes/${scene.id}/grid`,
+    headers: { cookie: playerCookie },
+    payload: { size: 10, offsetX: 999, offsetY: 999, visible: false }
+  });
+  assert.equal(playerGridChange.statusCode, 403);
+
+  const playerWallsChange = await app.inject({
+    method: 'POST',
+    url: `/v1/campaigns/${campaign.id}/scenes/${scene.id}/walls`,
+    headers: { cookie: playerCookie },
+    payload: { walls: [] }
+  });
+  assert.equal(playerWallsChange.statusCode, 403);
 
   const inviteReplay = await app.inject({
     method: 'POST',
@@ -147,7 +338,8 @@ try {
   assert.equal(playerStart.statusCode, 403);
   assert.equal(sessionStartCalls, 0);
 
-  console.log('Auth + campaign HTTP integration OK');
+  console.log('Auth + campaign + scene + grid + walls + remote map HTTP integration OK');
 } finally {
   await app.close();
+  await rm(assetRoot, { recursive: true, force: true });
 }

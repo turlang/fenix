@@ -62,6 +62,15 @@ O fluxo atual possui:
 
 - Next.js 15 + React 19 + Tailwind CSS 4;
 - renderer WebGL2 atrás de `MapRendererPort`;
+- upload de battlemap PNG/JPG/WEBP e importação segura por URL HTTP/HTTPS;
+- pan/zoom, fit de cena e calibração persistente de grid;
+- **Walls + Doors Authoring** persistente para o Mestre;
+- segmentos `wall` e `door` com estados `open`, `closed` e `locked`;
+- snap de paredes à grade, apagar, desfazer, cancelar e sincronização realtime;
+- **Fog of War + Token Line of Sight** por personagem;
+- ray-casting contra paredes, portas e limites da cena;
+- memória persistente de áreas exploradas separada por `actorId`;
+- preview de visão do personagem para o Mestre;
 - autenticação com `scrypt` e token opaco;
 - campanhas/memberships/convites;
 - `CampaignRuntimeRegistry` com runtime isolado por campanha;
@@ -85,6 +94,38 @@ O fluxo atual possui:
 - `ROOM_ENTERED` e ações pelo mesmo Shared Core;
 - recuperação de sessões após restart/failover sem repetir aberturas;
 - JSON local ou PostgreSQL transacional como adapters de persistência.
+
+## Mapas, grade, paredes, portas e visão
+
+O Scene Manager mantém battlemap, dimensões, grid calibrado, `walls` e configuração de Fog como estado persistente da cena. O Mestre edita a geometria diretamente sobre o mapa usando as mesmas coordenadas de mundo do renderer.
+
+```text
+Battlemap
+   ↓
+Pan / Zoom + Grid Calibration
+   ↓
+Walls + Doors Authoring
+   ├─ wall
+   └─ door → open | closed | locked
+   ↓
+scene-geometry
+   ↓
+scene-vision → LOS + Fog + explored cells
+   ↓
+CampaignSceneService
+   ↓
+persistência + invalidação SCENE_UPDATED
+```
+
+O contrato geométrico está em `packages/scene-geometry`. Paredes e portas fechadas/trancadas bloqueiam visão; portas abertas liberam line-of-sight. O contrato de visão está em `packages/scene-vision`, que calcula LOS, polígono de visibilidade e células exploradas sem conhecer React, WebGL, Foundry ou o Shared Core narrativo.
+
+O Fog possui três estados visuais: nunca visto, já explorado e visão atual. A memória é persistida por personagem. Jogadores recebem somente `exploredCells` do próprio `membership.actorId`; o Mestre pode usar **Visão** para pré-visualizar o resultado do ator selecionado.
+
+A exploração persistente não é declarada pelo browser. Depois de um `TOKEN_MOVE` autorizado e normalizado pelo RealtimeSessionGateway, o Engine calcula as células visíveis usando posição, grid e paredes autoritativas. Recalibrar tamanho/offset da grade limpa a memória incompatível; apenas ocultar a grade preserva a exploração.
+
+Alterações de grid, paredes, portas e configuração de Fog são GM-only no servidor. Jogadores recebem a cena filtrada conforme sua membership e não podem publicar `SCENE_UPDATE` de Mestre.
+
+Detalhes: `docs/FENIX_WALLS_DOORS.md` e `docs/FENIX_FOG_LOS.md`.
 
 ## PostgreSQL, ownership e owner-aware ingress
 
@@ -192,7 +233,7 @@ O script recusa sobrescrever PostgreSQL que já contenha estado.
 - `npm run dev:vtt`: inicia o Fênix VTT.
 - `npm run build:vtt`: build standalone.
 - `npm test`: suíte `node:test`.
-- `npm run test:auth-integration`: auth/campanhas no Fastify real.
+- `npm run test:auth-integration`: auth/campanhas no Fastify real, incluindo cenas, grid, paredes e mapas remotos.
 - `npm run test:realtime-integration`: WebSocket real.
 - `npm run test:postgres-integration`: repository contra PostgreSQL real.
 - `npm run test:coordination-integration`: dois Engines, lease, LISTEN/NOTIFY, takeover e fencing.
@@ -209,6 +250,9 @@ O script recusa sobrescrever PostgreSQL que já contenha estado.
 - Cookies são `HttpOnly` e `Secure` em produção.
 - WebSocket valida `Origin`, payload e rate limit.
 - Jogador não escolhe `role`/`actorId` pela URL e não controla recursos de outra membership.
+- Alterações de grid, paredes, portas e Fog são autorizadas como GM no servidor, não apenas ocultadas pela UI.
+- Jogadores recebem somente o histórico de exploração do próprio personagem; outros `actorId` não são expostos no catálogo da cena.
+- A exploração é derivada do `TOKEN_MOVE` normalizado pelo servidor; não há endpoint de cliente para revelar células arbitrárias.
 - O HTTP legado Foundry permanece disponível apenas conforme `FENIX_ALLOW_LEGACY_SESSION_HTTP`.
 - Apenas o owner de um lease válido pode processar uma campanha persistente.
 - Requisições internas precisam de HMAC válido, timestamp recente, `generation` e hop único.
@@ -222,7 +266,11 @@ O script recusa sobrescrever PostgreSQL que já contenha estado.
 
 A execução de comandos agora é deduplicada entre réplicas, inclusive após resposta perdida. Porém o broadcast realtime ainda é um efeito do owner em memória: se o processo cair depois de confirmar uma mutação, mas antes de todos os peers receberem o evento correspondente, o ledger impede duplicar o comando, porém não garante a entrega daquele broadcast para cada conexão.
 
-A próxima evolução deve introduzir **Durable Realtime Outbox + Event Delivery Guarantees**, separando confirmação do comando de entrega durável/replay de eventos aos peers.
+A evolução de infraestrutura para esse ponto continua sendo **Durable Realtime Outbox + Event Delivery Guarantees**, separando confirmação do comando de entrega durável/replay de eventos aos peers.
+
+### Limite atual do mapa: colisão e iluminação
+
+Fog of War e line-of-sight já consomem a geometria autoritativa de paredes/portas. O mapa ainda não impede fisicamente que um token atravesse um segmento e não possui fontes de luz/sombras, darkvision, elevação ou iluminação dinâmica. A próxima evolução visual é **Token Collision + Dynamic Lighting** sobre `scene-geometry` e `scene-vision`.
 
 ## Módulo Foundry
 
@@ -246,6 +294,8 @@ Load Balancer
  qualquer Engine
        │
        ├── Auth / Membership
+       ├── Scene Manager → assets / grid / walls / fog
+       ├── scene-geometry / scene-vision
        ├── resolve lease
        │
        ├─ local owner ───────────────┐
@@ -271,10 +321,10 @@ Load Balancer
                          /ready /metrics / logs
 ```
 
-`SessionDirector` continua sem conhecer Foundry, autenticação, banco, Fastify, WebSocket, React, WebGL, leases, `LISTEN/NOTIFY`, roteamento, command ledger ou observabilidade.
+`SessionDirector` continua sem conhecer Foundry, autenticação, banco, Fastify, WebSocket, React, WebGL, assets, scene authoring, `scene-geometry`, `scene-vision`, Fog/LOS, leases, `LISTEN/NOTIFY`, roteamento, command ledger ou observabilidade.
 
 ## CI
 
-A pipeline exige matriz Node 20/22/24, suíte unitária, PostgreSQL 16 real, concorrência de repository, leases/failover, idempotência distribuída de comandos, owner-aware HTTP/WebSocket routing entre dois Engines, auth/campanhas HTTP, WebSocket real, `npm ci` e build Next. O workflow permanece somente-leitura (`contents: read`).
+A pipeline exige matriz Node 20/22/24, suíte unitária, validação de paredes/portas/Fog/LOS, PostgreSQL 16 real, concorrência de repository, leases/failover, idempotência distribuída de comandos, owner-aware HTTP/WebSocket routing entre dois Engines, auth/campanhas/cenas HTTP, WebSocket real, `npm ci` e build Next. O workflow permanece somente-leitura (`contents: read`).
 
-Veja `docs/FENIX_AUTH_PERSISTENCE.md` para detalhes de persistência, coordenação, ingress, idempotência e observabilidade. Os `README-ALPHA*.md` preservam o histórico anterior.
+Veja `docs/FENIX_WALLS_DOORS.md` e `docs/FENIX_FOG_LOS.md` para o mapa, e `docs/FENIX_AUTH_PERSISTENCE.md` para persistência, coordenação, ingress, idempotência e observabilidade. Os `README-ALPHA*.md` preservam o histórico anterior.

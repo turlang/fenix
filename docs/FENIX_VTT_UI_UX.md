@@ -92,6 +92,74 @@ Atalhos para trocar cena, selecionar ator, criar encontro, abrir Journal, inicia
 ### Player Focus Mode
 Modo de baixa distração: mapa + narração + ações rápidas + ficha recolhível.
 
+## Authoring do mapa
+
+Ferramentas de preparação permanecem na toolbar do mapa e só aparecem para o Mestre. Elas não mudam o shell do jogador.
+
+### Grade
+
+`Grade` abre um painel compacto sobre o mapa com preview em tempo real de tamanho, offsets e visibilidade. Salvar persiste a calibração da cena e publica o estado autoritativo quando existe sessão realtime ativa.
+
+### Paredes e portas
+
+`Paredes` abre o authoring de geometria sem modal de tela cheia. O Mestre continua podendo usar pan/zoom enquanto trabalha.
+
+Fluxo:
+
+```text
+Paredes
+  ↓
+Parede | Porta | Alternar porta | Apagar
+  ↓
+clique inicial → clique final
+  ↓
+draft local alinhado ao viewport
+  ↓
+Desfazer | Cancelar | Salvar paredes
+  ↓
+Scene Manager → SCENE_UPDATED
+```
+
+Regras de UX:
+
+- dois cliques definem um segmento, reduzindo arrasto acidental;
+- `Snap na grade` é opcional e usa a calibração persistente da cena;
+- portas novas podem começar abertas, fechadas ou trancadas;
+- `Alternar porta` muda o estado da porta mais próxima;
+- `Apagar` seleciona o segmento mais próximo do clique;
+- `Desfazer` atua apenas sobre o draft local até `Salvar paredes`;
+- `Cancelar` restaura a geometria persistida;
+- o overlay de edição é exclusivo do GM;
+- jogadores recebem `walls` como estado autoritativo, mas não recebem controles de edição.
+
+A representação visual usa uma camada SVG alinhada ao mesmo viewport do mapa. O modelo persistente continua em coordenadas de mundo e não depende do DOM nem do WebGL.
+
+### Fog of War + visão por token
+
+`Fog` abre a configuração da cena. O Mestre define alcance em células e os níveis de opacidade para área explorada e nunca vista. O painel também permite limpar a memória de exploração da cena de forma explícita.
+
+`Visão` é um preview exclusivo do Mestre: ele aplica o mesmo Fog que um jogador veria, usando o ator atualmente selecionado no Context Rail. O Mestre pode desligar o preview a qualquer momento e voltar à visão irrestrita do mapa.
+
+Para jogadores, o Fog ativo é automático e usa somente o token associado ao `membership.actorId`.
+
+Estados visuais:
+
+```text
+não explorado    → quase totalmente encoberto
+já explorado     → escurecido, preservando memória espacial
+visão atual      → mapa sem máscara
+```
+
+A máscara acompanha pan/zoom e o movimento do token no mesmo viewport do battlemap. Durante o drag, a visão é atualizada localmente para resposta imediata; a memória persistente é calculada pelo Engine a partir do `TOKEN_MOVE` já autorizado.
+
+Paredes e portas afetam a visão sem mudar o fluxo de edição: paredes, portas fechadas e portas trancadas bloqueiam LOS; portas abertas liberam a passagem visual.
+
+O cliente jogador nunca recebe a memória de exploração de outros personagens. `SCENE_UPDATED` funciona como invalidação e cada cliente recarrega via HTTP autenticado o estado de Fog filtrado para sua membership.
+
+Recalibrar tamanho ou offsets da grade limpa a memória explorada porque as células mudam de posição lógica. Alterar apenas a visibilidade da grade não apaga a memória.
+
+Colisão física e iluminação dinâmica continuam fora deste marco; ambas devem consumir `scene-geometry`/`scene-vision` sem acoplar regras gráficas ao Shared Core narrativo.
+
 ## Mobile
 
 O telefone não tenta reproduzir o desktop inteiro. Funciona como companion:
@@ -104,8 +172,8 @@ O telefone não tenta reproduzir o desktop inteiro. Funciona como companion:
 - áudio/legendas;
 - seleção de alvo.
 
-O mapa completo continua disponível, mas não é o fluxo principal em telas pequenas.
+O mapa completo continua disponível, mas não é o fluxo principal em telas pequenas. Authoring de paredes pode ser exibido de forma responsiva para o GM, porém o fluxo recomendado continua desktop/tablet por exigir precisão espacial.
 
 ## Limite arquitetural
 
-Componentes Next.js nunca importam `RulesService`, `NarrationService`, Groq ou adapters de VTT. A UI conversa com Application/API; o renderer conversa com `MapRendererPort`; o Engine recebe eventos universais definidos em `packages/vtt-contracts`.
+Componentes Next.js nunca importam `RulesService`, `NarrationService`, Groq ou adapters de VTT. A UI conversa com Application/API; o renderer conversa com `MapRendererPort`; o Engine recebe eventos universais definidos em `packages/vtt-contracts`. Os contratos puros `scene-geometry` e `scene-vision` podem ser consumidos pelo editor/overlay e pela infraestrutura de cena, mas o `SessionDirector` narrativo não conhece authoring, Fog ou line-of-sight.

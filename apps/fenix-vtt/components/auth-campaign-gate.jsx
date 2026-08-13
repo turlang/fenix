@@ -21,6 +21,7 @@ export function AuthCampaignGate() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+  const [authStatusKnown, setAuthStatusKnown] = useState(false);
   const [bootstrapRequired, setBootstrapRequired] = useState(false);
   const [user, setUser] = useState(null);
   const [campaigns, setCampaigns] = useState([]);
@@ -40,27 +41,43 @@ export function AuthCampaignGate() {
     let active = true;
     const token = readInviteToken();
     setInviteToken(token);
-    Promise.allSettled([
-      client.authStatus(),
-      token ? client.inspectInvite(token) : Promise.resolve(null)
-    ]).then(async ([authResult, inviteResult]) => {
-      if (!active) return;
-      if (authResult.status === 'fulfilled') setBootstrapRequired(Boolean(authResult.value.bootstrapRequired));
-      if (inviteResult.status === 'fulfilled' && inviteResult.value) setInviteInfo(inviteResult.value.invite);
-      if (authResult.status === 'fulfilled' && !authResult.value.bootstrapRequired) {
-        try {
-          await refreshAccount();
-        } catch {
-          setUser(null);
+
+    async function loadEntryState() {
+      try {
+        const [authResult, inviteResult] = await Promise.allSettled([
+          client.authStatus(),
+          token ? client.inspectInvite(token) : Promise.resolve(null)
+        ]);
+        if (!active) return;
+
+        if (authResult.status !== 'fulfilled') {
+          setAuthStatusKnown(false);
+          setError(message(authResult.reason));
+          return;
         }
+
+        const requiresBootstrap = Boolean(authResult.value.bootstrapRequired);
+        setBootstrapRequired(requiresBootstrap);
+        setAuthStatusKnown(true);
+        setError(null);
+
+        if (inviteResult.status === 'fulfilled' && inviteResult.value) {
+          setInviteInfo(inviteResult.value.invite);
+        }
+
+        if (!requiresBootstrap) {
+          try {
+            await refreshAccount();
+          } catch {
+            if (active) setUser(null);
+          }
+        }
+      } finally {
+        if (active) setLoading(false);
       }
-      setLoading(false);
-    }).catch((cause) => {
-      if (active) {
-        setError(message(cause));
-        setLoading(false);
-      }
-    });
+    }
+
+    loadEntryState();
     return () => { active = false; };
   }, [client, refreshAccount]);
 
@@ -164,6 +181,15 @@ export function AuthCampaignGate() {
 
   if (loading) {
     return <main className="entry-shell"><div className="entry-card"><span className="brand-mark">F</span><p>Carregando Fênix…</p></div></main>;
+  }
+
+  if (!authStatusKnown) {
+    return (
+      <EntryLayout title="Fênix Engine indisponível" subtitle="Não foi possível consultar o estado de autenticação do Engine.">
+        <p>Confirme que o Engine está ativo e recarregue esta página.</p>
+        <ErrorNotice error={error} />
+      </EntryLayout>
+    );
   }
 
   if (selectedCampaign && user) {

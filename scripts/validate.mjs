@@ -7,6 +7,7 @@ const required = [
   'apps/api/src/http/register-session-routes.js',
   'apps/api/src/http/register-auth-routes.js',
   'apps/api/src/http/register-campaign-routes.js',
+  'apps/api/src/http/register-scene-routes.js',
   'apps/api/src/http/session-authorizer.js',
   'apps/api/src/realtime/register-realtime-routes.js',
   'apps/api/src/realtime/owner-aware-websocket-proxy.js',
@@ -18,9 +19,12 @@ const required = [
   'apps/fenix-vtt/app/page.js',
   'apps/fenix-vtt/app/globals.css',
   'apps/fenix-vtt/app/live-bridge.css',
+  'apps/fenix-vtt/app/wall-authoring.css',
+  'apps/fenix-vtt/app/fog-of-war.css',
   'apps/fenix-vtt/components/auth-campaign-gate.jsx',
   'apps/fenix-vtt/components/vtt-shell.jsx',
   'apps/fenix-vtt/components/map-stage.jsx',
+  'apps/fenix-vtt/components/fog-of-war-overlay.jsx',
   'apps/fenix-vtt/components/session-provider.jsx',
   'apps/fenix-vtt/lib/demo-scene.js',
   'apps/fenix-vtt/lib/fenix-api-client.js',
@@ -33,6 +37,8 @@ const required = [
   'packages/standalone-vtt-adapter/src/index.js',
   'packages/map-renderer-port/src/index.js',
   'packages/webgl-map-renderer/src/index.js',
+  'packages/scene-geometry/src/index.js',
+  'packages/scene-vision/src/index.js',
   'packages/session-director/src/index.js',
   'packages/session-runtime/src/index.js',
   'packages/persistent-session-service/src/index.js',
@@ -42,8 +48,11 @@ const required = [
   'packages/distributed-command-ledger/src/index.js',
   'packages/runtime-observability/src/index.js',
   'packages/persistence-repository/src/index.js',
+  'packages/asset-storage/src/index.js',
+  'packages/remote-map-importer/src/index.js',
   'packages/auth-service/src/index.js',
   'packages/campaign-service/src/index.js',
+  'packages/campaign-scene-service/src/index.js',
   'packages/realtime-session-gateway/src/index.js',
   'packages/narration-output/src/index.js',
   'packages/narration-context-builder/src/index.js',
@@ -64,6 +73,7 @@ const required = [
   'packages/ai-provider/src/system-prompt.js',
   'integration-tests/realtime-websocket.mjs',
   'integration-tests/auth-campaign-http.mjs',
+  'integration-tests/fog-http.mjs',
   'integration-tests/postgres-persistence.mjs',
   'integration-tests/distributed-runtime-coordination.mjs',
   'integration-tests/owner-aware-runtime-routing.mjs',
@@ -80,7 +90,9 @@ const required = [
   'README.md',
   'docs/FENIX_SHARED_CORE.md',
   'docs/FENIX_VTT_UI_UX.md',
-  'docs/FENIX_AUTH_PERSISTENCE.md'
+  'docs/FENIX_AUTH_PERSISTENCE.md',
+  'docs/FENIX_WALLS_DOORS.md',
+  'docs/FENIX_FOG_LOS.md'
 ];
 for (const file of required) await access(new URL(`../${file}`, import.meta.url));
 
@@ -94,10 +106,10 @@ if (packageJson.version !== moduleJson.version || packageJson.version !== coreVe
 }
 if (!packageJson.scripts?.test || !packageJson.scripts?.check || !packageJson.scripts?.['build:vtt']
   || !packageJson.scripts?.['test:realtime-integration'] || !packageJson.scripts?.['test:auth-integration']
-  || !packageJson.scripts?.['test:postgres-integration'] || !packageJson.scripts?.['test:coordination-integration']
-  || !packageJson.scripts?.['test:routing-integration'] || !packageJson.scripts?.['test:idempotency-integration']
-  || !packageJson.scripts?.['migrate:postgres']) {
-  throw new Error('Scripts de qualidade, autenticação, realtime, Postgres, coordenação, routing, idempotência, migração ou build do VTT ausentes.');
+  || !packageJson.scripts?.['test:fog-integration'] || !packageJson.scripts?.['test:postgres-integration']
+  || !packageJson.scripts?.['test:coordination-integration'] || !packageJson.scripts?.['test:routing-integration']
+  || !packageJson.scripts?.['test:idempotency-integration'] || !packageJson.scripts?.['migrate:postgres']) {
+  throw new Error('Scripts de qualidade, autenticação, Fog, realtime, Postgres, coordenação, routing, idempotência, migração ou build do VTT ausentes.');
 }
 if (!/^\^?15\./.test(vttPackageJson.dependencies?.next ?? '')) {
   throw new Error('apps/fenix-vtt deve permanecer no Next.js 15 durante este marco.');
@@ -112,6 +124,7 @@ const standaloneUiFiles = [
   'apps/fenix-vtt/components/auth-campaign-gate.jsx',
   'apps/fenix-vtt/components/vtt-shell.jsx',
   'apps/fenix-vtt/components/map-stage.jsx',
+  'apps/fenix-vtt/components/fog-of-war-overlay.jsx',
   'apps/fenix-vtt/components/session-provider.jsx',
   'apps/fenix-vtt/lib/demo-scene.js',
   'apps/fenix-vtt/lib/fenix-api-client.js',
@@ -150,12 +163,72 @@ for (const marker of [
   'PostgresStateBus',
   'OwnerAwareRuntimeRouter',
   'createCommandLedger',
-  'RuntimeObservability'
+  'RuntimeObservability',
+  'RemoteMapImporter',
+  'recordExploration',
+  "message.type === 'TOKEN_MOVE'"
 ]) {
-  if (!serverSource.includes(marker)) throw new Error(`Composition root distribuído incompleto: ${marker}.`);
+  if (!serverSource.includes(marker)) throw new Error(`Composition root distribuído/Fog incompleto: ${marker}.`);
 }
 if (serverSource.includes('createDevelopmentPeerAuthorizer')) {
   throw new Error('Composition root de produção não pode usar authorizer realtime de desenvolvimento.');
+}
+const remoteMapSource = await readFile(new URL('../packages/remote-map-importer/src/index.js', import.meta.url), 'utf8');
+for (const marker of ['REMOTE_MAP_PRIVATE_HOST_FORBIDDEN', 'resolvePublicRemoteHost', 'maxRedirects', 'REMOTE_MAP_SIGNATURE_INVALID']) {
+  if (!remoteMapSource.includes(marker)) throw new Error(`Importador remoto sem hardening obrigatório: ${marker}.`);
+}
+const geometrySource = await readFile(new URL('../packages/scene-geometry/src/index.js', import.meta.url), 'utf8');
+for (const marker of ['SceneWallKind', 'SceneDoorState', 'normalizeSceneWalls', 'wallBlocksMovement', 'wallBlocksVision']) {
+  if (!geometrySource.includes(marker)) throw new Error(`Contrato de geometria de cena incompleto: ${marker}.`);
+}
+const visionSource = await readFile(new URL('../packages/scene-vision/src/index.js', import.meta.url), 'utf8');
+for (const marker of ['normalizeSceneFog', 'hasLineOfSight', 'computeVisibilityPolygon', 'visibleGridCells', 'mergeExploredCells']) {
+  if (!visionSource.includes(marker)) throw new Error(`Contrato de visão/Fog incompleto: ${marker}.`);
+}
+const sceneServiceSource = await readFile(new URL('../packages/campaign-scene-service/src/index.js', import.meta.url), 'utf8');
+for (const marker of [
+  'updateWalls',
+  'normalizeSceneWalls',
+  'updateFog',
+  'recordExploration',
+  'visibleGridCells',
+  'exploredByActor',
+  'exploredCells',
+  "requireRole(campaignId, userId, 'gm')"
+]) {
+  if (!sceneServiceSource.includes(marker)) throw new Error(`Scene Manager sem authoring/Fog persistente: ${marker}.`);
+}
+const sceneRoutesSource = await readFile(new URL('../apps/api/src/http/register-scene-routes.js', import.meta.url), 'utf8');
+for (const marker of ['scenes/:sceneId/walls', 'scenes/:sceneId/fog']) {
+  if (!sceneRoutesSource.includes(marker)) throw new Error(`Endpoint de cena ausente: ${marker}.`);
+}
+const mapStageSource = await readFile(new URL('../apps/fenix-vtt/components/map-stage.jsx', import.meta.url), 'utf8');
+for (const marker of ['FogOfWarOverlay', 'onFogChanged', 'fogPreview', 'Visão']) {
+  if (!mapStageSource.includes(marker)) throw new Error(`MapStage sem UI de Fog/LOS: ${marker}.`);
+}
+const fogOverlaySource = await readFile(new URL('../apps/fenix-vtt/components/fog-of-war-overlay.jsx', import.meta.url), 'utf8');
+for (const marker of ['computeVisibilityPolygon', 'visibleGridCells', 'exploredByActor', 'exploredCells']) {
+  if (!fogOverlaySource.includes(marker)) throw new Error(`Overlay de Fog incompleto: ${marker}.`);
+}
+const directorSource = await readFile(new URL('../packages/session-director/src/index.js', import.meta.url), 'utf8');
+for (const forbidden of [
+  'PostgresRuntimeLeaseManager',
+  'PostgresStateBus',
+  'fenix_runtime_leases',
+  'pg_notify',
+  'PostgresCommandLedger',
+  'fenix_command_ledger',
+  'RuntimeObservability',
+  'OwnerAwareRuntimeRouter',
+  'RemoteMapImporter',
+  'asset-storage',
+  'SceneWallKind',
+  'scene-geometry',
+  'scene-vision',
+  'computeVisibilityPolygon',
+  'visibleGridCells'
+]) {
+  if (directorSource.includes(forbidden)) throw new Error(`SessionDirector não pode conhecer infraestrutura/authoring/visão: ${forbidden}.`);
 }
 const persistenceSource = await readFile(new URL('../packages/persistence-repository/src/index.js', import.meta.url), 'utf8');
 for (const marker of ['PostgresFenixRepository', 'FOR UPDATE', "import('pg')", 'setChangePublisher']) {
@@ -181,18 +254,9 @@ const appSource = await readFile(new URL('../apps/api/src/app.js', import.meta.u
 for (const marker of ["app.get('/ready'", "app.get('/metrics'", "app.get('/v1/runtime/observability'", 'X-Idempotency-Key']) {
   if (!appSource.includes(marker)) throw new Error(`Borda operacional incompleta: ${marker}.`);
 }
-const directorSource = await readFile(new URL('../packages/session-director/src/index.js', import.meta.url), 'utf8');
-for (const forbidden of [
-  'PostgresRuntimeLeaseManager',
-  'PostgresStateBus',
-  'fenix_runtime_leases',
-  'pg_notify',
-  'PostgresCommandLedger',
-  'fenix_command_ledger',
-  'RuntimeObservability',
-  'OwnerAwareRuntimeRouter'
-]) {
-  if (directorSource.includes(forbidden)) throw new Error(`SessionDirector não pode conhecer infraestrutura distribuída: ${forbidden}.`);
+const realtimeSource = await readFile(new URL('../packages/realtime-session-gateway/src/index.js', import.meta.url), 'utf8');
+for (const marker of ['normalizeSceneWalls', 'SCENE_UPDATED', 'REALTIME_SCENE_FORBIDDEN']) {
+  if (!realtimeSource.includes(marker)) throw new Error(`Realtime sem geometria autoritativa: ${marker}.`);
 }
 const realtimeClientSource = await readFile(new URL('../apps/fenix-vtt/lib/realtime-client.js', import.meta.url), 'utf8');
 if (/searchParams\.set\(['"](?:role|actorId|userId)['"]/.test(realtimeClientSource)) {

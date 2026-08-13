@@ -1,8 +1,11 @@
+export const demoViewport = Object.freeze({ x: 230, y: 160, zoom: 0.82 });
+
 export const demoScene = Object.freeze({
   id: 'fenix-demo-hall',
   name: 'Salão das Colunas',
   width: 1600,
   height: 1000,
+  background: '/maps/salao-das-colunas.svg',
   grid: { size: 80, type: 'square' }
 });
 

@@ -8,5 +8,6 @@ dist/
 .DS_Store
 Thumbs.db
 data/*.json
+data/fenix-assets/
 !data/.gitkeep
 

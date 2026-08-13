@@ -65,7 +65,7 @@ export function detectBrowserRendererBackend({ navigatorLike = globalThis.naviga
 export class WebGlMapRenderer {
   constructor({ canvas, logger = console, pixelRatio = globalThis.devicePixelRatio ?? 1 } = {}) {
     if (!canvas?.getContext) throw new TypeError('canvas com getContext() é obrigatório.');
-    const gl = canvas.getContext('webgl2', { alpha: false, antialias: true, premultipliedAlpha: false });
+    const gl = canvas.getContext('webgl2', { alpha: true, antialias: true, premultipliedAlpha: false });
     if (!gl) throw new Error('WebGL2 não está disponível neste navegador.');
 
     this.canvas = canvas;
@@ -159,7 +159,8 @@ export class WebGlMapRenderer {
     }
 
     gl.viewport(0, 0, width, height);
-    gl.clearColor(0.035, 0.041, 0.047, 1);
+    const transparent = Boolean(this.scene?.background);
+    gl.clearColor(0.035, 0.041, 0.047, transparent ? 0 : 1);
     gl.clear(gl.COLOR_BUFFER_BIT);
     gl.useProgram(this.program);
     gl.bindBuffer(gl.ARRAY_BUFFER, this.buffer);

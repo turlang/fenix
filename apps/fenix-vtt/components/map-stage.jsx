@@ -3,28 +3,125 @@
 import { useEffect, useRef, useState } from 'react';
 import { WebGlMapRenderer, detectBrowserRendererBackend } from '../../../packages/webgl-map-renderer/src/index.js';
 import {
+  SceneDoorState,
+  SceneWallKind,
+  cycleDoorState,
+  pointToWallDistance,
+  snapScenePoint
+} from '../../../packages/scene-geometry/src/index.js';
+import { normalizeSceneFog } from '../../../packages/scene-vision/src/index.js';
+import { FogOfWarOverlay } from './fog-of-war-overlay.jsx';
+import {
   createDemoRoomEnteredEvent,
   demoScene,
   demoTokens,
+  demoViewport,
   findRoomZone
 } from '../lib/demo-scene.js';
+import {
+  fitViewport,
+  gridScreenStyle,
+  panViewport,
+  zoomViewportAt
+} from '../lib/map-viewport.js';
+import { resolveClientTokenMovement } from '../lib/token-input-movement.js';
+
+function sceneViewport(canvas, scene) {
+  if (scene.id === demoScene.id) return demoViewport;
+  return fitViewport({
+    canvasWidth: canvas.clientWidth || scene.width,
+    canvasHeight: canvas.clientHeight || scene.height,
+    sceneWidth: scene.width,
+    sceneHeight: scene.height
+  });
+}
+
+function normalizedGrid(grid = {}) {
+  return {
+    size: Math.min(500, Math.max(8, Number(grid.size) || 70)),
+    type: 'square',
+    offsetX: Number.isFinite(Number(grid.offsetX)) ? Number(grid.offsetX) : 0,
+    offsetY: Number.isFinite(Number(grid.offsetY)) ? Number(grid.offsetY) : 0,
+    visible: grid.visible !== false
+  };
+}
+
+function cloneWalls(walls) {
+  return Array.isArray(walls) ? walls.map((wall) => ({
+    ...wall,
+    a: { ...wall.a },
+    b: { ...wall.b }
+  })) : [];
+}
+
+function randomWallId() {
+  return globalThis.crypto?.randomUUID?.() ?? `wall-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
 
 export function MapStage({
+  scene = demoScene,
   authoritativeTokens = [],
   onTokenMoved = null,
   onSelectedActor = null,
+  onGridCalibrated = null,
+  onWallsChanged = null,
+  onFogChanged = null,
   busy = false,
   canMoveAny = false,
-  movableActorId = null
+  movableActorId = null,
+  visionActorId = null
 }) {
   const canvasRef = useRef(null);
   const rendererRef = useRef(null);
   const frameRef = useRef(null);
   const dragRef = useRef(null);
+  const panRef = useRef(null);
   const tokensRef = useRef(new Map(demoTokens.map((token) => [token.id, { ...token }])));
   const [backend, setBackend] = useState('detecting');
   const [selected, setSelected] = useState('Ayla');
   const [error, setError] = useState(null);
+  const [viewport, setViewport] = useState(scene.id === demoScene.id ? demoViewport : { x: 0, y: 0, zoom: 1 });
+  const [tool, setTool] = useState('select');
+  const [gridEditorOpen, setGridEditorOpen] = useState(false);
+  const [gridDraft, setGridDraft] = useState(() => normalizedGrid(scene.grid));
+  const [gridSaving, setGridSaving] = useState(false);
+  const [wallEditorOpen, setWallEditorOpen] = useState(false);
+  const [wallMode, setWallMode] = useState('wall');
+  const [doorState, setDoorState] = useState(SceneDoorState.CLOSED);
+  const [snapWalls, setSnapWalls] = useState(true);
+  const [wallDraft, setWallDraft] = useState(() => cloneWalls(scene.walls));
+  const [wallStart, setWallStart] = useState(null);
+  const [wallHistory, setWallHistory] = useState([]);
+  const [wallsSaving, setWallsSaving] = useState(false);
+  const [fogEditorOpen, setFogEditorOpen] = useState(false);
+  const [fogDraft, setFogDraft] = useState(() => normalizeSceneFog(scene.fog ?? {}));
+  const [fogSaving, setFogSaving] = useState(false);
+  const [fogPreview, setFogPreview] = useState(false);
+  const [resetExploration, setResetExploration] = useState(false);
+  const [dragVisionToken, setDragVisionToken] = useState(null);
+  const demoZonesEnabled = scene.id === demoScene.id;
+
+  useEffect(() => {
+    setGridDraft(normalizedGrid(scene.grid));
+    setGridEditorOpen(false);
+    setWallDraft(cloneWalls(scene.walls));
+    setWallHistory([]);
+    setWallStart(null);
+    setWallEditorOpen(false);
+    setFogDraft(normalizeSceneFog(scene.fog ?? {}));
+    setFogEditorOpen(false);
+    setFogPreview(false);
+    setResetExploration(false);
+    setDragVisionToken(null);
+  }, [scene.id, scene.grid?.size, scene.grid?.offsetX, scene.grid?.offsetY, scene.grid?.visible]);
+
+  useEffect(() => {
+    if (!wallEditorOpen) setWallDraft(cloneWalls(scene.walls));
+  }, [scene.walls, wallEditorOpen]);
+
+  useEffect(() => {
+    if (!fogEditorOpen) setFogDraft(normalizeSceneFog(scene.fog ?? {}));
+  }, [scene.fog, fogEditorOpen]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -42,8 +139,10 @@ export function MapStage({
       renderer = new WebGlMapRenderer({ canvas });
       setBackend(detected === 'webgpu' ? 'webgl2 · WebGPU ready' : 'webgl2');
       rendererRef.current = renderer;
-      renderer.loadScene(demoScene);
-      renderer.setViewport({ x: 230, y: 160, zoom: 0.82 });
+      renderer.loadScene(scene);
+      const nextViewport = sceneViewport(canvas, scene);
+      setViewport(nextViewport);
+      renderer.setViewport(nextViewport);
       for (const token of tokensRef.current.values()) renderer.upsertToken(token);
 
       const loop = () => {
@@ -61,7 +160,11 @@ export function MapStage({
       renderer?.destroy();
       rendererRef.current = null;
     };
-  }, []);
+  }, [scene.id, scene.background, scene.width, scene.height]);
+
+  useEffect(() => {
+    rendererRef.current?.setViewport(viewport);
+  }, [viewport]);
 
   useEffect(() => {
     const renderer = rendererRef.current;
@@ -74,8 +177,150 @@ export function MapStage({
     }
   }, [authoritativeTokens]);
 
+  function roomZoneAt(point) {
+    return demoZonesEnabled ? findRoomZone(point) : null;
+  }
+
+  function viewportContext() {
+    const canvas = canvasRef.current;
+    return {
+      canvasWidth: canvas?.clientWidth || scene.width,
+      canvasHeight: canvas?.clientHeight || scene.height,
+      sceneWidth: scene.width,
+      sceneHeight: scene.height
+    };
+  }
+
+  function applyPan(deltaX, deltaY) {
+    setViewport((current) => panViewport(current, { deltaX, deltaY, ...viewportContext() }));
+  }
+
+  function applyZoom(factor, screenX = null, screenY = null) {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const x = screenX ?? canvas.clientWidth / 2;
+    const y = screenY ?? canvas.clientHeight / 2;
+    setViewport((current) => zoomViewportAt(current, {
+      factor,
+      screenX: x,
+      screenY: y,
+      ...viewportContext()
+    }));
+  }
+
+  function fitScene() {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    setViewport(fitViewport({
+      canvasWidth: canvas.clientWidth || scene.width,
+      canvasHeight: canvas.clientHeight || scene.height,
+      sceneWidth: scene.width,
+      sceneHeight: scene.height
+    }));
+  }
+
+  function handleWheel(event) {
+    event.preventDefault();
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const factor = event.deltaY < 0 ? 1.12 : 1 / 1.12;
+    applyZoom(factor, event.clientX - rect.left, event.clientY - rect.top);
+  }
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return undefined;
+    canvas.addEventListener('wheel', handleWheel, { passive: false });
+    return () => canvas.removeEventListener('wheel', handleWheel);
+  }, [scene.id, scene.width, scene.height]);
+
+  function boundedWallPoint(point) {
+    const base = snapWalls ? snapScenePoint(point, gridDraft) : point;
+    return {
+      x: Math.max(0, Math.min(scene.width, Number(base.x) || 0)),
+      y: Math.max(0, Math.min(scene.height, Number(base.y) || 0))
+    };
+  }
+
+  function rememberAndSetWalls(nextWalls) {
+    setWallHistory((history) => [...history.slice(-19), cloneWalls(wallDraft)]);
+    setWallDraft(cloneWalls(nextWalls));
+  }
+
+  function nearestWall(point, { doorsOnly = false } = {}) {
+    const candidates = doorsOnly ? wallDraft.filter((wall) => wall.kind === SceneWallKind.DOOR) : wallDraft;
+    let nearest = null;
+    let distance = Number.POSITIVE_INFINITY;
+    for (const wall of candidates) {
+      const next = pointToWallDistance(point, wall);
+      if (next < distance) {
+        distance = next;
+        nearest = wall;
+      }
+    }
+    return distance <= 14 / Math.max(0.1, viewport.zoom) ? nearest : null;
+  }
+
+  function handleWallAuthoring(event) {
+    const hit = rendererRef.current?.hitTest(event);
+    if (!hit?.world) return false;
+    const point = boundedWallPoint(hit.world);
+
+    if (wallMode === 'erase') {
+      const nearest = nearestWall(point);
+      if (nearest) rememberAndSetWalls(wallDraft.filter((wall) => wall.id !== nearest.id));
+      setWallStart(null);
+      return true;
+    }
+
+    if (wallMode === 'door-state') {
+      const nearest = nearestWall(point, { doorsOnly: true });
+      if (nearest) {
+        rememberAndSetWalls(wallDraft.map((wall) => wall.id === nearest.id
+          ? { ...wall, doorState: cycleDoorState(wall.doorState) }
+          : wall));
+      }
+      setWallStart(null);
+      return true;
+    }
+
+    if (!wallStart) {
+      setWallStart(point);
+      return true;
+    }
+
+    if (Math.hypot(point.x - wallStart.x, point.y - wallStart.y) >= 2) {
+      const kind = wallMode === 'door' ? SceneWallKind.DOOR : SceneWallKind.WALL;
+      rememberAndSetWalls([...wallDraft, {
+        id: randomWallId(),
+        kind,
+        a: wallStart,
+        b: point,
+        doorState: kind === SceneWallKind.DOOR ? doorState : null
+      }]);
+    }
+    setWallStart(null);
+    return true;
+  }
+
   function handlePointerDown(event) {
     if (busy) return;
+    const wantsPan = tool === 'pan' || event.button === 1;
+    if (wantsPan) {
+      panRef.current = { x: event.clientX, y: event.clientY };
+      event.currentTarget.setPointerCapture?.(event.pointerId);
+      event.preventDefault();
+      return;
+    }
+
+    if (wallEditorOpen && canMoveAny && event.button === 0) {
+      if (handleWallAuthoring(event)) {
+        event.preventDefault();
+        return;
+      }
+    }
+
     const hit = rendererRef.current?.hitTest(event);
     if (!hit?.token) return;
     const allowed = canMoveAny || (movableActorId && hit.token.id === movableActorId);
@@ -83,86 +328,318 @@ export function MapStage({
       setSelected(`${hit.token.name} · somente visualização`);
       return;
     }
-    const currentZone = findRoomZone({ x: hit.token.x, y: hit.token.y });
+    const currentZone = roomZoneAt({ x: hit.token.x, y: hit.token.y });
     dragRef.current = {
       tokenId: hit.token.id,
       roomId: currentZone?.room?.id ?? null,
       roomEntry: currentZone ? createDemoRoomEnteredEvent(currentZone) : null
     };
     setSelected(hit.token.name);
+    setDragVisionToken({ ...hit.token });
     onSelectedActor?.(hit.token.id);
     event.currentTarget.setPointerCapture?.(event.pointerId);
     event.preventDefault();
   }
 
   function handlePointerMove(event) {
+    if (panRef.current) {
+      const deltaX = event.clientX - panRef.current.x;
+      const deltaY = event.clientY - panRef.current.y;
+      panRef.current = { x: event.clientX, y: event.clientY };
+      applyPan(deltaX, deltaY);
+      return;
+    }
+
     const renderer = rendererRef.current;
     const drag = dragRef.current;
-    if (!renderer || !drag || busy) return;
+    if (!renderer || !drag || busy || wallEditorOpen) return;
     const hit = renderer.hitTest(event);
     const current = tokensRef.current.get(drag.tokenId);
-    if (!current) return;
+    if (!current || !hit?.world) return;
 
-    const moved = { ...current, x: hit.world.x, y: hit.world.y };
+    const requested = { ...current, x: hit.world.x, y: hit.world.y };
+    const resolved = resolveClientTokenMovement({
+      previousToken: current,
+      requestedToken: requested,
+      scene,
+      ignoreWalls: canMoveAny
+    });
+    const moved = resolved?.token ?? requested;
     tokensRef.current.set(moved.id, moved);
     renderer.upsertToken(moved);
+    setDragVisionToken(moved);
 
-    const zone = findRoomZone(hit.world);
+    const zone = roomZoneAt({ x: moved.x, y: moved.y });
     drag.roomId = zone?.room?.id ?? null;
     drag.roomEntry = zone ? createDemoRoomEnteredEvent(zone) : null;
   }
 
   function handlePointerUp(event) {
+    if (panRef.current) {
+      panRef.current = null;
+      if (event.currentTarget.hasPointerCapture?.(event.pointerId)) event.currentTarget.releasePointerCapture?.(event.pointerId);
+      return;
+    }
+
     const drag = dragRef.current;
     dragRef.current = null;
     if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
       event.currentTarget.releasePointerCapture?.(event.pointerId);
     }
-    if (!drag) return;
+    if (!drag || wallEditorOpen) {
+      setDragVisionToken(null);
+      return;
+    }
     const token = tokensRef.current.get(drag.tokenId);
-    if (!token) return;
+    if (!token) {
+      setDragVisionToken(null);
+      return;
+    }
     void Promise.resolve(onTokenMoved?.(token, {
       roomEntry: drag.roomEntry,
       roomId: drag.roomId
-    })).catch(() => undefined);
+    })).catch(() => undefined).finally(() => setDragVisionToken(null));
   }
 
+  async function saveGrid() {
+    if (!onGridCalibrated || !canMoveAny || demoZonesEnabled || gridSaving) return;
+    setGridSaving(true);
+    try {
+      await onGridCalibrated(scene.id, normalizedGrid(gridDraft));
+      setGridEditorOpen(false);
+    } finally {
+      setGridSaving(false);
+    }
+  }
+
+  async function saveWalls() {
+    if (!onWallsChanged || !canMoveAny || demoZonesEnabled || wallsSaving) return;
+    setWallsSaving(true);
+    try {
+      const result = await onWallsChanged(scene.id, wallDraft);
+      setWallDraft(cloneWalls(result?.scene?.walls ?? wallDraft));
+      setWallHistory([]);
+      setWallStart(null);
+      setWallEditorOpen(false);
+    } finally {
+      setWallsSaving(false);
+    }
+  }
+
+  async function saveFog() {
+    if (!onFogChanged || !canMoveAny || demoZonesEnabled || fogSaving) return;
+    setFogSaving(true);
+    try {
+      const result = await onFogChanged(scene.id, {
+        ...normalizeSceneFog(fogDraft),
+        resetExploration
+      });
+      setFogDraft(normalizeSceneFog(result?.scene?.fog ?? fogDraft));
+      setResetExploration(false);
+      setFogEditorOpen(false);
+    } finally {
+      setFogSaving(false);
+    }
+  }
+
+  function cancelWalls() {
+    setWallDraft(cloneWalls(scene.walls));
+    setWallHistory([]);
+    setWallStart(null);
+    setWallEditorOpen(false);
+  }
+
+  function undoWallChange() {
+    setWallHistory((history) => {
+      if (!history.length) return history;
+      setWallDraft(cloneWalls(history[history.length - 1]));
+      return history.slice(0, -1);
+    });
+    setWallStart(null);
+  }
+
+  function screenPoint(point) {
+    return {
+      x: (Number(point?.x) - viewport.x) * viewport.zoom,
+      y: (Number(point?.y) - viewport.y) * viewport.zoom
+    };
+  }
+
+  const backgroundStyle = scene.background ? {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    width: `${scene.width}px`,
+    height: `${scene.height}px`,
+    backgroundImage: `url("${scene.background}")`,
+    backgroundSize: '100% 100%',
+    backgroundPosition: '0 0',
+    backgroundRepeat: 'no-repeat',
+    transformOrigin: 'top left',
+    transform: `translate(${-viewport.x * viewport.zoom}px, ${-viewport.y * viewport.zoom}px) scale(${viewport.zoom})`,
+    pointerEvents: 'none',
+    zIndex: 0
+  } : undefined;
+  const gridScreen = gridScreenStyle(gridDraft, viewport);
+  const gridStyle = {
+    display: gridScreen.visible ? undefined : 'none',
+    backgroundSize: `${gridScreen.size}px ${gridScreen.size}px`,
+    backgroundPosition: `${gridScreen.x}px ${gridScreen.y}px`
+  };
+  const fogEnabled = scene.fog?.enabled === true;
+  const fogActive = fogEnabled && (!canMoveAny || fogPreview);
+  const resolvedVisionActorId = canMoveAny ? visionActorId : movableActorId;
+
   return (
-    <section className="map-stage" aria-label="Mapa tático">
+    <section className={`map-stage map-tool-${tool} ${wallEditorOpen ? 'wall-authoring-active' : ''}`} aria-label="Mapa tático">
+      {scene.background ? (
+        <div className="map-background-layer" style={backgroundStyle} aria-hidden="true" />
+      ) : null}
+
+      <div className="map-camera-toolbar" role="toolbar" aria-label="Controles do mapa">
+        <button type="button" className={tool === 'select' ? 'active' : ''} onClick={() => setTool('select')} title="Selecionar e mover tokens">↖</button>
+        <button type="button" className={tool === 'pan' ? 'active' : ''} onClick={() => setTool('pan')} title="Mover câmera">✋</button>
+        <span className="map-toolbar-divider" />
+        <button type="button" onClick={() => applyZoom(1 / 1.2)} title="Diminuir zoom">−</button>
+        <span className="map-zoom-readout">{Math.round(viewport.zoom * 100)}%</span>
+        <button type="button" onClick={() => applyZoom(1.2)} title="Aumentar zoom">+</button>
+        <button type="button" onClick={fitScene} title="Ajustar mapa à tela">Ajustar</button>
+        {canMoveAny && !demoZonesEnabled ? (
+          <>
+            <button type="button" className={gridEditorOpen ? 'active' : ''} onClick={() => { setGridEditorOpen((value) => !value); setWallEditorOpen(false); setFogEditorOpen(false); }} title="Calibrar grade">Grade</button>
+            <button type="button" className={wallEditorOpen ? 'active' : ''} onClick={() => { setWallEditorOpen((value) => !value); setGridEditorOpen(false); setFogEditorOpen(false); setFogPreview(false); setWallStart(null); setTool('select'); }} title="Editar paredes e portas">Paredes</button>
+            <button type="button" className={fogEditorOpen ? 'active' : ''} onClick={() => { setFogEditorOpen((value) => !value); setGridEditorOpen(false); setWallEditorOpen(false); setFogPreview(false); }} title="Configurar Fog of War">Fog</button>
+            <button type="button" className={fogPreview ? 'vision-preview-active' : ''} disabled={!fogEnabled || !resolvedVisionActorId} onClick={() => { setFogPreview((value) => !value); setFogEditorOpen(false); setWallEditorOpen(false); }} title="Visualizar como o personagem selecionado">Visão</button>
+          </>
+        ) : null}
+      </div>
+
+      {gridEditorOpen ? (
+        <div className="grid-calibration-panel">
+          <div className="grid-calibration-heading"><strong>Calibrar grade</strong><small>Preview em tempo real</small></div>
+          <label>Tamanho (px)<input type="number" min="8" max="500" step="1" value={gridDraft.size} onChange={(event) => setGridDraft((grid) => ({ ...grid, size: event.target.value }))} /></label>
+          <div className="grid-calibration-row">
+            <label>Offset X<input type="number" step="1" value={gridDraft.offsetX} onChange={(event) => setGridDraft((grid) => ({ ...grid, offsetX: event.target.value }))} /></label>
+            <label>Offset Y<input type="number" step="1" value={gridDraft.offsetY} onChange={(event) => setGridDraft((grid) => ({ ...grid, offsetY: event.target.value }))} /></label>
+          </div>
+          <label className="grid-visible-toggle"><input type="checkbox" checked={gridDraft.visible !== false} onChange={(event) => setGridDraft((grid) => ({ ...grid, visible: event.target.checked }))} /> Mostrar grade</label>
+          <div className="grid-calibration-actions">
+            <button type="button" onClick={() => setGridDraft(normalizedGrid(scene.grid))}>Restaurar</button>
+            <button type="button" className="primary-button" disabled={gridSaving || busy} onClick={saveGrid}>{gridSaving ? 'Salvando…' : 'Salvar grade'}</button>
+          </div>
+        </div>
+      ) : null}
+
+      {wallEditorOpen ? (
+        <div className="wall-authoring-panel">
+          <div className="wall-authoring-heading">
+            <div><strong>Paredes e portas</strong><small>{wallDraft.length} segmentos · dois cliques para desenhar</small></div>
+            <span>{wallStart ? 'Ponto inicial definido' : 'Pronto'}</span>
+          </div>
+          <div className="wall-authoring-tools">
+            <button type="button" className={wallMode === 'wall' ? 'active' : ''} onClick={() => { setWallMode('wall'); setWallStart(null); }}>Parede</button>
+            <button type="button" className={wallMode === 'door' ? 'active' : ''} onClick={() => { setWallMode('door'); setWallStart(null); }}>Porta</button>
+            <button type="button" className={wallMode === 'door-state' ? 'active' : ''} onClick={() => { setWallMode('door-state'); setWallStart(null); }}>Alternar porta</button>
+            <button type="button" className={wallMode === 'erase' ? 'active danger' : 'danger'} onClick={() => { setWallMode('erase'); setWallStart(null); }}>Apagar</button>
+          </div>
+          <div className="wall-authoring-options">
+            <label><input type="checkbox" checked={snapWalls} onChange={(event) => setSnapWalls(event.target.checked)} /> Snap na grade</label>
+            <label>Nova porta
+              <select value={doorState} onChange={(event) => setDoorState(event.target.value)} disabled={wallMode !== 'door'}>
+                <option value={SceneDoorState.CLOSED}>Fechada</option>
+                <option value={SceneDoorState.OPEN}>Aberta</option>
+                <option value={SceneDoorState.LOCKED}>Trancada</option>
+              </select>
+            </label>
+          </div>
+          <div className="wall-authoring-actions">
+            <button type="button" disabled={!wallHistory.length} onClick={undoWallChange}>Desfazer</button>
+            <button type="button" onClick={cancelWalls}>Cancelar</button>
+            <button type="button" className="primary-button" disabled={wallsSaving || busy} onClick={saveWalls}>{wallsSaving ? 'Salvando…' : 'Salvar paredes'}</button>
+          </div>
+        </div>
+      ) : null}
+
+      {fogEditorOpen ? (
+        <div className="fog-config-panel">
+          <div className="fog-config-heading"><strong>Fog of War</strong><small>Visão por token</small></div>
+          <label className="fog-config-toggle"><input type="checkbox" checked={fogDraft.enabled} onChange={(event) => setFogDraft((fog) => ({ ...fog, enabled: event.target.checked }))} /> Ativar Fog nesta cena</label>
+          <label>Alcance de visão (células)<input type="number" min="1" max="60" step="1" value={fogDraft.visionRangeCells} onChange={(event) => setFogDraft((fog) => ({ ...fog, visionRangeCells: event.target.value }))} /></label>
+          <div className="fog-config-row">
+            <label>Opacidade explorada<input type="number" min="0" max="0.95" step="0.05" value={fogDraft.exploredOpacity} onChange={(event) => setFogDraft((fog) => ({ ...fog, exploredOpacity: event.target.value }))} /></label>
+            <label>Opacidade não vista<input type="number" min="0" max="1" step="0.05" value={fogDraft.unexploredOpacity} onChange={(event) => setFogDraft((fog) => ({ ...fog, unexploredOpacity: event.target.value }))} /></label>
+          </div>
+          <label className="fog-reset-toggle"><input type="checkbox" checked={resetExploration} onChange={(event) => setResetExploration(event.target.checked)} /> Limpar áreas exploradas ao salvar</label>
+          <small className="fog-config-help">Paredes e portas fechadas/trancadas bloqueiam a linha de visão. Portas abertas deixam a visão passar.</small>
+          <div className="fog-config-actions">
+            <button type="button" onClick={() => { setFogDraft(normalizeSceneFog(scene.fog ?? {})); setResetExploration(false); setFogEditorOpen(false); }}>Cancelar</button>
+            <button type="button" className="primary-button" disabled={fogSaving || busy} onClick={saveFog}>{fogSaving ? 'Salvando…' : 'Salvar Fog'}</button>
+          </div>
+        </div>
+      ) : null}
+
       <div className="map-hud map-hud-top">
         <span className="status-dot" aria-hidden="true" />
         <span>Renderer: {backend}</span>
         <span className="hud-divider" />
         <span>{busy ? 'Engine processando…' : 'Realtime autoritativo'}</span>
+        {!demoZonesEnabled ? <><span className="hud-divider" /><span className={`fog-status-chip ${fogEnabled ? 'active' : ''}`}>FOG {fogEnabled ? 'ON' : 'OFF'}</span></> : null}
       </div>
 
       <canvas
         ref={canvasRef}
         className="map-canvas"
-        aria-label="Canvas do Salão das Colunas"
+        aria-label={`Canvas de ${scene.name}`}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerUp}
+        onContextMenu={(event) => event.preventDefault()}
       />
 
+      <FogOfWarOverlay
+        scene={scene}
+        tokens={authoritativeTokens}
+        actorId={resolvedVisionActorId}
+        viewport={viewport}
+        active={fogActive}
+        transientToken={dragVisionToken}
+      />
+
+      {canMoveAny && wallEditorOpen ? (
+        <svg className="wall-authoring-overlay" aria-label="Geometria de paredes da cena">
+          {wallDraft.map((wall) => {
+            const a = screenPoint(wall.a);
+            const b = screenPoint(wall.b);
+            const stateClass = wall.kind === SceneWallKind.DOOR ? ` door-${wall.doorState}` : '';
+            return <line key={wall.id} className={`wall-segment wall-${wall.kind}${stateClass}`} x1={a.x} y1={a.y} x2={b.x} y2={b.y} />;
+          })}
+          {wallStart ? (() => {
+            const point = screenPoint(wallStart);
+            return <circle className="wall-start-handle" cx={point.x} cy={point.y} r="5" />;
+          })() : null}
+        </svg>
+      ) : null}
+
       <div className="map-atmosphere" aria-hidden="true" />
-      <div className="map-grid-overlay" aria-hidden="true" />
+      <div className="map-grid-overlay" style={gridStyle} aria-hidden="true" />
       <div className="map-room-label">
         <span className="eyebrow">Cena ativa</span>
-        <strong>Salão das Colunas</strong>
+        <strong>{scene.name}</strong>
         <small>{canMoveAny ? 'Mestre · controle de todos os tokens' : `Jogador · controle de ${movableActorId || 'nenhum token'}`}</small>
       </div>
 
       <div className="map-hud map-hud-bottom">
         <span>Selecionado</span>
-        <strong>{selected}</strong>
+        <strong>{wallEditorOpen ? `${wallDraft.length} segmentos` : fogPreview ? `Visão: ${resolvedVisionActorId || 'selecione um ator'}` : selected}</strong>
       </div>
 
-      <div className="room-zone-hint" aria-hidden="true">
-        <span>03</span>
-        <strong>Câmara Norte</strong>
-      </div>
+      {demoZonesEnabled ? (
+        <div className="room-zone-hint" aria-hidden="true">
+          <span>03</span>
+          <strong>Câmara Norte</strong>
+        </div>
+      ) : null}
 
       {error ? <div className="map-error" role="status">{error}</div> : null}
     </section>

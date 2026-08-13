@@ -5,11 +5,14 @@ import { createNarrationMemoryFromEnv } from '../../../packages/narration-memory
 import { createAudioNarrationServiceFromEnv } from '../../../packages/audio-narration-service/src/index.js';
 import { createConfig, loadEnvFile } from '../../../packages/config/src/index.js';
 import { createFenixRepositoryFromEnv } from '../../../packages/persistence-repository/src/index.js';
+import { createAssetStorageFromEnv } from '../../../packages/asset-storage/src/index.js';
+import { RemoteMapImporter } from '../../../packages/remote-map-importer/src/index.js';
 import { AuthService } from '../../../packages/auth-service/src/index.js';
 import {
   CampaignService,
   createAuthenticatedPeerAuthorizer
 } from '../../../packages/campaign-service/src/index.js';
+import { CampaignSceneService } from '../../../packages/campaign-scene-service/src/index.js';
 import { CampaignRuntimeRegistry } from '../../../packages/campaign-runtime-registry/src/index.js';
 import {
   PostgresRuntimeLeaseManager,
@@ -77,6 +80,19 @@ const authService = new AuthService({ repository, logger });
 await authService.initialize();
 const campaignService = new CampaignService({ repository, authService, logger });
 await campaignService.initialize();
+const assetStorage = createAssetStorageFromEnv();
+await assetStorage.initialize();
+const remoteMapImporter = new RemoteMapImporter({
+  maxBytes: assetStorage.maxBytes,
+  timeoutMs: config.remoteMapTimeoutMs,
+  maxRedirects: config.remoteMapMaxRedirects
+});
+const sceneService = new CampaignSceneService({
+  campaignService,
+  repository,
+  assetStorage,
+  remoteMapImporter
+});
 
 const runtimeRouter = leaseManager && config.internalRoutingSecret
   ? new OwnerAwareRuntimeRouter({
@@ -184,7 +200,32 @@ const realtimeGateway = {
               payload: { type: message.type, replayed: true }
             });
           },
-          execute: () => peer.receive(raw)
+          execute: async () => {
+            const result = await peer.receive(raw);
+            if (message.type === 'TOKEN_MOVE' && result?.token) {
+              const sceneId = realtimeHub.getSnapshot(sessionId).scene?.id ?? null;
+              if (sceneId) {
+                await sceneService.recordExploration({
+                  campaignId: ownership.campaignId,
+                  userId: peer.identity.userId,
+                  sceneId,
+                  actorId: result.token.id,
+                  x: result.token.x,
+                  y: result.token.y
+                }).catch((error) => {
+                  logger.warn?.('[Fênix][Fog] falha ao persistir exploração autoritativa', {
+                    campaignId: ownership.campaignId,
+                    sessionId,
+                    sceneId,
+                    actorId: result.token.id,
+                    code: error?.code,
+                    message: error?.message
+                  });
+                });
+              }
+            }
+            return result;
+          }
         });
       }
     };
@@ -210,6 +251,7 @@ const app = await createApiApp({
   realtimeGateway,
   authService,
   campaignService,
+  sceneService,
   runtimeRouter,
   realtimeProxy,
   commandLedger,
