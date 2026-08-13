@@ -228,14 +228,20 @@ export class CampaignSceneService {
     ensureCollections(campaign);
     const scene = campaign.scenes.find((item) => item.id === String(sceneId));
     if (!scene) throw sceneError('Cena não encontrada.', 'CAMPAIGN_SCENE_NOT_FOUND', 404);
-    const now = new Date(this.now()).toISOString();
-    scene.grid = normalizeGrid({
+    const previousGrid = normalizeGrid(scene.grid);
+    const nextGrid = normalizeGrid({
       ...scene.grid,
       size: size ?? scene.grid?.size,
       offsetX: offsetX ?? scene.grid?.offsetX,
       offsetY: offsetY ?? scene.grid?.offsetY,
       visible: visible ?? scene.grid?.visible
     });
+    const gridGeometryChanged = previousGrid.size !== nextGrid.size
+      || previousGrid.offsetX !== nextGrid.offsetX
+      || previousGrid.offsetY !== nextGrid.offsetY;
+    scene.grid = nextGrid;
+    if (gridGeometryChanged) ensureSceneFog(scene).exploredByActor = {};
+    const now = new Date(this.now()).toISOString();
     scene.updatedAt = now;
     campaign.updatedAt = now;
     await this.#persistCampaign(campaign);
