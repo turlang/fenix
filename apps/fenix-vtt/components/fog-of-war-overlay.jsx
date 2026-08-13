@@ -158,7 +158,7 @@ export function FogOfWarOverlay({
       scene={scene}
       tokens={lightingTokens}
       viewport={viewport}
-      active
+      active={true}
       visionProfile={visionProfile}
       visionPolygon={visibility}
     />
