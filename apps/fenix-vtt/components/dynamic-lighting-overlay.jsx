@@ -36,10 +36,11 @@ export function DynamicLightingOverlay({
   const [editorOpen, setEditorOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [draft, setDraft] = useState(() => editableLighting(scene?.lighting, scene));
+  const lightingSignature = JSON.stringify(scene?.lighting ?? {});
 
   useEffect(() => {
     if (!editorOpen) setDraft(editableLighting(scene?.lighting, scene));
-  }, [scene?.id, scene?.lighting, scene?.width, scene?.height, editorOpen]);
+  }, [scene?.id, lightingSignature, scene?.width, scene?.height, editorOpen]);
 
   const lighting = useMemo(() => normalizeSceneLighting(scene?.lighting ?? {}, {
     sceneWidth: scene?.width,
