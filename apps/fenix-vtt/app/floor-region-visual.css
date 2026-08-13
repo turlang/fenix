@@ -1,22 +1,5 @@
 .floor-region-overlay-toggle {
-  position: absolute;
-  z-index: 18;
-  top: 58px;
-  right: 254px;
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  padding: 7px 10px;
-  background: rgba(8, 11, 13, .9);
-  color: #aeb4b8;
-  font-size: 9px;
-  cursor: pointer;
-  backdrop-filter: blur(12px);
-}
-
-.floor-region-overlay-toggle.active {
-  border-color: var(--line-strong);
-  background: rgba(230,177,83,.12);
-  color: var(--accent);
+  display: none;
 }
 
 .floor-region-live-overlay {
@@ -25,6 +8,10 @@
 
 .floor-region-live-overlay marker path {
   fill: rgba(255,255,255,.82);
+}
+
+.floor-region-token-z {
+  display: none;
 }
 
 .floor-region-token-z rect {
@@ -40,11 +27,4 @@
   paint-order: stroke;
   stroke: rgba(0,0,0,.9);
   stroke-width: 2px;
-}
-
-@media (max-width: 760px) {
-  .floor-region-overlay-toggle {
-    top: 50px;
-    right: 178px;
-  }
 }
