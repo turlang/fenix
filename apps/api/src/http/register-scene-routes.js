@@ -140,6 +140,22 @@ export function registerSceneRoutes(app, { authService, sceneService }) {
     }
   });
 
+  app.post('/v1/campaigns/:campaignId/scenes/:sceneId/lighting', async (request, reply) => {
+    try {
+      const authenticated = requireAuthenticatedRequest(authService, request);
+      return await sceneService.updateLighting({
+        campaignId: request.params.campaignId,
+        userId: authenticated.user.id,
+        sceneId: request.params.sceneId,
+        enabled: request.body?.enabled,
+        darkness: request.body?.darkness,
+        sources: request.body?.sources
+      });
+    } catch (error) {
+      return sendError(reply, error, 'CAMPAIGN_SCENE_LIGHTING_UPDATE_FAILED');
+    }
+  });
+
   app.post('/v1/campaigns/:campaignId/scenes/:sceneId/activate', async (request, reply) => {
     try {
       const authenticated = requireAuthenticatedRequest(authService, request);
