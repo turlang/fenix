@@ -5,6 +5,8 @@ import {
   mergeExploredCells,
   normalizeExploredCells,
   normalizeSceneFog,
+  normalizeTokenVisionProfile,
+  normalizeTokenVisionProfiles,
   visibleGridCells
 } from '../../scene-vision/src/index.js';
 
@@ -78,6 +80,14 @@ function ensureSceneLighting(scene) {
   return scene.lighting;
 }
 
+function ensureSceneVisionProfiles(scene) {
+  const fog = ensureSceneFog(scene);
+  scene.visionProfiles = structuredClone(normalizeTokenVisionProfiles(scene.visionProfiles ?? {}, {
+    defaultRangeCells: fog.visionRangeCells
+  }));
+  return scene.visionProfiles;
+}
+
 function publicFog(scene, membership = null) {
   const fog = ensureSceneFog(scene);
   const base = {
@@ -110,6 +120,16 @@ function publicLighting(scene) {
   });
 }
 
+function publicVisionProfiles(scene) {
+  const profiles = ensureSceneVisionProfiles(scene);
+  return Object.freeze(Object.fromEntries(
+    Object.entries(profiles).map(([actorId, profile]) => [actorId, Object.freeze({
+      ...profile,
+      personalLight: Object.freeze({ ...profile.personalLight })
+    })])
+  ));
+}
+
 function publicAsset(asset) {
   return asset ? Object.freeze({ ...asset }) : null;
 }
@@ -126,6 +146,7 @@ function publicScene(scene, assets = [], membership = null) {
     walls: sceneWalls(scene),
     fog: publicFog(scene, membership),
     lighting: publicLighting(scene),
+    visionProfiles: publicVisionProfiles(scene),
     backgroundAssetId: scene.backgroundAssetId ?? null,
     backgroundAsset: publicAsset(asset),
     createdAt: scene.createdAt,
@@ -142,6 +163,7 @@ function ensureCollections(campaign) {
     if (!Array.isArray(scene.walls)) scene.walls = [];
     ensureSceneFog(scene);
     ensureSceneLighting(scene);
+    ensureSceneVisionProfiles(scene);
   }
   return campaign;
 }
@@ -234,6 +256,7 @@ export class CampaignSceneService {
       lighting: {
         ...normalizeSceneLighting({ enabled: false, darkness: 0.78, sources: [] })
       },
+      visionProfiles: {},
       createdAt: now,
       updatedAt: now
     };
@@ -304,6 +327,7 @@ export class CampaignSceneService {
     visionRangeCells,
     exploredOpacity,
     unexploredOpacity,
+    visionProfiles,
     resetExploration = false
   } = {}) {
     const { campaign, membership } = this.campaignService.requireRole(campaignId, userId, 'gm');
@@ -322,6 +346,13 @@ export class CampaignSceneService {
       ...config,
       exploredByActor: resetExploration ? {} : normalizeExploredByActor(current.exploredByActor)
     };
+    if (visionProfiles !== undefined) {
+      scene.visionProfiles = structuredClone(normalizeTokenVisionProfiles(visionProfiles, {
+        defaultRangeCells: config.visionRangeCells
+      }));
+    } else {
+      ensureSceneVisionProfiles(scene);
+    }
     scene.updatedAt = now;
     campaign.updatedAt = now;
     await this.#persistCampaign(campaign);
@@ -370,13 +401,16 @@ export class CampaignSceneService {
     const fog = ensureSceneFog(scene);
     if (!fog.enabled) return { changed: false, discoveredCells: [], totalExploredCells: 0 };
 
+    const visionProfile = normalizeTokenVisionProfile(ensureSceneVisionProfiles(scene)[actor] ?? {}, {
+      defaultRangeCells: fog.visionRangeCells
+    });
     const discoveredCells = visibleGridCells({
       origin: { x, y },
       walls: sceneWalls(scene),
       grid: scene.grid,
       sceneWidth: scene.width,
       sceneHeight: scene.height,
-      visionRangeCells: fog.visionRangeCells
+      visionRangeCells: visionProfile.rangeCells
     });
     const previous = fog.exploredByActor[actor] ?? [];
     const merged = mergeExploredCells(previous, discoveredCells);
