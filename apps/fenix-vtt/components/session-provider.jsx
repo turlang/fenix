@@ -144,6 +144,9 @@ export function FenixSessionProvider({ children, campaign, currentUser }) {
         break;
       case 'SCENE_UPDATED':
         dispatch({ type: 'REALTIME_SCENE', scene: event.payload?.scene, revision: event.payload?.revision });
+        void refreshScenes().catch((error) => {
+          dispatch({ type: 'CONNECTION_ERROR', disconnected: false, error: errorMessage(error) });
+        });
         break;
       case 'NARRATION':
         appendRealtimeNarration(event.payload);
@@ -162,7 +165,7 @@ export function FenixSessionProvider({ children, campaign, currentUser }) {
       default:
         break;
     }
-  }, [appendRealtimeNarration]);
+  }, [appendRealtimeNarration, refreshScenes]);
 
   const connectRealtime = useCallback(async (sessionId, { hydrateHistory = false, seedWorld = false } = {}) => {
     const realtime = realtimeRef.current;
@@ -478,6 +481,27 @@ export function FenixSessionProvider({ children, campaign, currentUser }) {
     }
   }, [campaign.id, client, isGm]);
 
+  const updateSceneFog = useCallback(async (sceneId, fog) => {
+    if (!isGm) throw new Error('Somente o mestre pode configurar o Fog of War.');
+    dispatch({ type: 'REQUEST_BEGIN' });
+    try {
+      const result = await client.updateSceneFog(campaign.id, sceneId, fog);
+      setSceneCatalog((current) => ({
+        ...current,
+        scenes: current.scenes.map((scene) => scene.id === result.scene.id ? result.scene : scene)
+      }));
+      if (result.activeSceneId === result.scene.id && realtimeRef.current?.connected) {
+        realtimeRef.current.updateScene(runtimeScene(result.scene));
+      }
+      return result;
+    } catch (error) {
+      dispatch({ type: 'CONNECTION_ERROR', disconnected: false, error: errorMessage(error) });
+      throw error;
+    } finally {
+      dispatch({ type: 'REQUEST_END' });
+    }
+  }, [campaign.id, client, isGm]);
+
   const selfPresence = state.presence.find((peer) => peer.userId === currentUser?.id) ?? null;
   const value = useMemo(() => ({
     state,
@@ -499,13 +523,14 @@ export function FenixSessionProvider({ children, campaign, currentUser }) {
     activateScene,
     updateSceneGrid,
     updateSceneWalls,
+    updateSceneFog,
     resolveAssetUrl: (assetId) => client.assetUrl(campaign.id, assetId),
     selectActor: (actorId) => {
       if (isGm || actorId === membership?.actorId) dispatch({ type: 'SELECT_ACTOR', actorId });
     },
     clearError: () => dispatch({ type: 'CLEAR_ERROR' }),
     replayAudio: (audio) => enqueueAudio(audio)
-  }), [activeScene, activateScene, campaign, client, connect, createInvite, createMapScene, createRemoteMapScene, currentUser, endSession, enqueueAudio, enterRoom, isGm, membership, moveToken, sceneCatalog.scenes, selfPresence, state, submitAction, updateSceneGrid, updateSceneWalls]);
+  }), [activeScene, activateScene, campaign, client, connect, createInvite, createMapScene, createRemoteMapScene, currentUser, endSession, enqueueAudio, enterRoom, isGm, membership, moveToken, sceneCatalog.scenes, selfPresence, state, submitAction, updateSceneFog, updateSceneGrid, updateSceneWalls]);
 
   return <FenixSessionContext.Provider value={value}>{children}</FenixSessionContext.Provider>;
 }
