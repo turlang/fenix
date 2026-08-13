@@ -100,7 +100,7 @@ O zoom do mapa por roda do mouse é registrado diretamente no `canvas` com `addE
 
 O listener é removido no cleanup do componente e recriado quando a cena/dimensões mudam. O cálculo de zoom continua usando `zoomViewportAt()`, preservando o ponto do mundo sob o cursor e os mesmos limites de zoom usados pelos botões `+` e `−`.
 
-O gate `test/vtt-render-stability.test.js` exige o listener nativo não-passivo, o cleanup correspondente, o `preventDefault()` legítimo e a ausência de `onWheel={handleWheel}` no canvas.
+O gate `test/vtt-render-stability.test.js` exige o listener nativo não-passivo, o cleanup correspondente, o `preventDefault()` legítimo, o uso do retângulo real do canvas e a ausência de `onWheel={handleWheel}` no canvas.
 
 ## Fog of War e colisão
 
