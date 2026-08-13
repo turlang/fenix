@@ -73,6 +73,7 @@ const required = [
   'packages/ai-provider/src/system-prompt.js',
   'integration-tests/realtime-websocket.mjs',
   'integration-tests/auth-campaign-http.mjs',
+  'integration-tests/fog-http.mjs',
   'integration-tests/postgres-persistence.mjs',
   'integration-tests/distributed-runtime-coordination.mjs',
   'integration-tests/owner-aware-runtime-routing.mjs',
@@ -105,10 +106,10 @@ if (packageJson.version !== moduleJson.version || packageJson.version !== coreVe
 }
 if (!packageJson.scripts?.test || !packageJson.scripts?.check || !packageJson.scripts?.['build:vtt']
   || !packageJson.scripts?.['test:realtime-integration'] || !packageJson.scripts?.['test:auth-integration']
-  || !packageJson.scripts?.['test:postgres-integration'] || !packageJson.scripts?.['test:coordination-integration']
-  || !packageJson.scripts?.['test:routing-integration'] || !packageJson.scripts?.['test:idempotency-integration']
-  || !packageJson.scripts?.['migrate:postgres']) {
-  throw new Error('Scripts de qualidade, autenticação, realtime, Postgres, coordenação, routing, idempotência, migração ou build do VTT ausentes.');
+  || !packageJson.scripts?.['test:fog-integration'] || !packageJson.scripts?.['test:postgres-integration']
+  || !packageJson.scripts?.['test:coordination-integration'] || !packageJson.scripts?.['test:routing-integration']
+  || !packageJson.scripts?.['test:idempotency-integration'] || !packageJson.scripts?.['migrate:postgres']) {
+  throw new Error('Scripts de qualidade, autenticação, Fog, realtime, Postgres, coordenação, routing, idempotência, migração ou build do VTT ausentes.');
 }
 if (!/^\^?15\./.test(vttPackageJson.dependencies?.next ?? '')) {
   throw new Error('apps/fenix-vtt deve permanecer no Next.js 15 durante este marco.');
