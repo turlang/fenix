@@ -59,6 +59,8 @@ O registro de exploração continua acontecendo depois do comando realtime e usa
 
 A exploração transitória do Fog é idempotente: se o token continua vendo exatamente o mesmo conjunto de células, o estado React existente é reutilizado em vez de criar um novo array. O conjunto de tokens usado pelo Dynamic Lighting durante o drag também é memoizado. Isso impede ciclos de renderização durante `pointermove` e evita o erro `Maximum update depth exceeded` observado no Chrome durante a validação física.
 
+O hotfix possui um gate de regressão específico em `test/vtt-render-stability.test.js` e deve passar pelo mesmo pipeline completo antes de nova validação física.
+
 ## Dynamic Lighting
 
 A configuração persistente da cena agora possui:
