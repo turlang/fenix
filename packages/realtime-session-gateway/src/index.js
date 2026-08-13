@@ -268,10 +268,11 @@ export class RealtimeSessionHub {
     }
 
     const previousToken = session.tokens.get(requestedToken.id) ?? null;
+    const ignoredWalls = identity.role === RealtimeRole.GM;
     const collision = session.scene ? resolveTokenMovement({
       from: previousToken,
       to: requestedToken,
-      walls: session.scene.walls ?? [],
+      walls: ignoredWalls ? [] : (session.scene.walls ?? []),
       sceneWidth: session.scene.width,
       sceneHeight: session.scene.height,
       tokenSize: requestedToken.size
@@ -301,7 +302,8 @@ export class RealtimeSessionHub {
           blocked: collision.blocked === true,
           boundaryAdjusted: collision.boundaryAdjusted === true,
           wallId: collision.wallId ?? null,
-          fraction: Number(collision.fraction) || 0
+          fraction: Number(collision.fraction) || 0,
+          ignoredWalls
         },
         by: identity.clientId
       }
@@ -325,7 +327,7 @@ export class RealtimeSessionHub {
     return {
       token,
       requestedToken,
-      collision,
+      collision: { ...collision, ignoredWalls },
       revision: session.revision,
       roomChanged,
       shouldNarrate,
@@ -481,7 +483,8 @@ export class RealtimeSessionGateway {
             blocked: moved.collision?.blocked === true,
             boundaryAdjusted: moved.collision?.boundaryAdjusted === true,
             wallId: moved.collision?.wallId ?? null,
-            fraction: Number(moved.collision?.fraction) || 0
+            fraction: Number(moved.collision?.fraction) || 0,
+            ignoredWalls: moved.collision?.ignoredWalls === true
           }
         });
         return moved;
