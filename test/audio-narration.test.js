@@ -20,15 +20,31 @@ const snapshot = {
 };
 
 test('AudioNarrationService cria diretiva browser-tts normalizada', () => {
-  const service = new AudioNarrationService({ language: 'pt-BR', rate: 0.88, pitch: 0.8, volume: 0.9 });
+  const service = new AudioNarrationService({
+    language: 'pt-BR',
+    rate: 0.88,
+    pitch: 0.8,
+    volume: 0.9,
+    voiceName: 'Voz de Teste'
+  });
   const directive = service.createDirective('  A caverna\nse abre diante do grupo.  ', { sceneId: 'scene-1', sessionId: 'session-1' });
 
   assert.equal(directive.mode, 'browser-tts');
   assert.equal(directive.text, 'A caverna se abre diante do grupo.');
   assert.equal(directive.language, 'pt-BR');
+  assert.equal(directive.voiceName, 'Voz de Teste');
   assert.equal(directive.sceneId, 'scene-1');
   assert.equal(directive.sessionId, 'session-1');
   assert.ok(directive.id);
+});
+
+test('AudioNarrationService usa defaults mais naturais no Browser-TTS', () => {
+  const directive = new AudioNarrationService().createDirective('A porta se abre devagar.');
+
+  assert.equal(directive.rate, 0.92);
+  assert.equal(directive.pitch, 0.95);
+  assert.equal(directive.volume, 1);
+  assert.equal(directive.voiceName, null);
 });
 
 test('runtime retorna diretiva de áudio junto da abertura', async () => {
