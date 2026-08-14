@@ -35,7 +35,9 @@ function openingPrompt(context) {
     .join('\n');
 
   return [
-    'Abra a sessão na cena ativa.',
+    'Abra a sessão na cena ativa como um mestre falando diretamente à mesa.',
+    'Construa a fala em batidas narrativas: primeiro situe o espaço, depois escolha um detalhe observável forte, então abra espaço para os jogadores agirem.',
+    'O texto precisa funcionar bem em voz alta. Alterne frases curtas e médias e evite listas de objetos, adjetivos ou sentidos.',
     'O texto-fonte é uma âncora canônica: extraia seus fatos observáveis, interprete-os e reescreva a cena com clareza e atmosfera.',
     'NÃO traduza literalmente, NÃO copie frases e NÃO mantenha a mesma ordem de ideias do texto-fonte.',
     'Preserve os fatos visíveis e descreva cada elemento canônico apenas uma vez.',
@@ -81,12 +83,14 @@ function openingPrompt(context) {
 function roomEntryPrompt(context) {
   const actors = (context.visibleActors ?? []).map((actor) => actor.name).filter(Boolean).slice(0, 8);
   return [
-    'Descreva a sala em que o grupo acaba de entrar.',
+    'Descreva a sala em que o grupo acaba de entrar como um mestre falando, não como texto de enciclopédia.',
+    'Comece pelo que orienta imediatamente a posição e a leitura do espaço. Depois acrescente uma única batida sensorial ou visual realmente útil.',
+    'Evite enumerar tudo que existe na sala; escolha os elementos que primeiro chamariam a atenção de alguém que acabou de entrar.',
     'Use a âncora canônica somente como fonte de fatos observáveis; interprete e reescreva, sem copiar frases ou a ordem original.',
     'Não invente ameaças, inimigos, armadilhas, tesouros, acontecimentos, segredos ou detalhes não confirmados.',
     'Não revele estatísticas, instruções do mestre, áreas futuras ou pensamentos de NPCs.',
     'Não controle ações, emoções, falas ou decisões dos personagens jogadores.',
-    'Escreva em 1 ou 2 parágrafos, entre 50 e 120 palavras.',
+    'Escreva em 1 ou 2 parágrafos, entre 50 e 120 palavras, com cadência natural para leitura em voz alta.',
     'Não faça pergunta final e não termine com “O que vocês fazem?”.',
     `Cena: ${context.scene?.name ?? 'sem nome'}`,
     `Sala: ${context.room?.name ?? 'sem nome'}`,
@@ -140,9 +144,11 @@ export class GroqNarrativeProvider {
       ? `NPC identificado: ${relationship.npcName}; disposição: ${relationship.disposition}; relação: ${relationship.relationshipType}.`
       : 'Nenhum NPC específico identificado.';
     const prompt = [
-      'Narre as consequências da ação abaixo.',
-      'Seja direto e cinematográfico. Não explique regras, não refaça eventos e preserve a agência dos jogadores.',
-      'Não invente resultados mecânicos além dos dados fornecidos. Termine em um resultado ou ponto claro de decisão.',
+      'Narre a consequência desta ação como um mestre reagindo imediatamente ao jogador.',
+      'Use a sequência oral: ação percebida → impacto imediato → consequência observável → devolução da agência.',
+      'Seja curto, direto e expressivo. Não explique a regra que produziu o resultado e não transforme a resolução em um resumo literário longo.',
+      'Não refaça eventos anteriores, não decida a próxima ação do personagem e não acrescente efeitos mecânicos além dos dados fornecidos.',
+      'Termine em um resultado perceptível ou em um ponto claro no qual o jogador possa decidir o que fazer a seguir.',
       `Cena: ${context?.scene?.name ?? 'sem nome'}`,
       `Ação do personagem: ${intent?.content ?? 'ação não especificada'}`,
       `Tipo de ação: ${intent?.type ?? 'GENERAL'}`,
