@@ -52,6 +52,16 @@ function normalizeRole(value) {
   return value === RealtimeRole.PLAYER ? RealtimeRole.PLAYER : RealtimeRole.GM;
 }
 
+function narrationAudienceActorId(narration = {}) {
+  return boundedText(narration?.metadata?.audienceActorId, 200) || null;
+}
+
+function canReceiveNarration(identity, narration) {
+  const actorId = narrationAudienceActorId(narration);
+  if (!actorId) return true;
+  return identity?.role === RealtimeRole.GM || identity?.actorId === actorId;
+}
+
 export function normalizeRealtimeIdentity(input = {}) {
   const clientId = boundedText(input.clientId, 120);
   if (!clientId) throw gatewayError('clientId é obrigatório.', 'REALTIME_CLIENT_ID_REQUIRED');
@@ -163,7 +173,7 @@ export class RealtimeSessionHub {
 
     this.sendTo(sessionId, normalizedIdentity.clientId, {
       type: RealtimeEventType.STATE_SYNC,
-      payload: this.getSnapshot(sessionId)
+      payload: this.getSnapshot(sessionId, { identity: normalizedIdentity })
     });
     this.broadcastPresence(sessionId);
 
@@ -219,6 +229,22 @@ export class RealtimeSessionHub {
     return delivered;
   }
 
+  broadcastNarration(sessionId, narration) {
+    const session = this.sessions.get(String(sessionId));
+    if (!session) return 0;
+    let delivered = 0;
+    for (const [clientId, peer] of session.peers.entries()) {
+      if (!canReceiveNarration(peer.identity, narration)) continue;
+      try {
+        peer.send({ type: RealtimeEventType.NARRATION, payload: narration });
+        delivered += 1;
+      } catch (error) {
+        this.logger.warn?.('[Fênix][Realtime] peer indisponível para narração', { clientId, message: error.message });
+      }
+    }
+    return delivered;
+  }
+
   broadcastPresence(sessionId) {
     const session = this.ensureSession(sessionId);
     return this.broadcast(sessionId, {
@@ -230,15 +256,18 @@ export class RealtimeSessionHub {
     });
   }
 
-  getSnapshot(sessionId) {
+  getSnapshot(sessionId, { identity = null } = {}) {
     const session = this.ensureSession(sessionId);
+    const narrations = session.narrations
+      .slice(-10)
+      .filter((narration) => !identity || canReceiveNarration(identity, narration));
     return {
       sessionId: session.id,
       revision: session.revision,
       scene: session.scene,
       tokens: [...session.tokens.values()],
       presence: [...session.presence.values()],
-      narrations: session.narrations.slice(-10)
+      narrations
     };
   }
 
@@ -386,10 +415,7 @@ export class RealtimeSessionHub {
     if (session.narrations.length > this.historyLimit) {
       session.narrations.splice(0, session.narrations.length - this.historyLimit);
     }
-    const delivered = this.broadcast(sessionId, {
-      type: RealtimeEventType.NARRATION,
-      payload: narration
-    });
+    const delivered = this.broadcastNarration(sessionId, narration);
     await this.persistSession(sessionId);
     return { published: delivered > 0, delivered, content: narration.content, metadata };
   }
@@ -466,7 +492,7 @@ export class RealtimeSessionGateway {
         const moved = this.hub.applyTokenMove(sessionId, identity, message.payload);
         try {
           if (moved.shouldNarrate) {
-            await this.sessionService.describeRoom(moved.roomEntry);
+            await this.sessionService.describeRoom({ ...moved.roomEntry, actorId: moved.token.id });
           }
           await this.hub.persistSession(sessionId);
         } catch (error) {
@@ -510,7 +536,7 @@ export class RealtimeSessionGateway {
         return result;
       }
       case RealtimeCommandType.REQUEST_STATE: {
-        const snapshot = this.hub.getSnapshot(sessionId);
+        const snapshot = this.hub.getSnapshot(sessionId, { identity });
         this.hub.sendTo(sessionId, identity.clientId, {
           type: RealtimeEventType.STATE_SYNC,
           payload: snapshot
