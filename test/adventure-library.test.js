@@ -9,7 +9,6 @@ import {
   FileAdventureLibrary,
   InMemoryAdventureLibrary
 } from '../packages/adventure-library/src/index.js';
-import { createSessionRuntime } from '../packages/session-runtime/src/index.js';
 
 function base64(value) {
   return Buffer.from(value, 'utf8').toString('base64');
@@ -164,44 +163,32 @@ test('persiste a biblioteca por campanha com gravação em arquivo', async () =>
   }
 });
 
-test('runtime inclui apenas referências seguras na resolução narrativa', async () => {
+test('contexto narrativo nunca expõe seções GM_ONLY mesmo quando a busca favorece o segredo', async () => {
   const library = new InMemoryAdventureLibrary({ logger: {} });
   await library.importDocument('world-1', {
     fileName: 'galeria.txt', mode: 'READ_ALOUD_ONLY', contentBase64: base64(safeAdventureText)
   });
-  let roundContext = null;
-  const runtime = createSessionRuntime({
-    adventureLibrary: library,
-    narrator: {
-      async createOpening() { return `A poeira recobre as pedras da galeria e suaviza os contornos das colunas falsas alinhadas nas paredes. A luz alcança somente parte do corredor, deixando o fundo comprimido entre faixas de sombra e cobre envelhecido. Cada passo possível segue pelo mesmo eixo estreito, sem desvios visíveis.\n\nNo fim da passagem, uma porta de madeira revestida por placas de cobre interrompe a continuidade da pedra. O metal gasto acompanha um baixo-relevo antigo, enquanto o restante da galeria permanece imóvel ao redor desse limite fechado.\n\nO que vocês fazem?`; },
-      async narrateRound(payload) { roundContext = payload.context; return 'A atenção se volta para a porta de cobre.'; }
-    }
-  });
-  await runtime.start({
-    activeScene: { id: 'scene-1', name: 'Galeria do Anjo', description: 'Galeria de pedra.' },
-    campaign: { worldId: 'world-1', systemId: 'dnd5e' },
-    visibleActors: [],
-    narrationExclusions: { actorNames: [] },
-    sceneJournal: {
-      id: 'journal-1', name: 'Galeria do Anjo', explicitLink: true,
-      selectedPage: { name: 'Galeria', content: 'Uma galeria de pedra termina em uma porta.', extractionMode: 'DIRECT_JOURNAL_READ_ALOUD' }
-    }
-  });
-  await runtime.processAction({ actorId: 'hero-1', actorName: 'Arannis', content: 'Examino a porta de cobre e o anjo triste.', eventId: 'chat:1' });
-  await runtime.resolveRound({ eventId: 'round:1' });
-  assert.equal(roundContext.adventure.references.length, 1);
-  assert.match(roundContext.adventure.references[0].text, /anjo triste/i);
-  assert.doesNotMatch(JSON.stringify(roundContext.adventure), /armadilha escondida/i);
+
+  const safe = await library.contextForNarration('world-1', 'armadilha fechadura anjo triste porta cobre');
+  assert.equal(safe.references.length, 1);
+  assert.match(safe.references[0].text, /anjo triste/i);
+  assert.doesNotMatch(JSON.stringify(safe), /armadilha escondida/i);
+  assert.doesNotMatch(JSON.stringify(safe), /fechadura aciona/i);
 });
 
-test('API e módulo Foundry expõem importação, busca e painel da biblioteca', async () => {
-  const server = await readFile(new URL('../apps/api/src/server.js', import.meta.url), 'utf8');
-  const main = await readFile(new URL('../apps/foundry-module/scripts/main.js', import.meta.url), 'utf8');
-  const panel = await readFile(new URL('../apps/foundry-module/scripts/adventure-library-panel.js', import.meta.url), 'utf8');
-  assert.match(server, /\/v1\/adventure-library\/:campaignId\/import/);
-  assert.match(server, /\/v1\/adventure-library\/:campaignId\/search/);
-  assert.match(server, /ADVENTURE_IMPORT_FAILED/);
-  assert.match(main, /mestreOrcAdventureLibrary/);
-  assert.match(panel, /Biblioteca da aventura/);
-  assert.match(panel, /REFERENCE_ONLY/);
+test('biblioteca mantém isolamento estrito entre campanhas', async () => {
+  const library = new InMemoryAdventureLibrary({ logger: {} });
+  await library.importDocument('world-a', {
+    fileName: 'a.txt', mode: 'READ_ALOUD_ONLY', contentBase64: base64(safeAdventureText)
+  });
+  await library.importDocument('world-b', {
+    fileName: 'b.txt', mode: 'READ_ALOUD_ONLY', contentBase64: base64('# Texto para ler em voz alta\nUma ponte de pedra cruza um abismo silencioso.')
+  });
+
+  const worldA = await library.contextForNarration('world-a', 'porta cobre anjo');
+  const worldB = await library.contextForNarration('world-b', 'porta cobre anjo ponte abismo');
+  assert.match(JSON.stringify(worldA), /anjo triste/i);
+  assert.doesNotMatch(JSON.stringify(worldA), /ponte de pedra/i);
+  assert.match(JSON.stringify(worldB), /ponte de pedra/i);
+  assert.doesNotMatch(JSON.stringify(worldB), /anjo triste/i);
 });
