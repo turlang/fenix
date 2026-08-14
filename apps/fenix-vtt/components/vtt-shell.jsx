@@ -50,7 +50,6 @@ export function VttShell({ onExitCampaign = null, onLogout = null }) {
   const [sceneSource, setSceneSource] = useState('upload');
   const {
     state,
-    identity,
     campaign,
     currentUser,
     membership,
@@ -80,7 +79,13 @@ export function VttShell({ onExitCampaign = null, onLogout = null }) {
   );
   const sessionActive = state.engineState === 'COLLECTING_ACTIONS';
   const timeline = state.timeline.slice(-4).reverse();
-  const realtimeReady = state.realtime === 'connected';
+  const masterState = state.busy
+    ? 'Narrando…'
+    : sessionActive
+      ? 'Observando a mesa'
+      : state.connection === 'connected'
+        ? 'Pronto para iniciar'
+        : 'Reconectando';
   const mapScene = useMemo(() => {
     if (!activeScene) return demoScene;
     const realtimeScene = state.scene?.id === activeScene.id ? state.scene : null;
@@ -235,9 +240,8 @@ export function VttShell({ onExitCampaign = null, onLogout = null }) {
 
         <div className={`session-pill ${state.connection === 'connected' ? '' : 'offline'}`}>
           <span className="status-dot" />
-          <span>{state.connection === 'connected' ? 'Engine conectado' : 'Engine offline'}</span>
-          <strong>{state.engineState}</strong>
-          <span className={`realtime-badge ${realtimeReady ? 'online' : ''}`}>WS {state.realtime}</span>
+          <span>Mestre Fênix</span>
+          <strong>{masterState}</strong>
         </div>
 
         <div className="topbar-actions">
@@ -283,7 +287,7 @@ export function VttShell({ onExitCampaign = null, onLogout = null }) {
                 <button className="primary-button" disabled={sceneUploadBusy || state.busy}>
                   {sceneUploadBusy ? (sceneSource === 'url' ? 'Importando URL…' : 'Enviando mapa…') : 'Criar cena'}
                 </button>
-                <small>{sceneSource === 'url' ? 'O Engine baixa e salva uma cópia local. Hosts privados/localhost são bloqueados.' : 'PNG, JPG ou WEBP · até 15 MB.'}</small>
+                <small>{sceneSource === 'url' ? 'O Fênix salva uma cópia local do mapa para a campanha.' : 'PNG, JPG ou WEBP · até 15 MB.'}</small>
               </form>
             ) : null}
 
@@ -301,7 +305,7 @@ export function VttShell({ onExitCampaign = null, onLogout = null }) {
                     <span className="scene-index">{String(index + 1).padStart(2, '0')}</span>
                     <span>
                       <strong>{scene.name}</strong>
-                      <small>{active ? `Cena ativa · ${(scene.walls ?? []).length} paredes · Fog ${scene.fog?.enabled ? 'ON' : 'OFF'}` : `${scene.width} × ${scene.height}`}</small>
+                      <small>{active ? `Cena ativa · ${(scene.walls ?? []).length} paredes · ${scene.fog?.enabled ? 'visão limitada' : 'visão livre'}` : `${scene.width} × ${scene.height}`}</small>
                     </span>
                   </button>
                 );
@@ -360,7 +364,7 @@ export function VttShell({ onExitCampaign = null, onLogout = null }) {
           <aside className="side-panel context-panel">
             <div className="panel-heading context-heading-row">
               <div>
-                <span className="eyebrow">Context Rail</span>
+                <span className="eyebrow">Mesa</span>
                 <h2>Em cena</h2>
               </div>
               <span className="presence-count">{state.presence.length} online</span>
@@ -371,7 +375,7 @@ export function VttShell({ onExitCampaign = null, onLogout = null }) {
                 <span className="presence-chip" key={peer.clientId} title={`${peer.displayName} · ${peer.role}`}>
                   <i />{peer.displayName}
                 </span>
-              )) : <span className="presence-empty">Realtime ainda não conectado</span>}
+              )) : <span className="presence-empty">Aguardando participantes</span>}
             </div>
 
             <div className="actor-stack">
@@ -397,18 +401,11 @@ export function VttShell({ onExitCampaign = null, onLogout = null }) {
               <div className="ai-card-heading">
                 <span className="ai-orb" />
                 <div>
-                  <span className="eyebrow">AI Director</span>
-                  <strong>{state.busy ? 'Processando evento' : sessionActive ? 'Narrador pronto' : 'Aguardando sessão'}</strong>
+                  <span className="eyebrow">Mestre Fênix</span>
+                  <strong>{masterState}</strong>
                 </div>
               </div>
-              <p>Shared Core conectado ao Session Gateway. Identidade, tokens e campanha são autorizados no servidor.</p>
-              <div className="ai-status-grid">
-                <span>Safety <b>ON</b></span><span>Quality <b>ON</b></span><span>Novelty <b>ON</b></span>
-              </div>
-              <div className="realtime-meta">
-                <span>{identity?.role === 'player' ? 'PLAYER' : 'GM'} CLIENT</span>
-                <span>REV {state.revision}</span>
-              </div>
+              <p>Acompanha a cena, os personagens e as ações para decidir quando narrar, reagir ou permanecer em silêncio.</p>
             </div>
           </aside>
         ) : null}
@@ -416,8 +413,8 @@ export function VttShell({ onExitCampaign = null, onLogout = null }) {
 
       <footer className="timeline-shell">
         <div className="timeline-heading">
-          <div><span className="eyebrow">Narration Timeline</span><strong>{timeline[0]?.title ?? 'Aguardando narrativa do Engine'}</strong></div>
-          <span className="audio-state">● {state.busy ? 'processing' : timeline[0]?.audioState ?? 'standby'}</span>
+          <div><span className="eyebrow">{isGm ? 'Console do Mestre Fênix' : 'Narrativa da sessão'}</span><strong>{timeline[0]?.title ?? 'Aguardando o início da história'}</strong></div>
+          <span className="audio-state">● {state.busy ? 'narrando' : timeline[0]?.audio ? 'áudio pronto' : 'aguardando'}</span>
         </div>
 
         <div className="timeline-list" aria-live="polite">
@@ -433,7 +430,7 @@ export function VttShell({ onExitCampaign = null, onLogout = null }) {
                 {entry.audio ? <button type="button" className="timeline-audio-button" onClick={() => replayAudio(entry.audio)}>Reproduzir áudio</button> : null}
               </article>
             );
-          }) : <p className="timeline-empty">{isGm ? 'Inicie a sessão para abrir a narrativa persistente.' : 'Aguarde o mestre iniciar a sessão.'}</p>}
+          }) : <p className="timeline-empty">{isGm ? 'Inicie a sessão para o Mestre Fênix acompanhar a mesa.' : 'Aguarde o mestre iniciar a sessão.'}</p>}
         </div>
 
         {state.error ? <div className="engine-error" role="alert"><span>{state.error}</span><button type="button" onClick={clearError}>Fechar</button></div> : null}
@@ -448,7 +445,7 @@ export function VttShell({ onExitCampaign = null, onLogout = null }) {
             onChange={(event) => setActionText(event.target.value)}
           />
           <button type="submit" className="send-button" disabled={state.busy || !actionText.trim() || (!sessionActive && !isGm)}>
-            {state.busy ? 'Processando…' : 'Enviar ação'}
+            {state.busy ? 'Narrando…' : 'Enviar ação'}
           </button>
         </form>
       </footer>

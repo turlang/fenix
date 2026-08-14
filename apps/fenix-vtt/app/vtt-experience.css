@@ -1,0 +1,78 @@
+/*
+ * Fênix play-surface guardrails.
+ *
+ * Esta folha é carregada por último de propósito. O VTT pode manter dados
+ * técnicos para diagnóstico, mas eles não devem disputar espaço com mapa,
+ * personagens e Mestre Fênix durante a sessão.
+ */
+
+.realtime-badge,
+.ai-status-grid,
+.realtime-meta,
+.map-hud-top {
+  display: none !important;
+}
+
+.ai-card {
+  margin-top: 12px;
+}
+
+.ai-card p {
+  margin-bottom: 0;
+}
+
+/* O mapa é a mesa: ferramentas ficam em um rail lateral no desktop. */
+@media (min-width: 901px) {
+  .map-camera-toolbar {
+    left: 12px !important;
+    right: auto !important;
+    top: 70px !important;
+    bottom: auto !important;
+    transform: none !important;
+    width: 74px !important;
+    max-height: calc(100% - 88px);
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 3px;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  .map-camera-toolbar button {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  .map-toolbar-divider {
+    width: 100% !important;
+    height: 1px !important;
+  }
+
+  .map-zoom-readout {
+    width: 100% !important;
+  }
+
+  .map-room-label {
+    left: 100px !important;
+    top: 16px !important;
+  }
+
+  .map-hud-bottom {
+    left: 100px !important;
+  }
+}
+
+/* Painéis laterais são contexto; não devem sufocar o mapa. */
+.workspace.with-left.with-right {
+  grid-template-columns: 220px minmax(0, 1fr) 252px;
+}
+
+@media (max-width: 1220px) {
+  .workspace.with-left.with-right {
+    grid-template-columns: 210px minmax(0, 1fr);
+  }
+
+  .workspace.with-left.with-right .context-panel {
+    display: none;
+  }
+}
