@@ -11,13 +11,14 @@ function events(messages, type) {
 }
 
 function createHarness() {
-  const calls = { rooms: 0, actions: 0 };
+  const calls = { rooms: 0, actions: 0, lastRoom: null };
   const sessionService = {
     getStatus() {
       return { state: 'COLLECTING_ACTIONS', sessionId: 'session-1', sceneId: 'scene-1' };
     },
-    async describeRoom() {
+    async describeRoom(input) {
       calls.rooms += 1;
+      calls.lastRoom = input;
       return { state: 'COLLECTING_ACTIONS' };
     },
     async processAction() {
@@ -108,7 +109,7 @@ test('gateway separa presença e aplica autoridade por papel/actorId', async () 
   assert.equal(hub.getSnapshot('session-1').presence.length, 0);
 });
 
-test('entrada de sala é deduplicada, saída limpa estado e reentrada narra novamente', async () => {
+test('entrada de sala é deduplicada, identifica o personagem e reentrada narra novamente', async () => {
   const { gateway, calls } = createHarness();
   const player = gateway.openPeer({
     sessionId: 'session-1',
@@ -135,6 +136,7 @@ test('entrada de sala é deduplicada, saída limpa estado e reentrada narra nova
   await player.receive(moveIntoRoom);
   await player.receive(moveIntoRoom);
   assert.equal(calls.rooms, 1);
+  assert.equal(calls.lastRoom.actorId, 'hero-ayla');
 
   await player.receive(JSON.stringify({
     type: 'TOKEN_MOVE',
@@ -167,6 +169,57 @@ test('NarrationOutput realtime transmite texto e áudio somente aos peers da ses
     assert.equal(narration.payload.metadata.roomId, '03');
     assert.equal(narration.payload.metadata.audio.mode, 'browser-tts');
   }
+});
+
+test('narração privada de sala chega apenas ao personagem alvo e ao Mestre, inclusive no histórico', async () => {
+  const { hub, gateway } = createHarness();
+  const gmMessages = [];
+  const aylaMessages = [];
+  const dorianMessages = [];
+
+  gateway.openPeer({
+    sessionId: 'session-1',
+    clientId: 'gm-1',
+    role: 'gm',
+    displayName: 'Mestre',
+    send: (event) => gmMessages.push(event)
+  });
+  gateway.openPeer({
+    sessionId: 'session-1',
+    clientId: 'player-ayla',
+    role: 'player',
+    actorId: 'hero-ayla',
+    displayName: 'Ayla',
+    send: (event) => aylaMessages.push(event)
+  });
+  gateway.openPeer({
+    sessionId: 'session-1',
+    clientId: 'player-dorian',
+    role: 'player',
+    actorId: 'hero-dorian',
+    displayName: 'Dorian',
+    send: (event) => dorianMessages.push(event)
+  });
+
+  await hub.publishNarration('Você percebe uma inscrição junto à porta.', {
+    sessionId: 'session-1',
+    type: 'ROOM_ENTRY',
+    roomId: '03',
+    audienceActorId: 'hero-ayla',
+    audio: { mode: 'browser-tts', text: 'Você percebe uma inscrição junto à porta.' }
+  });
+
+  assert.equal(events(gmMessages, 'NARRATION').length, 1);
+  assert.equal(events(aylaMessages, 'NARRATION').length, 1);
+  assert.equal(events(dorianMessages, 'NARRATION').length, 0);
+
+  const gmHistory = hub.getSnapshot('session-1', { identity: { role: 'gm', actorId: null } }).narrations;
+  const aylaHistory = hub.getSnapshot('session-1', { identity: { role: 'player', actorId: 'hero-ayla' } }).narrations;
+  const dorianHistory = hub.getSnapshot('session-1', { identity: { role: 'player', actorId: 'hero-dorian' } }).narrations;
+
+  assert.equal(gmHistory.length, 1);
+  assert.equal(aylaHistory.length, 1);
+  assert.equal(dorianHistory.length, 0);
 });
 
 test('identidade de desenvolvimento é recusada em produção sem autenticador real', () => {
