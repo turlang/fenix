@@ -74,5 +74,6 @@ test('entrada de sala preserva audiência privada até a porta de publicação',
   const narration = published.at(-1);
   assert.equal(narration.metadata.type, 'ROOM_ENTRY');
   assert.equal(narration.metadata.roomId, 'room-7');
+  assert.equal(narration.metadata.actorId, 'actor-1');
   assert.equal(narration.metadata.audienceActorId, 'actor-1');
 });
