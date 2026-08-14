@@ -40,17 +40,19 @@ export class AudioNarrationService {
     enabled = true,
     mode = 'browser-tts',
     language = 'pt-BR',
-    rate = 0.9,
-    pitch = 0.85,
+    rate = 0.92,
+    pitch = 0.95,
     volume = 1,
+    voiceName = null,
     logger = console
   } = {}) {
     this.enabled = Boolean(enabled);
     this.mode = String(mode || 'browser-tts');
     this.language = String(language || 'pt-BR');
-    this.rate = clamp(rate, 0.5, 2, 0.9);
-    this.pitch = clamp(pitch, 0, 2, 0.85);
+    this.rate = clamp(rate, 0.5, 2, 0.92);
+    this.pitch = clamp(pitch, 0, 2, 0.95);
     this.volume = clamp(volume, 0, 1, 1);
+    this.voiceName = String(voiceName ?? '').trim() || null;
     this.logger = logger;
   }
 
@@ -69,6 +71,7 @@ export class AudioNarrationService {
       rate: this.rate,
       pitch: this.pitch,
       volume: this.volume,
+      voiceName: this.voiceName,
       sceneId: metadata.sceneId ?? null,
       sessionId: metadata.sessionId ?? null,
       createdAt: new Date().toISOString()
@@ -78,6 +81,7 @@ export class AudioNarrationService {
       id: directive.id,
       mode: directive.mode,
       language: directive.language,
+      voiceName: directive.voiceName,
       sceneId: directive.sceneId,
       characters: normalizedText.length,
       segments: segments.length
@@ -93,9 +97,10 @@ export function createAudioNarrationServiceFromEnv({ logger = console } = {}) {
     enabled,
     mode: process.env.MESTRE_ORC_AUDIO_MODE ?? 'browser-tts',
     language: process.env.MESTRE_ORC_AUDIO_LANGUAGE ?? 'pt-BR',
-    rate: process.env.MESTRE_ORC_AUDIO_RATE ?? 0.9,
-    pitch: process.env.MESTRE_ORC_AUDIO_PITCH ?? 0.85,
+    rate: process.env.MESTRE_ORC_AUDIO_RATE ?? 0.92,
+    pitch: process.env.MESTRE_ORC_AUDIO_PITCH ?? 0.95,
     volume: process.env.MESTRE_ORC_AUDIO_VOLUME ?? 1,
+    voiceName: process.env.MESTRE_ORC_AUDIO_VOICE ?? null,
     logger
   });
 }
