@@ -162,6 +162,7 @@ export class SessionDirector {
         sceneId: context.scene?.id ?? null,
         roomId: context.room.id,
         sessionId: this.session.id,
+        actorId: context.actorId,
         audienceActorId: context.actorId,
         audio
       });
