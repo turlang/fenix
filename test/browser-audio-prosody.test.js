@@ -42,20 +42,8 @@ test('perfis emocionais alteram interpretação sem sair de faixas naturais', ()
 
   assert.ok(urgent.rate > neutral.rate);
   assert.ok(whisper.volume < neutral.volume);
-  assert.ok(teseWithinNaturalRange(teseValue(teseFallback(teseObject(teseFrom(teseSource(teseTo(tese))))))));
-  assert.ok(tesePitch(teseSet(teseState(teseCalc(teseRef(tese))))));
-
-  function tese() { return tense; }
-  function teseTo(value) { return value; }
-  function teseSource(value) { return value; }
-  function teseFrom(value) { return value; }
-  function teseObject(value) { return value; }
-  function teseFallback(value) { return value; }
-  function teseValue(value) { return value; }
-  function teseWithinNaturalRange(value) { return value.pitch >= 0.72 && value.pitch <= 1.24; }
-  function teseRef(value) { return value; }
-  function teseCalc(value) { return value; }
-  function teseState(value) { return value; }
-  function teseSet(value) { return value; }
-  function tesePitch(value) { return value.pitch < neutral.pitch; }
+  assert.ok(tense.pitch < neutral.pitch);
+  assert.ok(urgent.rate >= 0.68 && urgent.rate <= 1.32);
+  assert.ok(whisper.volume >= 0.35 && whisper.volume <= 1);
+  assert.ok(tense.pitch >= 0.72 && tense.pitch <= 1.24);
 });
