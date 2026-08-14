@@ -51,6 +51,7 @@ export function normalizeRoomEnteredEvent(input = {}) {
   const canonicalSource = asObject(source.source);
   return Object.freeze({
     type: VttEventType.ROOM_ENTERED,
+    actorId: optionalString(source.actorId, 200),
     room: Object.freeze({
       id: requiredString(room.id, 'room.id', 200),
       name: requiredString(room.name, 'room.name', 300)
