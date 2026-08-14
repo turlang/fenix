@@ -421,13 +421,19 @@ export function VttShell({ onExitCampaign = null, onLogout = null }) {
         </div>
 
         <div className="timeline-list" aria-live="polite">
-          {timeline.length ? timeline.map((entry) => (
-            <article className="timeline-entry" key={entry.id}>
-              <div><span>{entry.title}</span><small>{entry.type}</small></div>
-              <p>{entry.text}</p>
-              {entry.audio ? <button type="button" className="timeline-audio-button" onClick={() => replayAudio(entry.audio)}>Reproduzir áudio</button> : null}
-            </article>
-          )) : <p className="timeline-empty">{isGm ? 'Inicie a sessão para abrir a narrativa persistente.' : 'Aguarde o mestre iniciar a sessão.'}</p>}
+          {timeline.length ? timeline.map((entry) => {
+            const targetActor = entry.actorId ? actors.find((actor) => actor.id === entry.actorId) : null;
+            const privateLabel = isGm && entry.type === 'ROOM_ENTRY' && entry.actorId
+              ? ` · Privado · ${targetActor?.name ?? entry.actorId}`
+              : '';
+            return (
+              <article className="timeline-entry" key={entry.id}>
+                <div><span>{entry.title}</span><small>{entry.type}{privateLabel}</small></div>
+                <p>{entry.text}</p>
+                {entry.audio ? <button type="button" className="timeline-audio-button" onClick={() => replayAudio(entry.audio)}>Reproduzir áudio</button> : null}
+              </article>
+            );
+          }) : <p className="timeline-empty">{isGm ? 'Inicie a sessão para abrir a narrativa persistente.' : 'Aguarde o mestre iniciar a sessão.'}</p>}
         </div>
 
         {state.error ? <div className="engine-error" role="alert"><span>{state.error}</span><button type="button" onClick={clearError}>Fechar</button></div> : null}
