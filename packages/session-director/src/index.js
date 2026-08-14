@@ -143,6 +143,7 @@ export class SessionDirector {
       });
       const context = {
         ...normalized,
+        actorId: roomContext.actorId ?? null,
         room: { id: roomContext.room?.id ?? null, name: String(roomContext.room?.name ?? '').trim() },
         source: {
           canonicalAnchor: Boolean(roomContext.source?.canonicalAnchor),
@@ -161,6 +162,7 @@ export class SessionDirector {
         sceneId: context.scene?.id ?? null,
         roomId: context.room.id,
         sessionId: this.session.id,
+        audienceActorId: context.actorId,
         audio
       });
       return { state: this.state, sessionId: this.session.id, opening, audio, room: context.room };
