@@ -5,6 +5,7 @@ import './scene-manager.css';
 import './wall-authoring.css';
 import './fog-of-war.css';
 import './dynamic-lighting.css';
+import './vtt-workspace-layout.css';
 
 export const metadata = {
   title: 'Fênix VTT',
