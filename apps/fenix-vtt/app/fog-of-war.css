@@ -57,6 +57,12 @@
   font-size: 9px;
 }
 
+/* Compatibilidade de migração: o campo ainda existe no JSX antigo, mas a
+   capacidade de visão agora vem da Ficha + Sistema RPG e não é configurável no Fog. */
+.fog-config-panel > label:nth-of-type(2) {
+  display: none;
+}
+
 .fog-config-panel input[type='number'] {
   width: 100%;
   border: 1px solid var(--line);
