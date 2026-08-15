@@ -223,9 +223,8 @@ const realtimeGateway = {
             if (message.type === 'TOKEN_MOVE' && result?.token) {
               const sceneId = realtimeHub.getSnapshot(sessionId).scene?.id ?? null;
               if (sceneId) {
-                await explorationService.record({
+                await explorationService.recordExploration({
                   campaignId: ownership.campaignId,
-                  sessionId,
                   userId: peer.identity.userId,
                   sceneId,
                   actorId: result.token.actorId ?? result.token.id,
