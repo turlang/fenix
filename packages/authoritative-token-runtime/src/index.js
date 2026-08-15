@@ -17,6 +17,7 @@ import {
   normalizeSceneRegions,
   resolveGroundElevation
 } from '../../scene-elevation/src/index.js';
+import { normalizeVisionProfile } from '../../rpg-rules-contract/src/index.js';
 import { normalizeTokenRuntime } from '../../token-entity/src/index.js';
 
 function runtimeError(message, code, statusCode = 400) {
@@ -50,6 +51,11 @@ function requestedMovementMode(value, fallback = TokenMovementMode.GROUND) {
     : TokenMovementMode.GROUND;
 }
 
+function authoritativeVision(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  return normalizeVisionProfile(value);
+}
+
 export function normalizeAuthoritativeToken(input = {}, authoritative = {}) {
   const tokenId = boundedText(input.tokenId ?? input.id ?? authoritative.tokenId ?? authoritative.id);
   if (!tokenId) throw runtimeError('Token sem tokenId.', 'REALTIME_TOKEN_ID_REQUIRED');
@@ -73,7 +79,8 @@ export function normalizeAuthoritativeToken(input = {}, authoritative = {}) {
     size: finitePositive(input.size ?? authoritative.size, 80, 1, 1000),
     height: finitePositive(authoritative.height ?? input.height, 1.8, 0.2, 20),
     movementMode: requestedMovementMode(authoritative.movementMode ?? input.movementMode),
-    visible: authoritative.visible ?? input.visible ?? base.visible
+    visible: authoritative.visible ?? input.visible ?? base.visible,
+    vision: authoritativeVision(authoritative.vision)
   });
 }
 
@@ -87,6 +94,7 @@ export function normalizeAuthoritativeScene(scene = {}) {
     width,
     height,
     grid: scene.grid ?? null,
+    scale: scene.scale ?? null,
     walls: normalizeSceneWalls(scene.walls ?? [], { sceneWidth: width, sceneHeight: height }),
     lighting: normalizeSceneLighting(scene.lighting ?? {}, { sceneWidth: width, sceneHeight: height }),
     elevation,
@@ -107,7 +115,8 @@ function authoritativeIdentityForMove(identity, rawToken, previousToken) {
       height: rawToken?.height ?? previousToken?.height ?? 1.8,
       movementMode: rawToken?.movementMode ?? previousToken?.movementMode ?? TokenMovementMode.GROUND,
       visible: rawToken?.visible ?? previousToken?.visible ?? true,
-      size: rawToken?.size ?? previousToken?.size ?? 80
+      size: rawToken?.size ?? previousToken?.size ?? 80,
+      vision: previousToken?.vision ?? null
     });
   }
 
@@ -123,7 +132,8 @@ function authoritativeIdentityForMove(identity, rawToken, previousToken) {
       height: previousToken.height,
       movementMode: previousToken.movementMode,
       visible: previousToken.visible,
-      size: previousToken.size
+      size: previousToken.size,
+      vision: previousToken.vision ?? null
     });
   }
 
@@ -139,7 +149,19 @@ function authoritativeIdentityForMove(identity, rawToken, previousToken) {
     height: 1.8,
     movementMode: TokenMovementMode.GROUND,
     visible: true,
-    size: rawToken?.size ?? 80
+    size: rawToken?.size ?? 80,
+    vision: null
+  });
+}
+
+function mergeActorAuthority(authority, actorRuntime) {
+  if (!actorRuntime) return authority;
+  return Object.freeze({
+    ...authority,
+    sheetId: boundedText(actorRuntime.sheetId) || authority.sheetId,
+    systemId: boundedText(actorRuntime.systemId, 120) || authority.systemId,
+    height: actorRuntime.height ?? authority.height,
+    vision: actorRuntime.vision ?? authority.vision ?? null
   });
 }
 
@@ -185,6 +207,11 @@ function resolveAcceptedElevation({ identity, rawToken, requestedToken, previous
 }
 
 export class AuthoritativeRealtimeSessionHub extends RealtimeSessionHub {
+  constructor({ resolveActorRuntime = null, ...options } = {}) {
+    super(options);
+    this.resolveActorRuntime = typeof resolveActorRuntime === 'function' ? resolveActorRuntime : null;
+  }
+
   hydrateSession(sessionId, snapshot = {}) {
     const session = this.ensureSession(sessionId);
     session.revision = Math.max(0, Number(snapshot.revision) || 0);
@@ -221,7 +248,9 @@ export class AuthoritativeRealtimeSessionHub extends RealtimeSessionHub {
     const rawToken = input.token ?? input;
     const tokenId = boundedText(rawToken?.tokenId ?? rawToken?.id);
     const previousToken = session.tokens.get(tokenId) ?? null;
-    const authority = authoritativeIdentityForMove(identity, rawToken, previousToken);
+    const baseAuthority = authoritativeIdentityForMove(identity, rawToken, previousToken);
+    const actorRuntime = this.resolveActorRuntime?.({ sessionId, actorId: baseAuthority.actorId }) ?? null;
+    const authority = mergeActorAuthority(baseAuthority, actorRuntime);
     const requestedToken = normalizeAuthoritativeToken(rawToken, authority);
     const elevationState = resolveAcceptedElevation({ identity, rawToken, requestedToken, previousToken, scene: session.scene });
     const acceptedRequestedToken = normalizeAuthoritativeToken({ ...requestedToken, elevation: elevationState.elevation }, authority);
