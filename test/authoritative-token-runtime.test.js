@@ -2,12 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   AuthoritativeRealtimeSessionGateway,
-  AuthoritativeRealtimeSessionHub
+  AuthoritativeRealtimeSessionHub,
+  SceneRegionKind
 } from '../packages/authoritative-token-runtime/src/index.js';
 
 const gm = Object.freeze({ clientId: 'gm-1', userId: 'gm-user', role: 'gm', actorId: null });
 const ayla = Object.freeze({ clientId: 'player-a', userId: 'user-a', role: 'player', actorId: 'hero-ayla' });
-const dorian = Object.freeze({ clientId: 'player-d', userId: 'user-d', role: 'player', actorId: 'hero-dorian' });
 
 function scene() {
   return {
