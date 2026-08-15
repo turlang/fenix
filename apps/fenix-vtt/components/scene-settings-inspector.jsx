@@ -25,7 +25,7 @@ export function SceneSettingsInspector({
   onClose,
   onActivate,
   onUpdateElevation,
-  onOpenMapTool
+  onOpenMapTool = null
 }) {
   const [draft, setDraft] = useState(() => cloneElevation(scene));
   const [saving, setSaving] = useState(false);
@@ -133,17 +133,17 @@ export function SceneSettingsInspector({
         </button>
       </div>
 
-      {active ? (
+      {active && onOpenMapTool ? (
         <div className="context-inspector-actions">
-          <button type="button" onClick={() => onOpenMapTool?.('grid')}>Grade e escala</button>
-          <button type="button" onClick={() => onOpenMapTool?.('walls')}>Paredes e portas</button>
-          <button type="button" onClick={() => onOpenMapTool?.('fog')}>Fog / visão</button>
+          <button type="button" onClick={() => onOpenMapTool('grid')}>Grade e escala</button>
+          <button type="button" onClick={() => onOpenMapTool('walls')}>Paredes e portas</button>
+          <button type="button" onClick={() => onOpenMapTool('fog')}>Fog / visão</button>
         </div>
-      ) : (
+      ) : !active ? (
         <button type="button" className="primary-button context-inspector-primary" disabled={busy} onClick={() => onActivate?.(scene.id)}>
           Ativar cena para editar no mapa
         </button>
-      )}
+      ) : null}
 
       <p className="context-inspector-note">Botão direito abre o objeto no contexto. Dados de personagem continuam fora da cena; visão e movimento vêm da ficha + sistema de RPG.</p>
     </aside>
