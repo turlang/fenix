@@ -21,11 +21,11 @@ import {
 import { createCommandLedger } from '../../../packages/distributed-command-ledger/src/index.js';
 import { RuntimeObservability } from '../../../packages/runtime-observability/src/index.js';
 import { OwnerAwareRuntimeRouter } from '../../../packages/owner-aware-runtime-router/src/index.js';
+import { parseRealtimeMessage } from '../../../packages/realtime-session-gateway/src/index.js';
 import {
-  parseRealtimeMessage,
-  RealtimeSessionGateway,
-  RealtimeSessionHub
-} from '../../../packages/realtime-session-gateway/src/index.js';
+  AuthoritativeRealtimeSessionGateway,
+  AuthoritativeRealtimeSessionHub
+} from '../../../packages/authoritative-token-runtime/src/index.js';
 import { createApiApp } from './app.js';
 import { createOwnerAwareWebSocketProxy } from './realtime/owner-aware-websocket-proxy.js';
 
@@ -119,7 +119,7 @@ const realtimeProxy = runtimeRouter?.enabled
 const narrator = createNarrativeProviderFromEnv({ logger });
 const narrationMemory = createNarrationMemoryFromEnv({ logger });
 const audioNarrationService = createAudioNarrationServiceFromEnv({ logger });
-const realtimeHub = new RealtimeSessionHub({
+const realtimeHub = new AuthoritativeRealtimeSessionHub({
   logger,
   persistSnapshot: (sessionId, snapshot) => campaignService.saveRealtimeSnapshot(sessionId, snapshot)
 });
@@ -173,7 +173,7 @@ const realtimeGateway = {
       processAction: (payload) => sessionService.processAction({ ...payload, sessionId }),
       describeRoom: (payload) => sessionService.describeRoom({ ...payload, sessionId })
     };
-    const gateway = new RealtimeSessionGateway({
+    const gateway = new AuthoritativeRealtimeSessionGateway({
       hub: realtimeHub,
       sessionService: scopedSessionService,
       authorizePeer,
@@ -209,7 +209,7 @@ const realtimeGateway = {
                   campaignId: ownership.campaignId,
                   userId: peer.identity.userId,
                   sceneId,
-                  actorId: result.token.id,
+                  actorId: result.token.actorId ?? result.token.id,
                   x: result.token.x,
                   y: result.token.y
                 }).catch((error) => {
@@ -217,7 +217,7 @@ const realtimeGateway = {
                     campaignId: ownership.campaignId,
                     sessionId,
                     sceneId,
-                    actorId: result.token.id,
+                    actorId: result.token.actorId ?? result.token.id,
                     code: error?.code,
                     message: error?.message
                   });

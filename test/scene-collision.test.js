@@ -2,17 +2,18 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { resolveTokenMovement } from '../packages/scene-collision/src/index.js';
 
-function barrier(kind = 'wall', doorState = null) {
+function barrier(kind = 'wall', doorState = null, overrides = {}) {
   return {
     id: 'barrier-1',
     kind,
     doorState,
     a: { x: 140, y: 0 },
-    b: { x: 140, y: 280 }
+    b: { x: 140, y: 280 },
+    ...overrides
   };
 }
 
-function movement(walls) {
+function movement(walls, options = {}) {
   return resolveTokenMovement({
     from: { x: 70, y: 140 },
     to: { x: 210, y: 140 },
@@ -20,7 +21,8 @@ function movement(walls) {
     sceneWidth: 420,
     sceneHeight: 280,
     tokenSize: 40,
-    padding: 0
+    padding: 0,
+    ...options
   });
 }
 
@@ -69,4 +71,23 @@ test('token encostado em obstáculo consegue se afastar sem ficar preso', () => 
   });
   assert.equal(result.blocked, false);
   assert.equal(result.position.x, 70);
+});
+
+test('parede finita bloqueia no mesmo nível e libera voo acima do topo', () => {
+  const wall = barrier('wall', null, { bottomElevation: 0, topElevation: 3 });
+  assert.equal(movement([wall], { verticalEnabled: true, tokenElevation: 0, tokenHeight: 1.8 }).blocked, true);
+  const flying = movement([wall], { verticalEnabled: true, tokenElevation: 3.1, tokenHeight: 1.8 });
+  assert.equal(flying.blocked, false);
+  assert.equal(flying.position.x, 210);
+});
+
+test('barreira elevada permite passagem por baixo e bloqueia token na faixa da ponte', () => {
+  const railing = barrier('wall', null, { bottomElevation: 4, topElevation: 6 });
+  assert.equal(movement([railing], { verticalEnabled: true, tokenElevation: 0, tokenHeight: 1.8 }).blocked, false);
+  assert.equal(movement([railing], { verticalEnabled: true, tokenElevation: 4, tokenHeight: 1.8 }).blocked, true);
+});
+
+test('modelo vertical desligado preserva colisão 2D mesmo com parede finita', () => {
+  const wall = barrier('wall', null, { bottomElevation: 0, topElevation: 3 });
+  assert.equal(movement([wall], { verticalEnabled: false, tokenElevation: 20, tokenHeight: 1.8 }).blocked, true);
 });
