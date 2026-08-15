@@ -8,6 +8,7 @@ import './dynamic-lighting.css';
 import './vtt-workspace-layout.css';
 import './vtt-experience.css';
 import './context-inspector.css';
+import './scene-region-authoring.css';
 
 export const metadata = {
   title: 'Fênix VTT',
