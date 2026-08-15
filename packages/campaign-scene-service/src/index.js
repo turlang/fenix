@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { normalizeSceneWalls } from '../../scene-geometry/src/index.js';
 import { normalizeSceneLighting } from '../../scene-lighting/src/index.js';
+import { normalizeSceneElevation, normalizeSceneRegions } from '../../scene-elevation/src/index.js';
 import {
   mergeExploredCells,
   normalizeExploredCells,
@@ -62,10 +63,7 @@ function normalizeExploredByActor(input = {}) {
 function ensureSceneFog(scene) {
   const config = normalizeSceneFog(scene.fog ?? {});
   const exploredByActor = normalizeExploredByActor(scene.fog?.exploredByActor);
-  scene.fog = {
-    ...config,
-    exploredByActor
-  };
+  scene.fog = { ...config, exploredByActor };
   return scene.fog;
 }
 
@@ -76,6 +74,20 @@ function ensureSceneLighting(scene) {
     idFactory: randomUUID
   }));
   return scene.lighting;
+}
+
+function ensureSceneElevation(scene) {
+  scene.elevation = structuredClone(normalizeSceneElevation(scene.elevation ?? {}));
+  return scene.elevation;
+}
+
+function ensureSceneRegions(scene) {
+  scene.regions = structuredClone(normalizeSceneRegions(scene.regions ?? [], {
+    sceneWidth: scene.width,
+    sceneHeight: scene.height,
+    idFactory: randomUUID
+  }));
+  return scene.regions;
 }
 
 function publicFog(scene, membership = null) {
@@ -95,10 +107,7 @@ function publicFog(scene, membership = null) {
     });
   }
   const actorId = text(membership?.actorId, 200);
-  return Object.freeze({
-    ...base,
-    exploredCells: Object.freeze([...(fog.exploredByActor[actorId] ?? [])])
-  });
+  return Object.freeze({ ...base, exploredCells: Object.freeze([...(fog.exploredByActor[actorId] ?? [])]) });
 }
 
 function publicLighting(scene) {
@@ -108,6 +117,25 @@ function publicLighting(scene) {
     darkness: lighting.darkness,
     sources: Object.freeze(lighting.sources.map((source) => Object.freeze({ ...source })))
   });
+}
+
+function publicElevation(scene) {
+  const elevation = ensureSceneElevation(scene);
+  return Object.freeze({
+    ...elevation,
+    levels: Object.freeze(elevation.levels.map((level) => Object.freeze({ ...level })))
+  });
+}
+
+function publicRegions(scene) {
+  return Object.freeze(ensureSceneRegions(scene).map((region) => Object.freeze({
+    ...region,
+    points: Object.freeze(region.points.map((point) => Object.freeze({ ...point }))),
+    axis: region.axis ? Object.freeze({
+      start: Object.freeze({ ...region.axis.start }),
+      end: Object.freeze({ ...region.axis.end })
+    }) : null
+  })));
 }
 
 function publicAsset(asset) {
@@ -126,6 +154,8 @@ function publicScene(scene, assets = [], membership = null) {
     walls: sceneWalls(scene),
     fog: publicFog(scene, membership),
     lighting: publicLighting(scene),
+    elevation: publicElevation(scene),
+    regions: publicRegions(scene),
     backgroundAssetId: scene.backgroundAssetId ?? null,
     backgroundAsset: publicAsset(asset),
     createdAt: scene.createdAt,
@@ -142,6 +172,8 @@ function ensureCollections(campaign) {
     if (!Array.isArray(scene.walls)) scene.walls = [];
     ensureSceneFog(scene);
     ensureSceneLighting(scene);
+    ensureSceneElevation(scene);
+    ensureSceneRegions(scene);
   }
   return campaign;
 }
@@ -171,12 +203,7 @@ export class CampaignSceneService {
   async uploadMap({ campaignId, userId, fileName, mimeType, dataBase64 } = {}) {
     const { campaign } = this.campaignService.requireRole(campaignId, userId, 'gm');
     ensureCollections(campaign);
-    const stored = await this.assetStorage.saveImage({
-      campaignId: campaign.id,
-      fileName,
-      mimeType,
-      dataBase64
-    });
+    const stored = await this.assetStorage.saveImage({ campaignId: campaign.id, fileName, mimeType, dataBase64 });
     return this.#registerAsset(campaign, userId, stored, { sourceType: 'upload' });
   }
 
@@ -227,13 +254,10 @@ export class CampaignSceneService {
       backgroundAssetId: asset.id,
       grid: normalizeGrid({ size: gridSize }),
       walls: [],
-      fog: {
-        ...normalizeSceneFog({ enabled: false }),
-        exploredByActor: {}
-      },
-      lighting: {
-        ...normalizeSceneLighting({ enabled: false, darkness: 0.78, sources: [] })
-      },
+      fog: { ...normalizeSceneFog({ enabled: false }), exploredByActor: {} },
+      lighting: { ...normalizeSceneLighting({ enabled: false, darkness: 0.78, sources: [] }) },
+      elevation: { ...normalizeSceneElevation({ enabled: false, unit: 'm' }) },
+      regions: [],
       createdAt: now,
       updatedAt: now
     };
@@ -241,10 +265,7 @@ export class CampaignSceneService {
     if (!campaign.activeSceneId) campaign.activeSceneId = scene.id;
     campaign.updatedAt = now;
     await this.#persistCampaign(campaign);
-    return {
-      scene: publicScene(scene, campaign.assets, membership),
-      activeSceneId: campaign.activeSceneId
-    };
+    return { scene: publicScene(scene, campaign.assets, membership), activeSceneId: campaign.activeSceneId };
   }
 
   async updateGrid({ campaignId, userId, sceneId, size, offsetX, offsetY, visible } = {}) {
@@ -269,10 +290,7 @@ export class CampaignSceneService {
     scene.updatedAt = now;
     campaign.updatedAt = now;
     await this.#persistCampaign(campaign);
-    return {
-      scene: publicScene(scene, campaign.assets, membership),
-      activeSceneId: campaign.activeSceneId
-    };
+    return { scene: publicScene(scene, campaign.assets, membership), activeSceneId: campaign.activeSceneId };
   }
 
   async updateWalls({ campaignId, userId, sceneId, walls } = {}) {
@@ -290,10 +308,37 @@ export class CampaignSceneService {
     scene.updatedAt = now;
     campaign.updatedAt = now;
     await this.#persistCampaign(campaign);
-    return {
-      scene: publicScene(scene, campaign.assets, membership),
-      activeSceneId: campaign.activeSceneId
-    };
+    return { scene: publicScene(scene, campaign.assets, membership), activeSceneId: campaign.activeSceneId };
+  }
+
+  async updateElevation({ campaignId, userId, sceneId, elevation } = {}) {
+    const { campaign, membership } = this.campaignService.requireRole(campaignId, userId, 'gm');
+    ensureCollections(campaign);
+    const scene = campaign.scenes.find((item) => item.id === String(sceneId));
+    if (!scene) throw sceneError('Cena não encontrada.', 'CAMPAIGN_SCENE_NOT_FOUND', 404);
+    scene.elevation = structuredClone(normalizeSceneElevation(elevation ?? scene.elevation ?? {}));
+    const now = new Date(this.now()).toISOString();
+    scene.updatedAt = now;
+    campaign.updatedAt = now;
+    await this.#persistCampaign(campaign);
+    return { scene: publicScene(scene, campaign.assets, membership), activeSceneId: campaign.activeSceneId };
+  }
+
+  async updateRegions({ campaignId, userId, sceneId, regions } = {}) {
+    const { campaign, membership } = this.campaignService.requireRole(campaignId, userId, 'gm');
+    ensureCollections(campaign);
+    const scene = campaign.scenes.find((item) => item.id === String(sceneId));
+    if (!scene) throw sceneError('Cena não encontrada.', 'CAMPAIGN_SCENE_NOT_FOUND', 404);
+    scene.regions = structuredClone(normalizeSceneRegions(regions ?? [], {
+      sceneWidth: scene.width,
+      sceneHeight: scene.height,
+      idFactory: randomUUID
+    }));
+    const now = new Date(this.now()).toISOString();
+    scene.updatedAt = now;
+    campaign.updatedAt = now;
+    await this.#persistCampaign(campaign);
+    return { scene: publicScene(scene, campaign.assets, membership), activeSceneId: campaign.activeSceneId };
   }
 
   async updateFog({
@@ -325,10 +370,7 @@ export class CampaignSceneService {
     scene.updatedAt = now;
     campaign.updatedAt = now;
     await this.#persistCampaign(campaign);
-    return {
-      scene: publicScene(scene, campaign.assets, membership),
-      activeSceneId: campaign.activeSceneId
-    };
+    return { scene: publicScene(scene, campaign.assets, membership), activeSceneId: campaign.activeSceneId };
   }
 
   async updateLighting({ campaignId, userId, sceneId, enabled, darkness, sources } = {}) {
@@ -351,10 +393,7 @@ export class CampaignSceneService {
     scene.updatedAt = now;
     campaign.updatedAt = now;
     await this.#persistCampaign(campaign);
-    return {
-      scene: publicScene(scene, campaign.assets, membership),
-      activeSceneId: campaign.activeSceneId
-    };
+    return { scene: publicScene(scene, campaign.assets, membership), activeSceneId: campaign.activeSceneId };
   }
 
   async recordExploration({ campaignId, userId, sceneId, actorId, x, y } = {}) {
@@ -389,11 +428,7 @@ export class CampaignSceneService {
     scene.updatedAt = now;
     campaign.updatedAt = now;
     await this.#persistCampaign(campaign);
-    return {
-      changed: true,
-      discoveredCells: [...discoveredCells],
-      totalExploredCells: merged.length
-    };
+    return { changed: true, discoveredCells: [...discoveredCells], totalExploredCells: merged.length };
   }
 
   async activateScene({ campaignId, userId, sceneId } = {}) {
@@ -404,10 +439,7 @@ export class CampaignSceneService {
     campaign.activeSceneId = scene.id;
     campaign.updatedAt = new Date(this.now()).toISOString();
     await this.#persistCampaign(campaign);
-    return {
-      scene: publicScene(scene, campaign.assets, membership),
-      activeSceneId: scene.id
-    };
+    return { scene: publicScene(scene, campaign.assets, membership), activeSceneId: scene.id };
   }
 
   async #registerAsset(campaign, userId, stored, metadata = {}) {
