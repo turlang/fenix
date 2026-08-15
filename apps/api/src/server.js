@@ -13,6 +13,8 @@ import {
   createAuthenticatedPeerAuthorizer
 } from '../../../packages/campaign-service/src/index.js';
 import { CampaignSceneService } from '../../../packages/campaign-scene-service/src/index.js';
+import { CampaignActorService } from '../../../packages/campaign-actor-service/src/index.js';
+import { CampaignExplorationService } from '../../../packages/campaign-exploration-service/src/index.js';
 import { CampaignRuntimeRegistry } from '../../../packages/campaign-runtime-registry/src/index.js';
 import {
   PostgresRuntimeLeaseManager,
@@ -80,6 +82,12 @@ const authService = new AuthService({ repository, logger });
 await authService.initialize();
 const campaignService = new CampaignService({ repository, authService, logger });
 await campaignService.initialize();
+const actorService = new CampaignActorService({ campaignService, repository });
+const explorationService = new CampaignExplorationService({
+  campaignService,
+  actorService,
+  repository
+});
 const assetStorage = createAssetStorageFromEnv();
 await assetStorage.initialize();
 const remoteMapImporter = new RemoteMapImporter({
@@ -121,7 +129,17 @@ const narrationMemory = createNarrationMemoryFromEnv({ logger });
 const audioNarrationService = createAudioNarrationServiceFromEnv({ logger });
 const realtimeHub = new AuthoritativeRealtimeSessionHub({
   logger,
-  persistSnapshot: (sessionId, snapshot) => campaignService.saveRealtimeSnapshot(sessionId, snapshot)
+  persistSnapshot: (sessionId, snapshot) => campaignService.saveRealtimeSnapshot(sessionId, snapshot),
+  resolveActorRuntime: ({ sessionId, actorId }) => {
+    const actor = actorService.resolveBySession({ sessionId, actorId });
+    if (!actor) return null;
+    return {
+      sheetId: actor.sheetId,
+      systemId: actor.systemId,
+      height: actor.sheet?.height,
+      vision: actor.resolved?.vision ?? null
+    };
+  }
 });
 
 const sessionService = new CampaignRuntimeRegistry({
@@ -205,13 +223,15 @@ const realtimeGateway = {
             if (message.type === 'TOKEN_MOVE' && result?.token) {
               const sceneId = realtimeHub.getSnapshot(sessionId).scene?.id ?? null;
               if (sceneId) {
-                await sceneService.recordExploration({
+                await explorationService.record({
                   campaignId: ownership.campaignId,
+                  sessionId,
                   userId: peer.identity.userId,
                   sceneId,
                   actorId: result.token.actorId ?? result.token.id,
                   x: result.token.x,
-                  y: result.token.y
+                  y: result.token.y,
+                  elevation: result.token.elevation ?? 0
                 }).catch((error) => {
                   logger.warn?.('[Fênix][Fog] falha ao persistir exploração autoritativa', {
                     campaignId: ownership.campaignId,
@@ -252,6 +272,7 @@ const app = await createApiApp({
   authService,
   campaignService,
   sceneService,
+  actorService,
   runtimeRouter,
   realtimeProxy,
   commandLedger,
