@@ -39,7 +39,7 @@ export class CampaignExplorationService {
     this.now = now;
   }
 
-  async record({ campaignId, sessionId, userId, sceneId, actorId, x, y, elevation = 0 } = {}) {
+  async record({ campaignId, userId, sceneId, actorId, x, y, elevation = 0 } = {}) {
     const { membership } = this.campaignService.requireRole(campaignId, userId);
     const normalizedActorId = text(actorId, 200);
     if (!normalizedActorId) {
@@ -49,9 +49,16 @@ export class CampaignExplorationService {
       throw explorationError('Jogador só pode explorar com o próprio personagem.', 'CAMPAIGN_FOG_ACTOR_FORBIDDEN', 403);
     }
 
-    const resolvedActor = sessionId
-      ? this.actorService.resolveBySession({ sessionId, actorId: normalizedActorId })
-      : null;
+    let resolvedActor = null;
+    try {
+      resolvedActor = this.actorService.get({
+        campaignId,
+        userId,
+        actorId: normalizedActorId
+      });
+    } catch (error) {
+      if (error?.code !== 'CAMPAIGN_ACTOR_NOT_FOUND') throw error;
+    }
     const visionProfile = resolvedActor?.resolved?.vision ?? null;
 
     const result = await this.repository.mutate((draft) => {
