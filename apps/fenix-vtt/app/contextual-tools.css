@@ -1,0 +1,269 @@
+.scene-context-rail {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  z-index: 31;
+  width: 52px;
+  display: grid;
+  gap: 6px;
+  padding: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
+  background: rgba(8, 11, 13, 0.94);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.34);
+  backdrop-filter: blur(14px);
+}
+
+.scene-context-rail button {
+  width: 38px;
+  min-height: 42px;
+  display: grid;
+  place-items: center;
+  gap: 2px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.55);
+  cursor: pointer;
+}
+
+.scene-context-rail button span {
+  font-size: 15px;
+  line-height: 1;
+}
+
+.scene-context-rail button small {
+  font-size: 6px;
+  line-height: 1;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.scene-context-rail button.active {
+  border-color: rgba(224, 174, 74, 0.32);
+  background: rgba(224, 174, 74, 0.11);
+  color: #e5b55d;
+}
+
+.scene-context-palette {
+  position: absolute;
+  top: 14px;
+  left: 74px;
+  z-index: 30;
+  width: 190px;
+  padding: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  background: rgba(8, 11, 13, 0.95);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.38);
+  backdrop-filter: blur(14px);
+}
+
+.scene-context-palette-heading {
+  display: grid;
+  gap: 2px;
+  padding: 4px 5px 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.scene-context-palette-heading strong {
+  font-size: 0.8rem;
+  font-family: Georgia, serif;
+}
+
+.scene-context-palette-heading small,
+.scene-context-hint,
+.scene-context-tool-list button small {
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 0.62rem;
+}
+
+.scene-context-tool-list {
+  display: grid;
+  gap: 5px;
+  padding-top: 7px;
+}
+
+.scene-context-tool-list button {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  align-items: center;
+  gap: 7px;
+  min-height: 38px;
+  padding: 5px 7px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.72);
+  text-align: left;
+  cursor: pointer;
+}
+
+.scene-context-tool-list button > span:first-child {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.035);
+  font-size: 0.78rem;
+}
+
+.scene-context-tool-list button > span:last-child {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+
+.scene-context-tool-list button strong {
+  font-size: 0.68rem;
+  font-weight: 600;
+}
+
+.scene-context-tool-list button.active {
+  border-color: rgba(224, 174, 74, 0.25);
+  background: rgba(224, 174, 74, 0.08);
+  color: #e5b55d;
+}
+
+.scene-context-tool-list button:disabled {
+  opacity: 0.34;
+  cursor: not-allowed;
+}
+
+.scene-context-hint {
+  padding: 8px;
+  border: 1px dashed rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  line-height: 1.45;
+}
+
+.map-camera-controls {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 29;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 11px;
+  background: rgba(8, 11, 13, 0.9);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(12px);
+}
+
+.map-camera-controls button {
+  min-width: 30px;
+  height: 30px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.72);
+  cursor: pointer;
+  font-size: 0.68rem;
+}
+
+.map-camera-controls button:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.map-camera-controls span {
+  min-width: 40px;
+  color: rgba(255, 255, 255, 0.58);
+  font: 600 0.62rem/1 ui-monospace, SFMono-Regular, Consolas, monospace;
+  text-align: center;
+}
+
+/* A toolbar monolítica antiga não deve voltar a disputar espaço com os contextos. */
+.map-camera-toolbar {
+  display: none !important;
+}
+
+/* Reserva horizontal só quando a paleta contextual está aberta. */
+.map-stage:has(.scene-context-palette) .map-room-label {
+  left: 278px !important;
+}
+
+/* Editores aparecem após o rail/paleta, sem sobreposição entre si. */
+.grid-calibration-panel,
+.wall-authoring-panel,
+.fog-config-panel {
+  left: 278px !important;
+  top: 14px !important;
+  transform: none !important;
+}
+
+/* Regiões já têm sua própria paleta de authoring: não empilhar duas paletas. */
+.region-authoring-active .scene-context-palette {
+  display: none;
+}
+
+.region-authoring-active .scene-region-palette {
+  left: 74px;
+}
+
+.wall-authoring-active .scene-context-palette {
+  opacity: 0.92;
+}
+
+@media (max-width: 980px) {
+  .scene-context-palette {
+    width: 170px;
+  }
+
+  .map-stage:has(.scene-context-palette) .map-room-label {
+    left: 258px !important;
+  }
+
+  .grid-calibration-panel,
+  .wall-authoring-panel,
+  .fog-config-panel {
+    left: 258px !important;
+  }
+}
+
+@media (max-width: 720px) {
+  .scene-context-rail {
+    top: 8px;
+    left: 8px;
+    width: 46px;
+  }
+
+  .scene-context-rail button {
+    width: 32px;
+  }
+
+  .scene-context-rail button small {
+    display: none;
+  }
+
+  .scene-context-palette {
+    top: 8px;
+    left: 60px;
+    width: 150px;
+  }
+
+  .map-camera-controls {
+    top: 8px;
+    right: 8px;
+  }
+
+  .map-stage:has(.scene-context-palette) .map-room-label {
+    display: none;
+  }
+
+  .grid-calibration-panel,
+  .wall-authoring-panel,
+  .fog-config-panel {
+    top: 58px !important;
+    left: 60px !important;
+    width: min(330px, calc(100% - 68px)) !important;
+  }
+
+  .region-authoring-active .scene-region-palette {
+    left: 60px;
+  }
+}

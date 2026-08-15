@@ -11,6 +11,7 @@ import {
 } from '../../../packages/scene-geometry/src/index.js';
 import { normalizeSceneFog } from '../../../packages/scene-vision/src/index.js';
 import { FogOfWarOverlay } from './fog-of-war-overlay.jsx';
+import { SceneContextControls } from './scene-context-controls.jsx';
 import { SceneRegionAuthoring } from './scene-region-authoring.jsx';
 import {
   createDemoRoomEnteredEvent,
@@ -101,6 +102,8 @@ export function MapStage({
   const [error, setError] = useState(null);
   const [viewport, setViewport] = useState(scene.id === demoScene.id ? demoViewport : { x: 0, y: 0, zoom: 1 });
   const [tool, setTool] = useState('select');
+  const [controlContext, setControlContext] = useState('tokens');
+  const [toolPaletteOpen, setToolPaletteOpen] = useState(false);
   const [gridEditorOpen, setGridEditorOpen] = useState(false);
   const [gridDraft, setGridDraft] = useState(() => normalizedGrid(scene.grid));
   const [gridSaving, setGridSaving] = useState(false);
@@ -136,6 +139,9 @@ export function MapStage({
     setResetExploration(false);
     setDragVisionToken(null);
     setContextInspector(null);
+    setControlContext('tokens');
+    setToolPaletteOpen(false);
+    setTool('select');
   }, [scene.id, scene.grid?.size, scene.grid?.offsetX, scene.grid?.offsetY, scene.grid?.visible]);
 
   useEffect(() => {
@@ -378,12 +384,16 @@ export function MapStage({
         setSelected(`${token.name} · somente visualização`);
         return;
       }
+      setControlContext('tokens');
       setSelected(token.name);
       onSelectedActor?.(identity.actorId);
       setContextInspector({ type: 'token', token });
       return;
     }
-    if (canMoveAny) setContextInspector({ type: 'scene', scene });
+    if (canMoveAny) {
+      setControlContext('map');
+      setContextInspector({ type: 'scene', scene });
+    }
   }
 
   function handlePointerMove(event) {
@@ -503,7 +513,26 @@ export function MapStage({
     setWallStart(null);
   }
 
+  function closeSceneEditors() {
+    setGridEditorOpen(false);
+    setWallEditorOpen(false);
+    setRegionEditorOpen(false);
+    setFogEditorOpen(false);
+    setFogPreview(false);
+    setWallStart(null);
+  }
+
+  function activateTokenTool(nextTool = 'select') {
+    setControlContext('tokens');
+    setToolPaletteOpen(true);
+    setContextInspector(null);
+    closeSceneEditors();
+    setTool(nextTool === 'pan' ? 'pan' : 'select');
+  }
+
   function openSceneTool(nextTool) {
+    setControlContext('map');
+    setToolPaletteOpen(true);
     setContextInspector(null);
     setGridEditorOpen(nextTool === 'grid');
     setWallEditorOpen(nextTool === 'walls');
@@ -511,7 +540,33 @@ export function MapStage({
     setFogEditorOpen(nextTool === 'fog');
     setFogPreview(false);
     setWallStart(null);
+    setTool(nextTool === 'pan' ? 'pan' : 'select');
+  }
+
+  function toggleControlContext(nextContext) {
+    if (nextContext === controlContext) {
+      setToolPaletteOpen((value) => !value);
+      return;
+    }
+    setControlContext(nextContext);
+    setToolPaletteOpen(true);
+    setContextInspector(null);
+    if (nextContext === 'tokens') {
+      closeSceneEditors();
+      setTool('select');
+    }
+  }
+
+  function toggleVisionPreview() {
+    setControlContext('map');
+    setToolPaletteOpen(true);
+    setGridEditorOpen(false);
+    setWallEditorOpen(false);
+    setRegionEditorOpen(false);
+    setFogEditorOpen(false);
+    setContextInspector(null);
     setTool('select');
+    setFogPreview((value) => !value);
   }
 
   function screenPoint(point) {
@@ -549,29 +604,33 @@ export function MapStage({
   const inspectedIdentity = inspectedToken ? tokenIdentity(inspectedToken) : null;
 
   return (
-    <section className={`map-stage map-tool-${tool} ${wallEditorOpen ? 'wall-authoring-active' : ''} ${regionEditorOpen ? 'region-authoring-active' : ''}`} aria-label="Mapa tático">
+    <section className={`map-stage map-tool-${tool} context-${controlContext} ${wallEditorOpen ? 'wall-authoring-active' : ''} ${regionEditorOpen ? 'region-authoring-active' : ''}`} aria-label="Mapa tático">
       {scene.background ? (
         <div className="map-background-layer" style={backgroundStyle} aria-hidden="true" />
       ) : null}
 
-      <div className="map-camera-toolbar" role="toolbar" aria-label="Controles do mapa">
-        <button type="button" className={tool === 'select' ? 'active' : ''} onClick={() => setTool('select')} title="Selecionar e mover tokens">↖</button>
-        <button type="button" className={tool === 'pan' ? 'active' : ''} onClick={() => setTool('pan')} title="Mover câmera">✋</button>
-        <span className="map-toolbar-divider" />
-        <button type="button" onClick={() => applyZoom(1 / 1.2)} title="Diminuir zoom">−</button>
-        <span className="map-zoom-readout">{Math.round(viewport.zoom * 100)}%</span>
-        <button type="button" onClick={() => applyZoom(1.2)} title="Aumentar zoom">+</button>
-        <button type="button" onClick={fitScene} title="Ajustar mapa à tela">Ajustar</button>
-        {canMoveAny && !demoZonesEnabled ? (
-          <>
-            <button type="button" className={gridEditorOpen ? 'active' : ''} onClick={() => openSceneTool(gridEditorOpen ? null : 'grid')} title="Calibrar grade">Grade</button>
-            <button type="button" className={wallEditorOpen ? 'active' : ''} onClick={() => openSceneTool(wallEditorOpen ? null : 'walls')} title="Editar paredes e portas">Paredes</button>
-            <button type="button" className={regionEditorOpen ? 'active' : ''} onClick={() => openSceneTool(regionEditorOpen ? null : 'regions')} title="Editar pisos, escadas e rampas">Pisos</button>
-            <button type="button" className={fogEditorOpen ? 'active' : ''} onClick={() => openSceneTool(fogEditorOpen ? null : 'fog')} title="Configurar Fog of War">Fog</button>
-            <button type="button" className={fogPreview ? 'vision-preview-active' : ''} disabled={!fogEnabled || !resolvedVisionActorId} onClick={() => { setFogPreview((value) => !value); setFogEditorOpen(false); setWallEditorOpen(false); setRegionEditorOpen(false); setContextInspector(null); }} title="Visualizar como o personagem selecionado">Visão</button>
-          </>
-        ) : null}
-      </div>
+      <SceneContextControls
+        canEditMap={canMoveAny}
+        demoMode={demoZonesEnabled}
+        context={controlContext}
+        paletteOpen={toolPaletteOpen}
+        tool={tool}
+        gridEditorOpen={gridEditorOpen}
+        wallEditorOpen={wallEditorOpen}
+        regionEditorOpen={regionEditorOpen}
+        fogEditorOpen={fogEditorOpen}
+        fogPreview={fogPreview}
+        fogEnabled={fogEnabled}
+        visionAvailable={Boolean(resolvedVisionActorId)}
+        zoomPercent={Math.round(viewport.zoom * 100)}
+        onToggleContext={toggleControlContext}
+        onTokenTool={activateTokenTool}
+        onMapTool={openSceneTool}
+        onToggleVision={toggleVisionPreview}
+        onZoomOut={() => applyZoom(1 / 1.2)}
+        onZoomIn={() => applyZoom(1.2)}
+        onFit={fitScene}
+      />
 
       {gridEditorOpen ? (
         <div className="grid-calibration-panel">
