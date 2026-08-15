@@ -182,6 +182,11 @@
   display: none !important;
 }
 
+/* Reserva horizontal só quando a paleta contextual está aberta. */
+.map-stage:has(.scene-context-palette) .map-room-label {
+  left: 278px !important;
+}
+
 /* Editores aparecem após o rail/paleta, sem sobreposição entre si. */
 .grid-calibration-panel,
 .wall-authoring-panel,
@@ -191,7 +196,15 @@
   transform: none !important;
 }
 
-.region-authoring-active .scene-context-palette,
+/* Regiões já têm sua própria paleta de authoring: não empilhar duas paletas. */
+.region-authoring-active .scene-context-palette {
+  display: none;
+}
+
+.region-authoring-active .scene-region-palette {
+  left: 74px;
+}
+
 .wall-authoring-active .scene-context-palette {
   opacity: 0.92;
 }
@@ -199,6 +212,10 @@
 @media (max-width: 980px) {
   .scene-context-palette {
     width: 170px;
+  }
+
+  .map-stage:has(.scene-context-palette) .map-room-label {
+    left: 258px !important;
   }
 
   .grid-calibration-panel,
@@ -234,11 +251,19 @@
     right: 8px;
   }
 
+  .map-stage:has(.scene-context-palette) .map-room-label {
+    display: none;
+  }
+
   .grid-calibration-panel,
   .wall-authoring-panel,
   .fog-config-panel {
     top: 58px !important;
     left: 60px !important;
     width: min(330px, calc(100% - 68px)) !important;
+  }
+
+  .region-authoring-active .scene-region-palette {
+    left: 60px;
   }
 }
