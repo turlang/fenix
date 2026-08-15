@@ -69,6 +69,7 @@ export function VttShell({ onExitCampaign = null, onLogout = null }) {
     updateSceneGrid,
     updateSceneWalls,
     updateSceneElevation,
+    updateSceneRegions,
     updateSceneFog,
     resolveAssetUrl,
     selectActor,
@@ -381,6 +382,7 @@ export function VttShell({ onExitCampaign = null, onLogout = null }) {
             onSelectedActor={selectActor}
             onGridCalibrated={updateSceneGrid}
             onWallsChanged={updateSceneWalls}
+            onRegionsChanged={updateSceneRegions}
             onFogChanged={updateSceneFog}
             canMoveAny={isGm}
             movableActorId={membership?.actorId ?? null}
