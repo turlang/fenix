@@ -39,7 +39,7 @@ export class CampaignExplorationService {
     this.now = now;
   }
 
-  async record({ campaignId, userId, sceneId, actorId, x, y, elevation = 0 } = {}) {
+  async recordExploration({ campaignId, userId, sceneId, actorId, x, y, elevation = 0 } = {}) {
     const { membership } = this.campaignService.requireRole(campaignId, userId);
     const normalizedActorId = text(actorId, 200);
     if (!normalizedActorId) {
@@ -109,5 +109,9 @@ export class CampaignExplorationService {
 
     this.campaignService.refreshFromRepository();
     return result;
+  }
+
+  record(input = {}) {
+    return this.recordExploration(input);
   }
 }
