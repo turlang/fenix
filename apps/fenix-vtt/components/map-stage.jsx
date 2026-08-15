@@ -11,6 +11,7 @@ import {
 } from '../../../packages/scene-geometry/src/index.js';
 import { normalizeSceneFog } from '../../../packages/scene-vision/src/index.js';
 import { FogOfWarOverlay } from './fog-of-war-overlay.jsx';
+import { SceneRegionAuthoring } from './scene-region-authoring.jsx';
 import {
   createDemoRoomEnteredEvent,
   demoScene,
@@ -82,6 +83,7 @@ export function MapStage({
   onSelectedActor = null,
   onGridCalibrated = null,
   onWallsChanged = null,
+  onRegionsChanged = null,
   onFogChanged = null,
   busy = false,
   canMoveAny = false,
@@ -110,6 +112,7 @@ export function MapStage({
   const [wallStart, setWallStart] = useState(null);
   const [wallHistory, setWallHistory] = useState([]);
   const [wallsSaving, setWallsSaving] = useState(false);
+  const [regionEditorOpen, setRegionEditorOpen] = useState(false);
   const [fogEditorOpen, setFogEditorOpen] = useState(false);
   const [fogDraft, setFogDraft] = useState(() => normalizeSceneFog(scene.fog ?? {}));
   const [fogSaving, setFogSaving] = useState(false);
@@ -126,6 +129,7 @@ export function MapStage({
     setWallHistory([]);
     setWallStart(null);
     setWallEditorOpen(false);
+    setRegionEditorOpen(false);
     setFogDraft(normalizeSceneFog(scene.fog ?? {}));
     setFogEditorOpen(false);
     setFogPreview(false);
@@ -324,7 +328,7 @@ export function MapStage({
   }
 
   function handlePointerDown(event) {
-    if (busy || event.button === 2) return;
+    if (busy || event.button === 2 || regionEditorOpen) return;
     const wantsPan = tool === 'pan' || event.button === 1;
     if (wantsPan) {
       panRef.current = { x: event.clientX, y: event.clientY };
@@ -364,7 +368,7 @@ export function MapStage({
 
   function handleContextMenu(event) {
     event.preventDefault();
-    if (busy) return;
+    if (busy || regionEditorOpen) return;
     const hit = rendererRef.current?.hitTest(event);
     if (hit?.token) {
       const token = { ...(tokensRef.current.get(hit.token.id) ?? {}), ...hit.token };
@@ -393,7 +397,7 @@ export function MapStage({
 
     const renderer = rendererRef.current;
     const drag = dragRef.current;
-    if (!renderer || !drag || busy || wallEditorOpen) return;
+    if (!renderer || !drag || busy || wallEditorOpen || regionEditorOpen) return;
     const hit = renderer.hitTest(event);
     const current = tokensRef.current.get(drag.tokenId);
     if (!current || !hit?.world) return;
@@ -427,7 +431,7 @@ export function MapStage({
     if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
       event.currentTarget.releasePointerCapture?.(event.pointerId);
     }
-    if (!drag || wallEditorOpen) {
+    if (!drag || wallEditorOpen || regionEditorOpen) {
       setDragVisionToken(null);
       return;
     }
@@ -503,6 +507,7 @@ export function MapStage({
     setContextInspector(null);
     setGridEditorOpen(nextTool === 'grid');
     setWallEditorOpen(nextTool === 'walls');
+    setRegionEditorOpen(nextTool === 'regions');
     setFogEditorOpen(nextTool === 'fog');
     setFogPreview(false);
     setWallStart(null);
@@ -544,7 +549,7 @@ export function MapStage({
   const inspectedIdentity = inspectedToken ? tokenIdentity(inspectedToken) : null;
 
   return (
-    <section className={`map-stage map-tool-${tool} ${wallEditorOpen ? 'wall-authoring-active' : ''}`} aria-label="Mapa tático">
+    <section className={`map-stage map-tool-${tool} ${wallEditorOpen ? 'wall-authoring-active' : ''} ${regionEditorOpen ? 'region-authoring-active' : ''}`} aria-label="Mapa tático">
       {scene.background ? (
         <div className="map-background-layer" style={backgroundStyle} aria-hidden="true" />
       ) : null}
@@ -561,8 +566,9 @@ export function MapStage({
           <>
             <button type="button" className={gridEditorOpen ? 'active' : ''} onClick={() => openSceneTool(gridEditorOpen ? null : 'grid')} title="Calibrar grade">Grade</button>
             <button type="button" className={wallEditorOpen ? 'active' : ''} onClick={() => openSceneTool(wallEditorOpen ? null : 'walls')} title="Editar paredes e portas">Paredes</button>
+            <button type="button" className={regionEditorOpen ? 'active' : ''} onClick={() => openSceneTool(regionEditorOpen ? null : 'regions')} title="Editar pisos, escadas e rampas">Pisos</button>
             <button type="button" className={fogEditorOpen ? 'active' : ''} onClick={() => openSceneTool(fogEditorOpen ? null : 'fog')} title="Configurar Fog of War">Fog</button>
-            <button type="button" className={fogPreview ? 'vision-preview-active' : ''} disabled={!fogEnabled || !resolvedVisionActorId} onClick={() => { setFogPreview((value) => !value); setFogEditorOpen(false); setWallEditorOpen(false); setContextInspector(null); }} title="Visualizar como o personagem selecionado">Visão</button>
+            <button type="button" className={fogPreview ? 'vision-preview-active' : ''} disabled={!fogEnabled || !resolvedVisionActorId} onClick={() => { setFogPreview((value) => !value); setFogEditorOpen(false); setWallEditorOpen(false); setRegionEditorOpen(false); setContextInspector(null); }} title="Visualizar como o personagem selecionado">Visão</button>
           </>
         ) : null}
       </div>
@@ -667,6 +673,7 @@ export function MapStage({
                   <div><dt>Grade</dt><dd>{normalizedGrid(scene.grid).size}px</dd></div>
                   <div><dt>Escala</dt><dd>1 célula = {numberLabel(scene.grid?.distanceMeters, 1.5)} m</dd></div>
                   <div><dt>Paredes/portas</dt><dd>{(scene.walls ?? []).length}</dd></div>
+                  <div><dt>Regiões</dt><dd>{(scene.regions ?? []).length}</dd></div>
                   <div><dt>Fog</dt><dd>{scene.fog?.enabled ? 'Ativo' : 'Desligado'}</dd></div>
                   <div><dt>Luz</dt><dd>{scene.lighting?.enabled ? 'Ativa' : 'Desligada'}</dd></div>
                 </dl>
@@ -675,6 +682,7 @@ export function MapStage({
                 <div className="context-inspector-actions">
                   <button type="button" onClick={() => openSceneTool('grid')}>Grade e escala</button>
                   <button type="button" onClick={() => openSceneTool('walls')}>Paredes e portas</button>
+                  <button type="button" onClick={() => openSceneTool('regions')}>Pisos, escadas e rampas</button>
                   <button type="button" onClick={() => openSceneTool('fog')}>Fog / visão</button>
                 </div>
               ) : null}
@@ -712,6 +720,16 @@ export function MapStage({
         transientToken={dragVisionToken}
       />
 
+      {canMoveAny && regionEditorOpen ? (
+        <SceneRegionAuthoring
+          scene={scene}
+          viewport={viewport}
+          busy={busy}
+          onRegionsChanged={onRegionsChanged}
+          onClose={() => setRegionEditorOpen(false)}
+        />
+      ) : null}
+
       {canMoveAny && wallEditorOpen ? (
         <svg className="wall-authoring-overlay" aria-label="Geometria de paredes da cena">
           {wallDraft.map((wall) => {
@@ -737,7 +755,7 @@ export function MapStage({
 
       <div className="map-hud map-hud-bottom">
         <span>Selecionado</span>
-        <strong>{wallEditorOpen ? `${wallDraft.length} segmentos` : fogPreview ? `Visão: ${resolvedVisionActorId || 'selecione um ator'}` : selected}</strong>
+        <strong>{regionEditorOpen ? `${(scene.regions ?? []).length} regiões` : wallEditorOpen ? `${wallDraft.length} segmentos` : fogPreview ? `Visão: ${resolvedVisionActorId || 'selecione um ator'}` : selected}</strong>
       </div>
 
       {demoZonesEnabled ? (
