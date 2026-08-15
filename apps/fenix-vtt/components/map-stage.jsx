@@ -58,6 +58,23 @@ function randomWallId() {
   return globalThis.crypto?.randomUUID?.() ?? `wall-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
+function tokenIdentity(token = {}) {
+  const tokenId = String(token.tokenId ?? token.id ?? '').trim();
+  const actorId = String(token.actorId ?? tokenId).trim();
+  const sheetId = String(token.sheetId ?? actorId).trim();
+  return {
+    tokenId,
+    actorId,
+    sheetId,
+    systemId: String(token.systemId ?? 'generic').trim() || 'generic'
+  };
+}
+
+function numberLabel(value, fallback = 0) {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.round(number * 100) / 100 : fallback;
+}
+
 export function MapStage({
   scene = demoScene,
   authoritativeTokens = [],
@@ -99,6 +116,7 @@ export function MapStage({
   const [fogPreview, setFogPreview] = useState(false);
   const [resetExploration, setResetExploration] = useState(false);
   const [dragVisionToken, setDragVisionToken] = useState(null);
+  const [contextInspector, setContextInspector] = useState(null);
   const demoZonesEnabled = scene.id === demoScene.id;
 
   useEffect(() => {
@@ -113,6 +131,7 @@ export function MapStage({
     setFogPreview(false);
     setResetExploration(false);
     setDragVisionToken(null);
+    setContextInspector(null);
   }, [scene.id, scene.grid?.size, scene.grid?.offsetX, scene.grid?.offsetY, scene.grid?.visible]);
 
   useEffect(() => {
@@ -305,7 +324,7 @@ export function MapStage({
   }
 
   function handlePointerDown(event) {
-    if (busy) return;
+    if (busy || event.button === 2) return;
     const wantsPan = tool === 'pan' || event.button === 1;
     if (wantsPan) {
       panRef.current = { x: event.clientX, y: event.clientY };
@@ -323,7 +342,8 @@ export function MapStage({
 
     const hit = rendererRef.current?.hitTest(event);
     if (!hit?.token) return;
-    const allowed = canMoveAny || (movableActorId && hit.token.id === movableActorId);
+    const identity = tokenIdentity(hit.token);
+    const allowed = canMoveAny || (movableActorId && identity.actorId === movableActorId);
     if (!allowed) {
       setSelected(`${hit.token.name} · somente visualização`);
       return;
@@ -334,11 +354,32 @@ export function MapStage({
       roomId: currentZone?.room?.id ?? null,
       roomEntry: currentZone ? createDemoRoomEnteredEvent(currentZone) : null
     };
+    setContextInspector(null);
     setSelected(hit.token.name);
     setDragVisionToken({ ...hit.token });
-    onSelectedActor?.(hit.token.id);
+    onSelectedActor?.(identity.actorId);
     event.currentTarget.setPointerCapture?.(event.pointerId);
     event.preventDefault();
+  }
+
+  function handleContextMenu(event) {
+    event.preventDefault();
+    if (busy) return;
+    const hit = rendererRef.current?.hitTest(event);
+    if (hit?.token) {
+      const token = { ...(tokensRef.current.get(hit.token.id) ?? {}), ...hit.token };
+      const identity = tokenIdentity(token);
+      const allowed = canMoveAny || (movableActorId && identity.actorId === movableActorId);
+      if (!allowed) {
+        setSelected(`${token.name} · somente visualização`);
+        return;
+      }
+      setSelected(token.name);
+      onSelectedActor?.(identity.actorId);
+      setContextInspector({ type: 'token', token });
+      return;
+    }
+    if (canMoveAny) setContextInspector({ type: 'scene', scene });
   }
 
   function handlePointerMove(event) {
@@ -458,6 +499,16 @@ export function MapStage({
     setWallStart(null);
   }
 
+  function openSceneTool(nextTool) {
+    setContextInspector(null);
+    setGridEditorOpen(nextTool === 'grid');
+    setWallEditorOpen(nextTool === 'walls');
+    setFogEditorOpen(nextTool === 'fog');
+    setFogPreview(false);
+    setWallStart(null);
+    setTool('select');
+  }
+
   function screenPoint(point) {
     return {
       x: (Number(point?.x) - viewport.x) * viewport.zoom,
@@ -489,6 +540,8 @@ export function MapStage({
   const fogEnabled = scene.fog?.enabled === true;
   const fogActive = fogEnabled && (!canMoveAny || fogPreview);
   const resolvedVisionActorId = canMoveAny ? visionActorId : movableActorId;
+  const inspectedToken = contextInspector?.type === 'token' ? contextInspector.token : null;
+  const inspectedIdentity = inspectedToken ? tokenIdentity(inspectedToken) : null;
 
   return (
     <section className={`map-stage map-tool-${tool} ${wallEditorOpen ? 'wall-authoring-active' : ''}`} aria-label="Mapa tático">
@@ -506,10 +559,10 @@ export function MapStage({
         <button type="button" onClick={fitScene} title="Ajustar mapa à tela">Ajustar</button>
         {canMoveAny && !demoZonesEnabled ? (
           <>
-            <button type="button" className={gridEditorOpen ? 'active' : ''} onClick={() => { setGridEditorOpen((value) => !value); setWallEditorOpen(false); setFogEditorOpen(false); }} title="Calibrar grade">Grade</button>
-            <button type="button" className={wallEditorOpen ? 'active' : ''} onClick={() => { setWallEditorOpen((value) => !value); setGridEditorOpen(false); setFogEditorOpen(false); setFogPreview(false); setWallStart(null); setTool('select'); }} title="Editar paredes e portas">Paredes</button>
-            <button type="button" className={fogEditorOpen ? 'active' : ''} onClick={() => { setFogEditorOpen((value) => !value); setGridEditorOpen(false); setWallEditorOpen(false); setFogPreview(false); }} title="Configurar Fog of War">Fog</button>
-            <button type="button" className={fogPreview ? 'vision-preview-active' : ''} disabled={!fogEnabled || !resolvedVisionActorId} onClick={() => { setFogPreview((value) => !value); setFogEditorOpen(false); setWallEditorOpen(false); }} title="Visualizar como o personagem selecionado">Visão</button>
+            <button type="button" className={gridEditorOpen ? 'active' : ''} onClick={() => openSceneTool(gridEditorOpen ? null : 'grid')} title="Calibrar grade">Grade</button>
+            <button type="button" className={wallEditorOpen ? 'active' : ''} onClick={() => openSceneTool(wallEditorOpen ? null : 'walls')} title="Editar paredes e portas">Paredes</button>
+            <button type="button" className={fogEditorOpen ? 'active' : ''} onClick={() => openSceneTool(fogEditorOpen ? null : 'fog')} title="Configurar Fog of War">Fog</button>
+            <button type="button" className={fogPreview ? 'vision-preview-active' : ''} disabled={!fogEnabled || !resolvedVisionActorId} onClick={() => { setFogPreview((value) => !value); setFogEditorOpen(false); setWallEditorOpen(false); setContextInspector(null); }} title="Visualizar como o personagem selecionado">Visão</button>
           </>
         ) : null}
       </div>
@@ -578,6 +631,59 @@ export function MapStage({
         </div>
       ) : null}
 
+      {contextInspector ? (
+        <aside className="map-context-inspector" aria-label={contextInspector.type === 'token' ? 'Configurações do token' : 'Configurações da cena'}>
+          <div className="map-context-inspector-heading">
+            <div>
+              <span className="eyebrow">{contextInspector.type === 'token' ? 'Token / Entidade' : 'Mapa / Cena'}</span>
+              <strong>{contextInspector.type === 'token' ? inspectedToken?.name : scene.name}</strong>
+            </div>
+            <button type="button" className="context-close-button" onClick={() => setContextInspector(null)} aria-label="Fechar configurações">×</button>
+          </div>
+
+          {contextInspector.type === 'token' ? (
+            <>
+              <div className="context-inspector-section">
+                <span className="eyebrow">Configurações do token</span>
+                <dl className="context-definition-list">
+                  <div><dt>Token</dt><dd>{inspectedIdentity?.tokenId}</dd></div>
+                  <div><dt>Ator</dt><dd>{inspectedIdentity?.actorId}</dd></div>
+                  <div><dt>Ficha</dt><dd>{inspectedIdentity?.sheetId}</dd></div>
+                  <div><dt>Sistema</dt><dd>{inspectedIdentity?.systemId}</dd></div>
+                  <div><dt>Posição</dt><dd>{numberLabel(inspectedToken?.x)}, {numberLabel(inspectedToken?.y)}</dd></div>
+                  <div><dt>Elevação</dt><dd>{numberLabel(inspectedToken?.elevation)} m</dd></div>
+                  <div><dt>Footprint</dt><dd>{numberLabel(inspectedToken?.footprint?.widthCells, 1)} × {numberLabel(inspectedToken?.footprint?.heightCells, 1)} cél.</dd></div>
+                </dl>
+              </div>
+              <p className="context-inspector-note">Visão, deslocamento, voo, natação e demais capacidades pertencem à ficha + sistema de RPG. O token apenas representa essa entidade na cena.</p>
+              <button type="button" className="primary-button context-inspector-primary" onClick={() => { onSelectedActor?.(inspectedIdentity?.actorId); setContextInspector(null); }}>Selecionar entidade</button>
+            </>
+          ) : (
+            <>
+              <div className="context-inspector-section">
+                <span className="eyebrow">Configurações da cena</span>
+                <dl className="context-definition-list">
+                  <div><dt>Dimensões</dt><dd>{scene.width} × {scene.height}px</dd></div>
+                  <div><dt>Grade</dt><dd>{normalizedGrid(scene.grid).size}px</dd></div>
+                  <div><dt>Escala</dt><dd>1 célula = {numberLabel(scene.grid?.distanceMeters, 1.5)} m</dd></div>
+                  <div><dt>Paredes/portas</dt><dd>{(scene.walls ?? []).length}</dd></div>
+                  <div><dt>Fog</dt><dd>{scene.fog?.enabled ? 'Ativo' : 'Desligado'}</dd></div>
+                  <div><dt>Luz</dt><dd>{scene.lighting?.enabled ? 'Ativa' : 'Desligada'}</dd></div>
+                </dl>
+              </div>
+              {!demoZonesEnabled ? (
+                <div className="context-inspector-actions">
+                  <button type="button" onClick={() => openSceneTool('grid')}>Grade e escala</button>
+                  <button type="button" onClick={() => openSceneTool('walls')}>Paredes e portas</button>
+                  <button type="button" onClick={() => openSceneTool('fog')}>Fog / visão</button>
+                </div>
+              ) : null}
+              <p className="context-inspector-note">Mapa guarda geometria e ambiente. Regras de personagem não pertencem à cena.</p>
+            </>
+          )}
+        </aside>
+      ) : null}
+
       <div className="map-hud map-hud-top">
         <span className="status-dot" aria-hidden="true" />
         <span>Renderer: {backend}</span>
@@ -594,7 +700,7 @@ export function MapStage({
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerUp}
-        onContextMenu={(event) => event.preventDefault()}
+        onContextMenu={handleContextMenu}
       />
 
       <FogOfWarOverlay

@@ -1,0 +1,128 @@
+.map-context-inspector {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 32;
+  width: min(320px, calc(100% - 32px));
+  max-height: calc(100% - 32px);
+  overflow: auto;
+  padding: 16px;
+  border: 1px solid rgba(224, 174, 74, 0.32);
+  border-radius: 16px;
+  background: rgba(12, 14, 16, 0.96);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.38);
+  backdrop-filter: blur(16px);
+}
+
+.map-context-inspector-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.map-context-inspector-heading > div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.map-context-inspector-heading strong {
+  font-size: 1rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.context-close-button {
+  width: 32px;
+  height: 32px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.035);
+  color: inherit;
+  cursor: pointer;
+}
+
+.context-inspector-section {
+  display: grid;
+  gap: 10px;
+}
+
+.context-definition-list {
+  margin: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.context-definition-list > div {
+  display: grid;
+  grid-template-columns: minmax(88px, 0.8fr) minmax(0, 1.2fr);
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.065);
+}
+
+.context-definition-list dt {
+  color: rgba(255, 255, 255, 0.52);
+  font-size: 0.72rem;
+}
+
+.context-definition-list dd {
+  min-width: 0;
+  margin: 0;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 0.76rem;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
+.context-inspector-actions {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.context-inspector-actions button,
+.context-inspector-primary {
+  width: 100%;
+}
+
+.context-inspector-actions button {
+  padding: 9px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.context-inspector-actions button:hover,
+.context-close-button:hover {
+  border-color: rgba(224, 174, 74, 0.38);
+  background: rgba(224, 174, 74, 0.08);
+}
+
+.context-inspector-note {
+  margin: 14px 0 0;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 0.7rem;
+  line-height: 1.5;
+}
+
+.context-inspector-primary {
+  margin-top: 14px;
+}
+
+@media (max-width: 860px) {
+  .map-context-inspector {
+    top: auto;
+    right: 10px;
+    bottom: 10px;
+    left: 10px;
+    width: auto;
+    max-height: 58%;
+  }
+}
