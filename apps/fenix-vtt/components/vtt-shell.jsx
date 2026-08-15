@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { MapStage } from './map-stage.jsx';
+import { SceneSettingsInspector } from './scene-settings-inspector.jsx';
 import { useFenixSession } from './session-provider.jsx';
 import { demoScene, demoTokens } from '../lib/demo-scene.js';
 import {
@@ -48,6 +49,7 @@ export function VttShell({ onExitCampaign = null, onLogout = null }) {
   const [sceneManagerOpen, setSceneManagerOpen] = useState(false);
   const [sceneUploadBusy, setSceneUploadBusy] = useState(false);
   const [sceneSource, setSceneSource] = useState('upload');
+  const [sceneInspectorId, setSceneInspectorId] = useState(null);
   const {
     state,
     campaign,
@@ -66,6 +68,7 @@ export function VttShell({ onExitCampaign = null, onLogout = null }) {
     activateScene,
     updateSceneGrid,
     updateSceneWalls,
+    updateSceneElevation,
     updateSceneFog,
     resolveAssetUrl,
     selectActor,
@@ -76,6 +79,10 @@ export function VttShell({ onExitCampaign = null, onLogout = null }) {
   const selectedActor = useMemo(
     () => actors.find((actor) => actor.id === state.selectedActorId) ?? actors[0],
     [state.selectedActorId]
+  );
+  const inspectedScene = useMemo(
+    () => scenes.find((scene) => scene.id === sceneInspectorId) ?? null,
+    [sceneInspectorId, scenes]
   );
   const sessionActive = state.engineState === 'COLLECTING_ACTIONS';
   const timeline = state.timeline.slice(-4).reverse();
@@ -94,6 +101,8 @@ export function VttShell({ onExitCampaign = null, onLogout = null }) {
       grid: realtimeScene?.grid ? { ...activeScene.grid, ...realtimeScene.grid } : activeScene.grid,
       walls: Array.isArray(realtimeScene?.walls) ? realtimeScene.walls : (activeScene.walls ?? []),
       lighting: realtimeScene?.lighting ? { ...activeScene.lighting, ...realtimeScene.lighting } : activeScene.lighting,
+      elevation: realtimeScene?.elevation ? { ...activeScene.elevation, ...realtimeScene.elevation } : activeScene.elevation,
+      regions: Array.isArray(realtimeScene?.regions) ? realtimeScene.regions : (activeScene.regions ?? []),
       background: activeScene.backgroundAssetId
         ? resolveAssetUrl(activeScene.backgroundAssetId)
         : null
@@ -101,13 +110,14 @@ export function VttShell({ onExitCampaign = null, onLogout = null }) {
   }, [activeScene, resolveAssetUrl, state.scene]);
 
   function currentToken(actorId) {
-    return state.tokens.find((token) => token.id === actorId)
-      ?? demoTokens.find((token) => token.id === actorId)
+    return state.tokens.find((token) => (token.actorId ?? token.id) === actorId)
+      ?? demoTokens.find((token) => (token.actorId ?? token.id) === actorId)
       ?? null;
   }
 
   function resolveSafeToken(requestedToken) {
-    const previousToken = currentToken(requestedToken?.id) ?? requestedToken;
+    const requestedActorId = requestedToken?.actorId ?? requestedToken?.id;
+    const previousToken = currentToken(requestedActorId) ?? requestedToken;
     return resolveClientTokenMovement({
       previousToken,
       requestedToken,
@@ -227,6 +237,19 @@ export function VttShell({ onExitCampaign = null, onLogout = null }) {
     }
   }
 
+  function handleSceneContextMenu(event, scene) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!isGm || state.busy) return;
+    setSceneManagerOpen(false);
+    setSceneInspectorId(scene.id);
+  }
+
+  async function handleActivateInspectedScene(sceneId) {
+    await activateScene(sceneId);
+    setSceneInspectorId(sceneId);
+  }
+
   return (
     <main className={`vtt-shell ${focusMode ? 'focus-mode' : ''}`}>
       <header className="topbar">
@@ -300,12 +323,17 @@ export function VttShell({ onExitCampaign = null, onLogout = null }) {
                     type="button"
                     className={`scene-row ${active ? 'active' : ''}`}
                     disabled={!isGm || state.busy}
-                    onClick={() => !active && activateScene(scene.id)}
+                    onClick={() => {
+                      setSceneInspectorId(null);
+                      if (!active) void activateScene(scene.id);
+                    }}
+                    onContextMenu={(event) => handleSceneContextMenu(event, scene)}
+                    title={isGm ? 'Clique para ativar · botão direito para configurar' : scene.name}
                   >
                     <span className="scene-index">{String(index + 1).padStart(2, '0')}</span>
                     <span>
                       <strong>{scene.name}</strong>
-                      <small>{active ? `Cena ativa · ${(scene.walls ?? []).length} paredes · ${scene.fog?.enabled ? 'visão limitada' : 'visão livre'}` : `${scene.width} × ${scene.height}`}</small>
+                      <small>{active ? `Cena ativa · ${(scene.walls ?? []).length} paredes · ${(scene.regions ?? []).length} regiões` : `${scene.width} × ${scene.height}`}</small>
                     </span>
                   </button>
                 );
@@ -358,6 +386,16 @@ export function VttShell({ onExitCampaign = null, onLogout = null }) {
             movableActorId={membership?.actorId ?? null}
             visionActorId={state.selectedActorId}
           />
+          {isGm && inspectedScene ? (
+            <SceneSettingsInspector
+              scene={inspectedScene}
+              active={activeScene?.id === inspectedScene.id}
+              busy={state.busy}
+              onClose={() => setSceneInspectorId(null)}
+              onActivate={handleActivateInspectedScene}
+              onUpdateElevation={updateSceneElevation}
+            />
+          ) : null}
         </section>
 
         {rightOpen && !focusMode ? (
