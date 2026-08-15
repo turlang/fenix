@@ -145,7 +145,23 @@ Dados do ator, de acordo com o sistema instalado/configurado para a campanha.
 
 WebSocket, renderer, guards, revision, pipeline e telemetria não pertencem à superfície principal. Devem ficar em diagnóstico/admin.
 
-## 7. Recuperação das branches avançadas
+## 7. Padrões de interação de VTTs maduros
+
+Foundry VTT é a principal referência de ergonomia para o Fênix. Outros VTTs maduros podem ser consultados para validar padrões já consolidados antes de criar uma interação nova. O objetivo é reaproveitar convenções compreensíveis, não copiar identidade visual, assets ou arquitetura modular.
+
+Regras de interação:
+
+- clique esquerdo seleciona, move ou executa a ferramenta ativa;
+- botão direito é contextual e nunca deve iniciar arraste do token;
+- botão direito sobre um token abre as configurações daquela instância/entidade;
+- botão direito sobre o espaço da cena abre as configurações da cena ativa para o Mestre;
+- configurações contextuais são temporárias e substituem painéis genéricos; não acumulam janelas sobre o mapa;
+- propriedades de mapa aparecem no contexto Mapa; propriedades de entidade/ficha não aparecem nesse editor;
+- o Mestre deve conseguir chegar a uma configuração pelo próprio objeto visual, sem navegar por menus distantes.
+
+O inspector de token deve deixar explícitos `tokenId`, `actorId`, `sheetId` e `systemId`. O inspector de cena deve concentrar escala/grade, geometria, luz, Fog, elevação e regiões, conforme essas capacidades forem sendo portadas.
+
+## 8. Recuperação das branches avançadas
 
 As branches anteriores já possuem capacidades que devem ser reaproveitadas seletivamente:
 
@@ -155,7 +171,7 @@ As branches anteriores já possuem capacidades que devem ser reaproveitadas sele
 
 Elas não devem ser mescladas integralmente sobre o `main` atual porque as linhas divergiram. O código será portado por domínio para preservar o shell atual e as correções recentes.
 
-## 8. Regra arquitetural
+## 9. Regra arquitetural
 
 ```text
 Mapa/Cena ────────┐
