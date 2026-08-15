@@ -46,7 +46,7 @@ test('piso e rampa resolvem Z terrestre sem alterar a regra de movimento do sist
   }], { sceneWidth: 500, sceneHeight: 500 });
 
   assert.equal(resolveGroundElevation({ regions, point: { x: 60, y: 30 } }).elevation, 1.5);
-  assert.equal(resolveGroundElevation({ regions, point: { x: 120, y: 30 } }).elevation, 3);
+  assert.equal(resolveGroundElevation({ regions, point: { x: 100, y: 30 } }).elevation, 2.5);
 });
 
 test('voo mantém autoridade vertical independente da superfície terrestre', () => {
