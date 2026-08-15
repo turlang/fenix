@@ -3,7 +3,7 @@
   top: 16px;
   right: 16px;
   z-index: 32;
-  width: min(320px, calc(100% - 32px));
+  width: min(340px, calc(100% - 32px));
   max-height: calc(100% - 32px);
   overflow: auto;
   padding: 16px;
@@ -12,6 +12,10 @@
   background: rgba(12, 14, 16, 0.96);
   box-shadow: 0 18px 50px rgba(0, 0, 0, 0.38);
   backdrop-filter: blur(16px);
+}
+
+.center-stage {
+  position: relative;
 }
 
 .map-context-inspector-heading {
@@ -33,6 +37,11 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.map-context-inspector-heading small {
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 0.68rem;
 }
 
 .context-close-button {
@@ -116,6 +125,116 @@
   margin-top: 14px;
 }
 
+.scene-physical-settings {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.scene-physical-heading,
+.scene-level-list-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.scene-physical-heading > div {
+  display: grid;
+  gap: 3px;
+}
+
+.scene-physical-heading strong {
+  font-size: 0.82rem;
+}
+
+.scene-switch {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 0.7rem;
+}
+
+.scene-physical-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.scene-physical-grid label {
+  position: relative;
+  display: grid;
+  gap: 4px;
+  color: rgba(255, 255, 255, 0.52);
+  font-size: 0.66rem;
+}
+
+.scene-physical-grid label span {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  color: rgba(255, 255, 255, 0.38);
+  pointer-events: none;
+}
+
+.scene-physical-grid input,
+.scene-level-row input {
+  min-width: 0;
+  padding: 8px 24px 8px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.035);
+  color: inherit;
+}
+
+.scene-level-list {
+  display: grid;
+  gap: 6px;
+}
+
+.scene-level-list-heading {
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 0.68rem;
+}
+
+.scene-level-list-heading button,
+.scene-level-row button {
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.035);
+  color: inherit;
+  cursor: pointer;
+}
+
+.scene-level-list-heading button {
+  padding: 5px 8px;
+}
+
+.scene-level-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 70px 18px 28px;
+  align-items: center;
+  gap: 5px;
+}
+
+.scene-level-row span {
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 0.66rem;
+}
+
+.scene-level-row button {
+  width: 28px;
+  height: 28px;
+}
+
+.scene-level-row button:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
 @media (max-width: 860px) {
   .map-context-inspector {
     top: auto;
@@ -124,5 +243,9 @@
     left: 10px;
     width: auto;
     max-height: 58%;
+  }
+
+  .scene-physical-grid {
+    grid-template-columns: 1fr;
   }
 }
