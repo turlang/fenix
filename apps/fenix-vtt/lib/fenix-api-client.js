@@ -103,6 +103,21 @@ export class FenixApiClient {
   acceptInvite(token) { return this.request('/v1/invites/accept', { method: 'POST', body: { token } }); }
   registerInvite(input) { return this.request('/v1/invites/register', { method: 'POST', body: input }); }
 
+  listActors(campaignId) {
+    return this.request(`/v1/campaigns/${encodeURIComponent(campaignId)}/actors`);
+  }
+
+  getActor(campaignId, actorId) {
+    return this.request(`/v1/campaigns/${encodeURIComponent(campaignId)}/actors/${encodeURIComponent(actorId)}`);
+  }
+
+  upsertActor(campaignId, actorId, input) {
+    return this.request(`/v1/campaigns/${encodeURIComponent(campaignId)}/actors/${encodeURIComponent(actorId)}`, {
+      method: 'POST',
+      body: input
+    });
+  }
+
   listScenes(campaignId) {
     return this.request(`/v1/campaigns/${encodeURIComponent(campaignId)}/scenes`);
   }

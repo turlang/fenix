@@ -10,6 +10,7 @@ import {
   snapScenePoint
 } from '../../../packages/scene-geometry/src/index.js';
 import { normalizeSceneFog } from '../../../packages/scene-vision/src/index.js';
+import { ActorSheetInspector } from './actor-sheet-inspector.jsx';
 import { FogOfWarOverlay } from './fog-of-war-overlay.jsx';
 import { SceneContextControls } from './scene-context-controls.jsx';
 import { SceneRegionAuthoring } from './scene-region-authoring.jsx';
@@ -485,8 +486,11 @@ export function MapStage({
     if (!onFogChanged || !canMoveAny || demoZonesEnabled || fogSaving) return;
     setFogSaving(true);
     try {
+      const normalized = normalizeSceneFog(fogDraft);
       const result = await onFogChanged(scene.id, {
-        ...normalizeSceneFog(fogDraft),
+        enabled: normalized.enabled,
+        exploredOpacity: normalized.exploredOpacity,
+        unexploredOpacity: normalized.unexploredOpacity,
         resetExploration
       });
       setFogDraft(normalizeSceneFog(result?.scene?.fog ?? fogDraft));
@@ -601,7 +605,6 @@ export function MapStage({
   const fogActive = fogEnabled && (!canMoveAny || fogPreview);
   const resolvedVisionActorId = canMoveAny ? visionActorId : movableActorId;
   const inspectedToken = contextInspector?.type === 'token' ? contextInspector.token : null;
-  const inspectedIdentity = inspectedToken ? tokenIdentity(inspectedToken) : null;
 
   return (
     <section className={`map-stage map-tool-${tool} context-${controlContext} ${wallEditorOpen ? 'wall-authoring-active' : ''} ${regionEditorOpen ? 'region-authoring-active' : ''}`} aria-label="Mapa tático">
@@ -680,15 +683,14 @@ export function MapStage({
 
       {fogEditorOpen ? (
         <div className="fog-config-panel">
-          <div className="fog-config-heading"><strong>Fog of War</strong><small>Visão por token</small></div>
+          <div className="fog-config-heading"><strong>Fog of War</strong><small>Memória da cena</small></div>
           <label className="fog-config-toggle"><input type="checkbox" checked={fogDraft.enabled} onChange={(event) => setFogDraft((fog) => ({ ...fog, enabled: event.target.checked }))} /> Ativar Fog nesta cena</label>
-          <label>Alcance de visão (células)<input type="number" min="1" max="60" step="1" value={fogDraft.visionRangeCells} onChange={(event) => setFogDraft((fog) => ({ ...fog, visionRangeCells: event.target.value }))} /></label>
           <div className="fog-config-row">
             <label>Opacidade explorada<input type="number" min="0" max="0.95" step="0.05" value={fogDraft.exploredOpacity} onChange={(event) => setFogDraft((fog) => ({ ...fog, exploredOpacity: event.target.value }))} /></label>
             <label>Opacidade não vista<input type="number" min="0" max="1" step="0.05" value={fogDraft.unexploredOpacity} onChange={(event) => setFogDraft((fog) => ({ ...fog, unexploredOpacity: event.target.value }))} /></label>
           </div>
           <label className="fog-reset-toggle"><input type="checkbox" checked={resetExploration} onChange={(event) => setResetExploration(event.target.checked)} /> Limpar áreas exploradas ao salvar</label>
-          <small className="fog-config-help">Paredes e portas fechadas/trancadas bloqueiam a linha de visão. Portas abertas deixam a visão passar.</small>
+          <small className="fog-config-help">Fog guarda apenas o que já foi explorado. Alcance e sentidos vêm da Ficha + Sistema RPG; paredes e portas continuam definindo a linha de visão.</small>
           <div className="fog-config-actions">
             <button type="button" onClick={() => { setFogDraft(normalizeSceneFog(scene.fog ?? {})); setResetExploration(false); setFogEditorOpen(false); }}>Cancelar</button>
             <button type="button" className="primary-button" disabled={fogSaving || busy} onClick={saveFog}>{fogSaving ? 'Salvando…' : 'Salvar Fog'}</button>
@@ -707,22 +709,12 @@ export function MapStage({
           </div>
 
           {contextInspector.type === 'token' ? (
-            <>
-              <div className="context-inspector-section">
-                <span className="eyebrow">Configurações do token</span>
-                <dl className="context-definition-list">
-                  <div><dt>Token</dt><dd>{inspectedIdentity?.tokenId}</dd></div>
-                  <div><dt>Ator</dt><dd>{inspectedIdentity?.actorId}</dd></div>
-                  <div><dt>Ficha</dt><dd>{inspectedIdentity?.sheetId}</dd></div>
-                  <div><dt>Sistema</dt><dd>{inspectedIdentity?.systemId}</dd></div>
-                  <div><dt>Posição</dt><dd>{numberLabel(inspectedToken?.x)}, {numberLabel(inspectedToken?.y)}</dd></div>
-                  <div><dt>Elevação</dt><dd>{numberLabel(inspectedToken?.elevation)} m</dd></div>
-                  <div><dt>Footprint</dt><dd>{numberLabel(inspectedToken?.footprint?.widthCells, 1)} × {numberLabel(inspectedToken?.footprint?.heightCells, 1)} cél.</dd></div>
-                </dl>
-              </div>
-              <p className="context-inspector-note">Visão, deslocamento, voo, natação e demais capacidades pertencem à ficha + sistema de RPG. O token apenas representa essa entidade na cena.</p>
-              <button type="button" className="primary-button context-inspector-primary" onClick={() => { onSelectedActor?.(inspectedIdentity?.actorId); setContextInspector(null); }}>Selecionar entidade</button>
-            </>
+            <ActorSheetInspector
+              token={inspectedToken}
+              onApplied={async () => {
+                if (inspectedToken) await onTokenMoved?.(inspectedToken, {});
+              }}
+            />
           ) : (
             <>
               <div className="context-inspector-section">
@@ -742,7 +734,7 @@ export function MapStage({
                   <button type="button" onClick={() => openSceneTool('grid')}>Grade e escala</button>
                   <button type="button" onClick={() => openSceneTool('walls')}>Paredes e portas</button>
                   <button type="button" onClick={() => openSceneTool('regions')}>Pisos, escadas e rampas</button>
-                  <button type="button" onClick={() => openSceneTool('fog')}>Fog / visão</button>
+                  <button type="button" onClick={() => openSceneTool('fog')}>Fog / exploração</button>
                 </div>
               ) : null}
               <p className="context-inspector-note">Mapa guarda geometria e ambiente. Regras de personagem não pertencem à cena.</p>

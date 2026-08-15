@@ -90,11 +90,12 @@ try {
   assert.equal(configured.statusCode, 200);
   assert.deepEqual(configured.json().scene.fog, {
     enabled: true,
-    visionRangeCells: 10,
+    visionRangeCells: 8,
     exploredOpacity: 0.45,
     unexploredOpacity: 0.95,
     exploredByActor: {}
   });
+  assert.notEqual(configured.json().scene.fog.visionRangeCells, 10, 'alcance enviado pelo cliente deve ser ignorado; visão pertence à ficha');
 
   const invite = await app.inject({
     method: 'POST',

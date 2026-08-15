@@ -160,12 +160,14 @@ test('runtime reaplica ficha do servidor e rejeita spoof visual do navegador', (
 test('composition root e overlay usam a mesma autoridade de visão', async () => {
   const server = await readFile(new URL('../apps/api/src/server.js', import.meta.url), 'utf8');
   const overlay = await readFile(new URL('../apps/fenix-vtt/components/fog-of-war-overlay.jsx', import.meta.url), 'utf8');
+  const stage = await readFile(new URL('../apps/fenix-vtt/components/map-stage.jsx', import.meta.url), 'utf8');
+  const sceneRoutes = await readFile(new URL('../apps/api/src/http/register-scene-routes.js', import.meta.url), 'utf8');
   const fogCss = await readFile(new URL('../apps/fenix-vtt/app/fog-of-war.css', import.meta.url), 'utf8');
 
   assert.match(server, /CampaignActorService/);
   assert.match(server, /CampaignExplorationService/);
   assert.match(server, /resolveActorRuntime/);
-  assert.match(server, /explorationService\.record/);
+  assert.match(server, /explorationService\.recordExploration/);
   assert.match(server, /actorService,/);
 
   assert.match(overlay, /token\.actorId === actorId/);
@@ -174,6 +176,8 @@ test('composition root e overlay usam a mesma autoridade de visão', async () =>
   assert.match(overlay, /originElevation: actorToken\.elevation \?\? 0/);
   assert.match(overlay, /elevationEnabled: scene\.elevation\?\.enabled === true/);
 
-  assert.match(fogCss, /Ficha \+ Sistema RPG/);
-  assert.match(fogCss, /label:nth-of-type\(2\)/);
+  assert.match(stage, /Ficha \+ Sistema RPG/);
+  assert.doesNotMatch(stage, /Alcance de visão \(células\)/);
+  assert.doesNotMatch(sceneRoutes, /visionRangeCells: request\.body\?\.visionRangeCells/);
+  assert.doesNotMatch(fogCss, /label:nth-of-type\(2\)/);
 });
