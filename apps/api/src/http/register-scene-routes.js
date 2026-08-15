@@ -155,7 +155,6 @@ export function registerSceneRoutes(app, { authService, sceneService }) {
         userId: authenticated.user.id,
         sceneId: request.params.sceneId,
         enabled: request.body?.enabled,
-        visionRangeCells: request.body?.visionRangeCells,
         exploredOpacity: request.body?.exploredOpacity,
         unexploredOpacity: request.body?.unexploredOpacity,
         resetExploration: request.body?.resetExploration === true
