@@ -72,10 +72,7 @@ export class FenixApiClient {
     } catch (error) {
       if (error instanceof FenixApiError) throw error;
       if (error?.name === 'AbortError') {
-        throw new FenixApiError('O Engine não respondeu dentro do tempo limite.', {
-          code: 'FENIX_API_TIMEOUT',
-          cause: error
-        });
+        throw new FenixApiError('O Engine não respondeu dentro do tempo limite.', { code: 'FENIX_API_TIMEOUT', cause: error });
       }
       throw new FenixApiError('Não foi possível conectar ao Fênix Engine.', {
         code: 'FENIX_API_UNREACHABLE',
@@ -150,6 +147,20 @@ export class FenixApiClient {
     return this.request(`/v1/campaigns/${encodeURIComponent(campaignId)}/scenes/${encodeURIComponent(sceneId)}/walls`, {
       method: 'POST',
       body: { walls }
+    });
+  }
+
+  updateSceneElevation(campaignId, sceneId, elevation) {
+    return this.request(`/v1/campaigns/${encodeURIComponent(campaignId)}/scenes/${encodeURIComponent(sceneId)}/elevation`, {
+      method: 'POST',
+      body: { elevation }
+    });
+  }
+
+  updateSceneRegions(campaignId, sceneId, regions) {
+    return this.request(`/v1/campaigns/${encodeURIComponent(campaignId)}/scenes/${encodeURIComponent(sceneId)}/regions`, {
+      method: 'POST',
+      body: { regions }
     });
   }
 

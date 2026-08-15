@@ -31,7 +31,9 @@ function runtimeScene(scene) {
     height: scene.height,
     grid: structuredClone(scene.grid ?? { size: 70, type: 'square', offsetX: 0, offsetY: 0, visible: true }),
     walls: structuredClone(scene.walls ?? []),
-    lighting: structuredClone(scene.lighting ?? { enabled: false, darkness: 0.78, sources: [] })
+    lighting: structuredClone(scene.lighting ?? { enabled: false, darkness: 0.78, sources: [] }),
+    elevation: structuredClone(scene.elevation ?? { enabled: false, unit: 'm' }),
+    regions: structuredClone(scene.regions ?? [])
   };
 }
 
@@ -335,7 +337,8 @@ export function FenixSessionProvider({ children, campaign, currentUser }) {
   }, [campaign.id, client, enqueueAudio, ensureSession]);
 
   const moveToken = useCallback(async (token, { roomEntry = null, roomId = undefined } = {}) => {
-    if (!isGm && membership?.actorId && token.id !== membership.actorId) return false;
+    const tokenActorId = token?.actorId ?? token?.id;
+    if (!isGm && membership?.actorId && tokenActorId !== membership.actorId) return false;
     const normalizedToken = { ...token };
     dispatch({ type: 'REALTIME_TOKEN', token: normalizedToken, revision: state.revision });
     if (realtimeRef.current?.connected) {
@@ -440,89 +443,94 @@ export function FenixSessionProvider({ children, campaign, currentUser }) {
     }
   }, [campaign.id, client, isGm, sceneCatalog.scenes]);
 
+  const syncSceneResult = useCallback((result) => {
+    setSceneCatalog((current) => ({
+      ...current,
+      scenes: current.scenes.map((scene) => scene.id === result.scene.id ? result.scene : scene)
+    }));
+    if (result.activeSceneId === result.scene.id && realtimeRef.current?.connected) {
+      realtimeRef.current.updateScene(runtimeScene(result.scene));
+    }
+    return result;
+  }, []);
+
   const updateSceneGrid = useCallback(async (sceneId, grid) => {
     if (!isGm) throw new Error('Somente o mestre pode calibrar a grade.');
     dispatch({ type: 'REQUEST_BEGIN' });
     try {
-      const result = await client.updateSceneGrid(campaign.id, sceneId, grid);
-      setSceneCatalog((current) => ({
-        ...current,
-        scenes: current.scenes.map((scene) => scene.id === result.scene.id ? result.scene : scene)
-      }));
-      if (result.activeSceneId === result.scene.id && realtimeRef.current?.connected) {
-        realtimeRef.current.updateScene(runtimeScene(result.scene));
-      }
-      return result;
+      return syncSceneResult(await client.updateSceneGrid(campaign.id, sceneId, grid));
     } catch (error) {
       dispatch({ type: 'CONNECTION_ERROR', disconnected: false, error: errorMessage(error) });
       throw error;
     } finally {
       dispatch({ type: 'REQUEST_END' });
     }
-  }, [campaign.id, client, isGm]);
+  }, [campaign.id, client, isGm, syncSceneResult]);
 
   const updateSceneWalls = useCallback(async (sceneId, walls) => {
     if (!isGm) throw new Error('Somente o mestre pode editar paredes e portas.');
     dispatch({ type: 'REQUEST_BEGIN' });
     try {
-      const result = await client.updateSceneWalls(campaign.id, sceneId, walls);
-      setSceneCatalog((current) => ({
-        ...current,
-        scenes: current.scenes.map((scene) => scene.id === result.scene.id ? result.scene : scene)
-      }));
-      if (result.activeSceneId === result.scene.id && realtimeRef.current?.connected) {
-        realtimeRef.current.updateScene(runtimeScene(result.scene));
-      }
-      return result;
+      return syncSceneResult(await client.updateSceneWalls(campaign.id, sceneId, walls));
     } catch (error) {
       dispatch({ type: 'CONNECTION_ERROR', disconnected: false, error: errorMessage(error) });
       throw error;
     } finally {
       dispatch({ type: 'REQUEST_END' });
     }
-  }, [campaign.id, client, isGm]);
+  }, [campaign.id, client, isGm, syncSceneResult]);
+
+  const updateSceneElevation = useCallback(async (sceneId, elevation) => {
+    if (!isGm) throw new Error('Somente o mestre pode configurar níveis e elevação.');
+    dispatch({ type: 'REQUEST_BEGIN' });
+    try {
+      return syncSceneResult(await client.updateSceneElevation(campaign.id, sceneId, elevation));
+    } catch (error) {
+      dispatch({ type: 'CONNECTION_ERROR', disconnected: false, error: errorMessage(error) });
+      throw error;
+    } finally {
+      dispatch({ type: 'REQUEST_END' });
+    }
+  }, [campaign.id, client, isGm, syncSceneResult]);
+
+  const updateSceneRegions = useCallback(async (sceneId, regions) => {
+    if (!isGm) throw new Error('Somente o mestre pode editar pisos, escadas e rampas.');
+    dispatch({ type: 'REQUEST_BEGIN' });
+    try {
+      return syncSceneResult(await client.updateSceneRegions(campaign.id, sceneId, regions));
+    } catch (error) {
+      dispatch({ type: 'CONNECTION_ERROR', disconnected: false, error: errorMessage(error) });
+      throw error;
+    } finally {
+      dispatch({ type: 'REQUEST_END' });
+    }
+  }, [campaign.id, client, isGm, syncSceneResult]);
 
   const updateSceneFog = useCallback(async (sceneId, fog) => {
     if (!isGm) throw new Error('Somente o mestre pode configurar o Fog of War.');
     dispatch({ type: 'REQUEST_BEGIN' });
     try {
-      const result = await client.updateSceneFog(campaign.id, sceneId, fog);
-      setSceneCatalog((current) => ({
-        ...current,
-        scenes: current.scenes.map((scene) => scene.id === result.scene.id ? result.scene : scene)
-      }));
-      if (result.activeSceneId === result.scene.id && realtimeRef.current?.connected) {
-        realtimeRef.current.updateScene(runtimeScene(result.scene));
-      }
-      return result;
+      return syncSceneResult(await client.updateSceneFog(campaign.id, sceneId, fog));
     } catch (error) {
       dispatch({ type: 'CONNECTION_ERROR', disconnected: false, error: errorMessage(error) });
       throw error;
     } finally {
       dispatch({ type: 'REQUEST_END' });
     }
-  }, [campaign.id, client, isGm]);
+  }, [campaign.id, client, isGm, syncSceneResult]);
 
   const updateSceneLighting = useCallback(async (sceneId, lighting) => {
     if (!isGm) throw new Error('Somente o mestre pode configurar a iluminação dinâmica.');
     dispatch({ type: 'REQUEST_BEGIN' });
     try {
-      const result = await client.updateSceneLighting(campaign.id, sceneId, lighting);
-      setSceneCatalog((current) => ({
-        ...current,
-        scenes: current.scenes.map((scene) => scene.id === result.scene.id ? result.scene : scene)
-      }));
-      if (result.activeSceneId === result.scene.id && realtimeRef.current?.connected) {
-        realtimeRef.current.updateScene(runtimeScene(result.scene));
-      }
-      return result;
+      return syncSceneResult(await client.updateSceneLighting(campaign.id, sceneId, lighting));
     } catch (error) {
       dispatch({ type: 'CONNECTION_ERROR', disconnected: false, error: errorMessage(error) });
       throw error;
     } finally {
       dispatch({ type: 'REQUEST_END' });
     }
-  }, [campaign.id, client, isGm]);
+  }, [campaign.id, client, isGm, syncSceneResult]);
 
   const selfPresence = state.presence.find((peer) => peer.userId === currentUser?.id) ?? null;
   const value = useMemo(() => ({
@@ -545,6 +553,8 @@ export function FenixSessionProvider({ children, campaign, currentUser }) {
     activateScene,
     updateSceneGrid,
     updateSceneWalls,
+    updateSceneElevation,
+    updateSceneRegions,
     updateSceneFog,
     updateSceneLighting,
     resolveAssetUrl: (assetId) => client.assetUrl(campaign.id, assetId),
@@ -553,7 +563,12 @@ export function FenixSessionProvider({ children, campaign, currentUser }) {
     },
     clearError: () => dispatch({ type: 'CLEAR_ERROR' }),
     replayAudio: (audio) => enqueueAudio(audio)
-  }), [activeScene, activateScene, campaign, client, connect, createInvite, createMapScene, createRemoteMapScene, currentUser, endSession, enqueueAudio, enterRoom, isGm, membership, moveToken, sceneCatalog.scenes, selfPresence, state, submitAction, updateSceneFog, updateSceneGrid, updateSceneLighting, updateSceneWalls]);
+  }), [
+    activeScene, activateScene, campaign, client, connect, createInvite, createMapScene, createRemoteMapScene,
+    currentUser, endSession, enqueueAudio, enterRoom, isGm, membership, moveToken, sceneCatalog.scenes,
+    selfPresence, state, submitAction, updateSceneElevation, updateSceneFog, updateSceneGrid, updateSceneLighting,
+    updateSceneRegions, updateSceneWalls
+  ]);
 
   return <FenixSessionContext.Provider value={value}>{children}</FenixSessionContext.Provider>;
 }

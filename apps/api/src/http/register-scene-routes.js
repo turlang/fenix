@@ -18,10 +18,7 @@ export function registerSceneRoutes(app, { authService, sceneService }) {
   app.get('/v1/campaigns/:campaignId/scenes', async (request, reply) => {
     try {
       const authenticated = requireAuthenticatedRequest(authService, request);
-      return sceneService.list({
-        campaignId: request.params.campaignId,
-        userId: authenticated.user.id
-      });
+      return sceneService.list({ campaignId: request.params.campaignId, userId: authenticated.user.id });
     } catch (error) {
       return sendError(reply, error);
     }
@@ -119,6 +116,34 @@ export function registerSceneRoutes(app, { authService, sceneService }) {
       });
     } catch (error) {
       return sendError(reply, error, 'CAMPAIGN_SCENE_WALLS_UPDATE_FAILED');
+    }
+  });
+
+  app.post('/v1/campaigns/:campaignId/scenes/:sceneId/elevation', async (request, reply) => {
+    try {
+      const authenticated = requireAuthenticatedRequest(authService, request);
+      return await sceneService.updateElevation({
+        campaignId: request.params.campaignId,
+        userId: authenticated.user.id,
+        sceneId: request.params.sceneId,
+        elevation: request.body?.elevation ?? request.body
+      });
+    } catch (error) {
+      return sendError(reply, error, 'CAMPAIGN_SCENE_ELEVATION_UPDATE_FAILED');
+    }
+  });
+
+  app.post('/v1/campaigns/:campaignId/scenes/:sceneId/regions', async (request, reply) => {
+    try {
+      const authenticated = requireAuthenticatedRequest(authService, request);
+      return await sceneService.updateRegions({
+        campaignId: request.params.campaignId,
+        userId: authenticated.user.id,
+        sceneId: request.params.sceneId,
+        regions: request.body?.regions
+      });
+    } catch (error) {
+      return sendError(reply, error, 'CAMPAIGN_SCENE_REGIONS_UPDATE_FAILED');
     }
   });
 
