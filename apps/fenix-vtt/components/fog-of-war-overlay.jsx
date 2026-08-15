@@ -6,6 +6,7 @@ import {
   computeVisibilityPolygon,
   mergeExploredCells,
   normalizeSceneFog,
+  resolveVisionForScene,
   visibleGridCells
 } from '../../../packages/scene-vision/src/index.js';
 import { DynamicLightingOverlay } from './dynamic-lighting-overlay.jsx';
@@ -35,6 +36,11 @@ function exploredPath(cells, grid) {
   }).join('');
 }
 
+function tokenBelongsToActor(token, actorId) {
+  if (!token || !actorId) return false;
+  return token.actorId === actorId || token.id === actorId || token.tokenId === actorId;
+}
+
 export function FogOfWarOverlay({
   scene,
   tokens = [],
@@ -62,9 +68,16 @@ export function FogOfWarOverlay({
   }, [scene?.id, actorId, persisted]);
 
   const actorToken = useMemo(() => {
-    if (transientToken?.id === actorId) return transientToken;
-    return (Array.isArray(tokens) ? tokens : []).find((token) => token?.id === actorId) ?? null;
+    if (tokenBelongsToActor(transientToken, actorId)) return transientToken;
+    return (Array.isArray(tokens) ? tokens : []).find((token) => tokenBelongsToActor(token, actorId)) ?? null;
   }, [actorId, tokens, transientToken]);
+
+  const resolvedVision = useMemo(() => resolveVisionForScene({
+    visionProfile: actorToken?.vision ?? null,
+    sceneScale: scene?.scale ?? null,
+    grid: scene?.grid ?? {},
+    legacyVisionRangeCells: fog.visionRangeCells
+  }), [actorToken?.vision, scene?.scale, scene?.grid?.size, fog.visionRangeCells]);
 
   useEffect(() => {
     if (!active || !fog.enabled || !actorToken || !scene?.grid) return;
@@ -74,7 +87,11 @@ export function FogOfWarOverlay({
       grid: scene.grid,
       sceneWidth: scene.width,
       sceneHeight: scene.height,
-      visionRangeCells: fog.visionRangeCells
+      visionProfile: actorToken.vision ?? null,
+      sceneScale: scene.scale ?? null,
+      visionRangeCells: fog.visionRangeCells,
+      originElevation: actorToken.elevation ?? 0,
+      elevationEnabled: scene.elevation?.enabled === true
     });
     setExploredCells((current) => {
       const merged = mergeExploredCells(current, discovered);
@@ -85,11 +102,16 @@ export function FogOfWarOverlay({
     actorToken?.x,
     actorToken?.y,
     actorToken?.id,
+    actorToken?.actorId,
+    actorToken?.elevation,
+    actorToken?.vision,
     fog.enabled,
     fog.visionRangeCells,
     scene?.id,
     scene?.width,
     scene?.height,
+    scene?.scale,
+    scene?.elevation?.enabled,
     scene?.grid?.size,
     scene?.grid?.offsetX,
     scene?.grid?.offsetY,
@@ -97,24 +119,30 @@ export function FogOfWarOverlay({
   ]);
 
   const visibility = useMemo(() => {
-    if (!active || !fog.enabled || !actorToken) return [];
+    if (!active || !fog.enabled || !actorToken || !resolvedVision.profile.enabled || resolvedVision.pixels <= 0) return [];
     return computeVisibilityPolygon({
       origin: actorToken,
       walls: scene.walls ?? [],
       sceneWidth: scene.width,
       sceneHeight: scene.height,
-      maxDistance: fog.visionRangeCells * (Number(scene.grid?.size) || 70)
+      maxDistance: resolvedVision.pixels,
+      eyeElevation: Number(actorToken.elevation ?? 0) + Number(resolvedVision.profile.eyeHeight ?? 1.6),
+      elevationEnabled: scene.elevation?.enabled === true
     });
   }, [
     active,
     fog.enabled,
-    fog.visionRangeCells,
+    resolvedVision.pixels,
+    resolvedVision.profile.enabled,
+    resolvedVision.profile.eyeHeight,
     actorToken?.x,
     actorToken?.y,
     actorToken?.id,
+    actorToken?.actorId,
+    actorToken?.elevation,
     scene?.width,
     scene?.height,
-    scene?.grid?.size,
+    scene?.elevation?.enabled,
     scene?.walls
   ]);
 
