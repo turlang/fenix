@@ -207,9 +207,10 @@ function resolveAcceptedElevation({ identity, rawToken, requestedToken, previous
 }
 
 export class AuthoritativeRealtimeSessionHub extends RealtimeSessionHub {
-  constructor({ resolveActorRuntime = null, ...options } = {}) {
+  constructor({ resolveActorRuntime = null, resolveSceneTokens = null, ...options } = {}) {
     super(options);
     this.resolveActorRuntime = typeof resolveActorRuntime === 'function' ? resolveActorRuntime : null;
+    this.resolveSceneTokens = typeof resolveSceneTokens === 'function' ? resolveSceneTokens : null;
   }
 
   hydrateSession(sessionId, snapshot = {}) {
@@ -234,12 +235,41 @@ export class AuthoritativeRealtimeSessionHub extends RealtimeSessionHub {
     const normalized = normalizeAuthoritativeScene(scene);
     if (!normalized.id) throw runtimeError('Cena sem id.', 'REALTIME_SCENE_ID_REQUIRED');
     const session = this.ensureSession(sessionId);
+    const previousSceneId = session.scene?.id ?? null;
+    const sceneChanged = previousSceneId !== normalized.id;
+    const persistedTokens = this.resolveSceneTokens?.({ sessionId, sceneId: normalized.id }) ?? null;
+
     session.revision += 1;
     session.scene = normalized;
+    if (Array.isArray(persistedTokens)) {
+      session.tokens = new Map(persistedTokens.map((token) => {
+        const normalizedToken = normalizeAuthoritativeToken(token, token);
+        return [normalizedToken.tokenId, normalizedToken];
+      }));
+    } else if (sceneChanged) {
+      session.tokens = new Map();
+    }
+    if (sceneChanged) session.tokenRooms = new Map();
+
     this.broadcast(sessionId, {
       type: RealtimeEventType.SCENE_UPDATED,
-      payload: { sessionId: session.id, revision: session.revision, scene: normalized, by: identity.clientId }
+      payload: {
+        sessionId: session.id,
+        revision: session.revision,
+        scene: normalized,
+        tokenCount: session.tokens.size,
+        by: identity.clientId
+      }
     });
+
+    // STATE_SYNC substitui atomicamente a lista de tokens no cliente. Isso evita
+    // que tokens da cena anterior permaneçam visíveis durante uma troca de mapa.
+    for (const [clientId, peer] of session.peers.entries()) {
+      this.sendTo(sessionId, clientId, {
+        type: RealtimeEventType.STATE_SYNC,
+        payload: this.getSnapshot(sessionId, { identity: peer.identity })
+      });
+    }
     return normalized;
   }
 
@@ -353,6 +383,11 @@ export class AuthoritativeRealtimeSessionHub extends RealtimeSessionHub {
 }
 
 export class AuthoritativeRealtimeSessionGateway extends RealtimeSessionGateway {
+  constructor({ persistSceneToken = null, ...options } = {}) {
+    super(options);
+    this.persistSceneToken = typeof persistSceneToken === 'function' ? persistSceneToken : null;
+  }
+
   async handleCommand(sessionId, identity, message) {
     if (message.type !== RealtimeCommandType.TOKEN_MOVE) {
       return super.handleCommand(sessionId, identity, message);
@@ -360,6 +395,10 @@ export class AuthoritativeRealtimeSessionGateway extends RealtimeSessionGateway 
 
     const moved = this.hub.applyTokenMove(sessionId, identity, message.payload);
     try {
+      const sceneId = this.hub.getSnapshot(sessionId).scene?.id ?? null;
+      if (sceneId && this.persistSceneToken) {
+        await this.persistSceneToken({ sessionId, sceneId, identity, token: moved.token });
+      }
       if (moved.shouldNarrate) {
         await this.sessionService.describeRoom({ ...moved.roomEntry, actorId: moved.token.actorId });
       }

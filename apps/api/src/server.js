@@ -14,6 +14,7 @@ import {
 } from '../../../packages/campaign-service/src/index.js';
 import { CampaignSceneService } from '../../../packages/campaign-scene-service/src/index.js';
 import { CampaignActorService } from '../../../packages/campaign-actor-service/src/index.js';
+import { CampaignTokenService } from '../../../packages/campaign-token-service/src/index.js';
 import { CampaignExplorationService } from '../../../packages/campaign-exploration-service/src/index.js';
 import { CampaignRuntimeRegistry } from '../../../packages/campaign-runtime-registry/src/index.js';
 import {
@@ -83,6 +84,7 @@ await authService.initialize();
 const campaignService = new CampaignService({ repository, authService, logger });
 await campaignService.initialize();
 const actorService = new CampaignActorService({ campaignService, repository });
+const tokenService = new CampaignTokenService({ campaignService, repository });
 const explorationService = new CampaignExplorationService({
   campaignService,
   actorService,
@@ -139,6 +141,11 @@ const realtimeHub = new AuthoritativeRealtimeSessionHub({
       height: actor.sheet?.height,
       vision: actor.resolved?.vision ?? null
     };
+  },
+  resolveSceneTokens: ({ sessionId, sceneId }) => {
+    const campaign = campaignService.findCampaignBySessionId(sessionId);
+    if (!campaign) return [];
+    return tokenService.listRuntimeForScene({ campaignId: campaign.id, sceneId });
   }
 });
 
@@ -195,6 +202,16 @@ const realtimeGateway = {
       hub: realtimeHub,
       sessionService: scopedSessionService,
       authorizePeer,
+      persistSceneToken: async ({ sceneId, token }) => {
+        const campaign = campaignService.findCampaignBySessionId(sessionId);
+        if (!campaign) {
+          const error = new Error('Sessão não pertence a uma campanha persistente.');
+          error.code = 'CAMPAIGN_SESSION_NOT_FOUND';
+          error.statusCode = 404;
+          throw error;
+        }
+        return tokenService.persistRuntimeToken({ campaignId: campaign.id, sceneId, token });
+      },
       logger
     });
     const peer = gateway.openPeer(input);
