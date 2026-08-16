@@ -114,6 +114,15 @@ export function VttShell({ onExitCampaign = null, onLogout = null }) {
         : null
     };
   }, [activeScene, resolveAssetUrl, state.scene]);
+  const mapTokens = useMemo(() => {
+    if (!activeScene) return state.tokens;
+    const demoSuppressors = demoTokens.map((token) => ({
+      ...token,
+      actorId: `__demo__${token.id}`,
+      visible: false
+    }));
+    return [...demoSuppressors, ...state.tokens];
+  }, [activeScene, state.tokens]);
 
   useEffect(() => {
     if (!isGm) return;
@@ -396,7 +405,7 @@ export function VttShell({ onExitCampaign = null, onLogout = null }) {
             key={mapScene.id}
             scene={mapScene}
             busy={state.busy}
-            authoritativeTokens={state.tokens}
+            authoritativeTokens={mapTokens}
             onTokenMoved={handleMapTokenMoved}
             onSelectedActor={selectActor}
             onGridCalibrated={updateSceneGrid}
