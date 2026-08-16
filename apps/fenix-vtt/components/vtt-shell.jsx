@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { ActorSceneCatalog } from './actor-scene-catalog.jsx';
 import { MapStage } from './map-stage.jsx';
 import { SceneSettingsInspector } from './scene-settings-inspector.jsx';
 import { useFenixSession } from './session-provider.jsx';
@@ -10,12 +11,6 @@ import {
   requestedTokenFromKeyboard,
   resolveClientTokenMovement
 } from '../lib/token-input-movement.js';
-
-const actors = [
-  { id: 'hero-ayla', name: 'Ayla', role: 'Jogadora', hp: '28 / 34' },
-  { id: 'hero-dorian', name: 'Dorian', role: 'Jogador', hp: '21 / 27' },
-  { id: 'npc-warden', name: 'Guardião', role: 'NPC', hp: 'Oculto' }
-];
 
 async function imageDimensions(file) {
   if (typeof createImageBitmap === 'function') {
@@ -44,7 +39,7 @@ export function VttShell({ onExitCampaign = null, onLogout = null }) {
   const [rightOpen, setRightOpen] = useState(true);
   const [focusMode, setFocusMode] = useState(false);
   const [actionText, setActionText] = useState('');
-  const [inviteActorId, setInviteActorId] = useState('hero-dorian');
+  const [inviteActorId, setInviteActorId] = useState(null);
   const [inviteUrl, setInviteUrl] = useState(null);
   const [sceneManagerOpen, setSceneManagerOpen] = useState(false);
   const [sceneUploadBusy, setSceneUploadBusy] = useState(false);
@@ -56,6 +51,7 @@ export function VttShell({ onExitCampaign = null, onLogout = null }) {
     currentUser,
     membership,
     isGm,
+    actors,
     scenes,
     activeScene,
     connect,
@@ -63,6 +59,8 @@ export function VttShell({ onExitCampaign = null, onLogout = null }) {
     moveToken,
     endSession,
     createInvite,
+    createActor,
+    placeActorToken,
     createMapScene,
     createRemoteMapScene,
     activateScene,
@@ -78,8 +76,15 @@ export function VttShell({ onExitCampaign = null, onLogout = null }) {
   } = useFenixSession();
 
   const selectedActor = useMemo(
-    () => actors.find((actor) => actor.id === state.selectedActorId) ?? actors[0],
-    [state.selectedActorId]
+    () => actors.find((actor) => actor.id === state.selectedActorId)
+      ?? actors.find((actor) => actor.id === membership?.actorId)
+      ?? actors[0]
+      ?? null,
+    [actors, membership?.actorId, state.selectedActorId]
+  );
+  const inviteActors = useMemo(
+    () => actors.filter((actor) => actor.kind !== 'npc'),
+    [actors]
   );
   const inspectedScene = useMemo(
     () => scenes.find((scene) => scene.id === sceneInspectorId) ?? null,
@@ -110,9 +115,16 @@ export function VttShell({ onExitCampaign = null, onLogout = null }) {
     };
   }, [activeScene, resolveAssetUrl, state.scene]);
 
+  useEffect(() => {
+    if (!isGm) return;
+    if (inviteActorId && inviteActors.some((actor) => actor.id === inviteActorId)) return;
+    setInviteActorId(inviteActors[0]?.id ?? null);
+  }, [inviteActorId, inviteActors, isGm]);
+
   function currentToken(actorId) {
+    if (!actorId) return null;
     return state.tokens.find((token) => (token.actorId ?? token.id) === actorId)
-      ?? demoTokens.find((token) => (token.actorId ?? token.id) === actorId)
+      ?? (!activeScene ? demoTokens.find((token) => (token.actorId ?? token.id) === actorId) : null)
       ?? null;
   }
 
@@ -160,6 +172,7 @@ export function VttShell({ onExitCampaign = null, onLogout = null }) {
     window.addEventListener('keydown', handleKeyboardMove);
     return () => window.removeEventListener('keydown', handleKeyboardMove);
   }, [
+    activeScene,
     isGm,
     mapScene,
     membership?.actorId,
@@ -191,6 +204,7 @@ export function VttShell({ onExitCampaign = null, onLogout = null }) {
   }
 
   async function handleInvite() {
+    if (!inviteActorId) return;
     try {
       const result = await createInvite(inviteActorId);
       const base = `${window.location.origin}${window.location.pathname}`;
@@ -361,12 +375,16 @@ export function VttShell({ onExitCampaign = null, onLogout = null }) {
             {isGm ? (
               <div className="panel-section invite-panel">
                 <span className="eyebrow">Convite seguro</span>
-                <select value={inviteActorId} onChange={(event) => setInviteActorId(event.target.value)}>
-                  {actors.filter((actor) => actor.id.startsWith('hero-')).map((actor) => (
-                    <option key={actor.id} value={actor.id}>{actor.name}</option>
-                  ))}
-                </select>
-                <button type="button" className="ghost-button" onClick={handleInvite}>Gerar e copiar convite</button>
+                {inviteActors.length ? (
+                  <>
+                    <select value={inviteActorId ?? ''} onChange={(event) => setInviteActorId(event.target.value)}>
+                      {inviteActors.map((actor) => (
+                        <option key={actor.id} value={actor.id}>{actor.name}</option>
+                      ))}
+                    </select>
+                    <button type="button" className="ghost-button" disabled={!inviteActorId || state.busy} onClick={handleInvite}>Gerar e copiar convite</button>
+                  </>
+                ) : <small>Crie um personagem no painel “Em cena” antes de gerar convites.</small>}
                 {inviteUrl ? <small className="invite-link-preview">Link copiado · token de uso único</small> : null}
               </div>
             ) : null}
@@ -375,6 +393,7 @@ export function VttShell({ onExitCampaign = null, onLogout = null }) {
 
         <section className="center-stage">
           <MapStage
+            key={mapScene.id}
             scene={mapScene}
             busy={state.busy}
             authoritativeTokens={state.tokens}
@@ -418,24 +437,18 @@ export function VttShell({ onExitCampaign = null, onLogout = null }) {
               )) : <span className="presence-empty">Aguardando participantes</span>}
             </div>
 
-            <div className="actor-stack">
-              {actors.map((actor) => {
-                const selectable = isGm || actor.id === membership?.actorId;
-                return (
-                  <button
-                    type="button"
-                    className={`actor-card ${state.selectedActorId === actor.id ? 'selected' : ''}`}
-                    key={actor.id}
-                    disabled={!selectable}
-                    onClick={() => selectActor(actor.id)}
-                  >
-                    <div className="actor-avatar">{actor.name.slice(0, 1)}</div>
-                    <div className="actor-copy"><strong>{actor.name}</strong><small>{actor.role}</small></div>
-                    <span className="actor-hp">{actor.hp}</span>
-                  </button>
-                );
-              })}
-            </div>
+            <ActorSceneCatalog
+              actors={actors}
+              tokens={state.tokens}
+              selectedActorId={state.selectedActorId}
+              membershipActorId={membership?.actorId ?? null}
+              isGm={isGm}
+              busy={state.busy}
+              hasActiveScene={Boolean(activeScene)}
+              onSelect={selectActor}
+              onCreate={createActor}
+              onPlace={placeActorToken}
+            />
 
             <div className="ai-card">
               <div className="ai-card-heading">
@@ -479,7 +492,7 @@ export function VttShell({ onExitCampaign = null, onLogout = null }) {
           <span className="command-prompt">›</span>
           <input
             aria-label="Ação do personagem"
-            placeholder={`Ação de ${selectedActor.name}…`}
+            placeholder={selectedActor ? `Ação de ${selectedActor.name}…` : 'Selecione um ator para agir…'}
             value={actionText}
             disabled={state.busy || (!sessionActive && !isGm)}
             onChange={(event) => setActionText(event.target.value)}
