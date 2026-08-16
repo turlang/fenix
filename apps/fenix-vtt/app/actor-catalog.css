@@ -1,0 +1,144 @@
+.actor-catalog {
+  display: grid;
+  gap: 10px;
+}
+
+.actor-catalog-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.actor-catalog-add,
+.actor-scene-action {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #0b0e10;
+  color: #c9ced2;
+  cursor: pointer;
+  font-size: 9px;
+  padding: 7px 9px;
+}
+
+.actor-catalog-add:hover,
+.actor-scene-action:hover:not(:disabled) {
+  border-color: var(--line-strong);
+}
+
+.actor-create-form {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(7, 10, 12, .82);
+}
+
+.actor-create-form label {
+  display: grid;
+  gap: 5px;
+  color: #aeb4b8;
+  font-size: 9px;
+}
+
+.actor-create-form input,
+.actor-create-form select {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #090c0e;
+  color: var(--text);
+  padding: 8px;
+  outline: none;
+}
+
+.actor-create-form input:focus,
+.actor-create-form select:focus {
+  border-color: var(--line-strong);
+}
+
+.actor-create-form small,
+.actor-catalog-hint {
+  color: var(--muted);
+  font-size: 8px;
+  line-height: 1.45;
+}
+
+.real-actor-stack {
+  display: grid;
+  gap: 7px;
+}
+
+.actor-catalog-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 7px;
+  align-items: stretch;
+}
+
+.actor-catalog-row .actor-card {
+  min-width: 0;
+  width: 100%;
+}
+
+.actor-catalog-row.in-scene .actor-card {
+  border-color: rgba(113, 199, 149, .2);
+}
+
+.actor-scene-action {
+  min-width: 58px;
+  align-self: stretch;
+}
+
+.actor-scene-action.present {
+  color: var(--good);
+  border-color: rgba(113, 199, 149, .22);
+  background: rgba(113, 199, 149, .06);
+}
+
+.actor-scene-action:disabled {
+  cursor: default;
+  opacity: .62;
+}
+
+.actor-catalog-empty {
+  display: grid;
+  gap: 5px;
+  padding: 12px;
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+  color: var(--muted);
+}
+
+.actor-catalog-empty strong {
+  color: #c8cdd0;
+  font-size: 10px;
+}
+
+.actor-catalog-empty small {
+  font-size: 8px;
+  line-height: 1.5;
+}
+
+.actor-catalog-status {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(8, 11, 13, .84);
+  color: #d7dadd;
+  font-size: 9px;
+  line-height: 1.45;
+  padding: 8px;
+}
+
+@media (max-width: 980px) {
+  .actor-catalog-row {
+    grid-template-columns: 1fr;
+  }
+
+  .actor-scene-action {
+    min-height: 32px;
+  }
+}
