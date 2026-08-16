@@ -49,7 +49,7 @@ export function createInitialSessionState() {
     tokens: [],
     busy: false,
     error: null,
-    selectedActorId: 'hero-ayla',
+    selectedActorId: null,
     lastRoomId: null,
     timeline: []
   };

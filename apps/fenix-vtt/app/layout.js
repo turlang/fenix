@@ -11,6 +11,7 @@ import './context-inspector.css';
 import './scene-region-authoring.css';
 import './contextual-tools.css';
 import './actor-sheet-inspector.css';
+import './actor-catalog.css';
 
 export const metadata = {
   title: 'Fênix VTT',
