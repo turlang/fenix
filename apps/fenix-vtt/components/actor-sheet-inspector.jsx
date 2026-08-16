@@ -27,6 +27,7 @@ function actorDraft(actor, token) {
   const vision = sheet.vision ?? actor?.resolved?.vision ?? token?.vision ?? {};
   return {
     name: actor?.name ?? token?.name ?? token?.actorId ?? token?.id ?? 'Personagem',
+    kind: actor?.kind ?? token?.entityType ?? 'character',
     sheetId: actor?.sheetId ?? token?.sheetId ?? '',
     systemId: actor?.systemId ?? token?.systemId ?? 'generic',
     height: numeric(sheet.height ?? token?.height, 1.8),
@@ -52,7 +53,7 @@ function actorPayload(draft) {
     name: draft.name,
     sheetId: draft.sheetId || undefined,
     systemId: draft.systemId || 'generic',
-    kind: 'character',
+    kind: draft.kind === 'npc' ? 'npc' : 'character',
     sheet: {
       height: Math.max(0.2, numeric(draft.height, 1.8)),
       movement: {
@@ -77,7 +78,7 @@ function actorPayload(draft) {
 }
 
 export function ActorSheetInspector({ token, onApplied = null }) {
-  const { campaign, isGm } = useFenixSession();
+  const { campaign, isGm, refreshActors } = useFenixSession();
   const client = useMemo(() => createFenixApiClient(), []);
   const actorId = String(token?.actorId ?? token?.id ?? '').trim();
   const [actor, setActor] = useState(null);
@@ -124,6 +125,7 @@ export function ActorSheetInspector({ token, onApplied = null }) {
       const result = await client.upsertActor(campaign.id, actorId, actorPayload(draft));
       setActor(result.actor);
       setDraft(actorDraft(result.actor, token));
+      await refreshActors?.();
       setStatus('Ficha salva e reaplicada ao token.');
       await onApplied?.(result.actor);
     } catch (error) {
@@ -140,6 +142,7 @@ export function ActorSheetInspector({ token, onApplied = null }) {
       {!actor && isGm ? <p className="actor-sheet-callout">Dados legados detectados. Salvar cria uma ficha persistente para esta entidade.</p> : null}
       <div className="actor-sheet-grid two-columns">
         <label>Nome<input value={draft.name} disabled={!isGm} onChange={(event) => field('name', event.target.value)} /></label>
+        <label>Tipo<select value={draft.kind} disabled={!isGm} onChange={(event) => field('kind', event.target.value)}><option value="character">Personagem</option><option value="npc">NPC</option></select></label>
         <label>Altura corporal (m)<input type="number" min="0.2" max="20" step="0.05" value={draft.height} disabled={!isGm} onChange={(event) => field('height', event.target.value)} /></label>
       </div>
 
