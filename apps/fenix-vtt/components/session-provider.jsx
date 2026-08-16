@@ -5,7 +5,7 @@ import { createFenixApiClient } from '../lib/fenix-api-client.js';
 import { createBrowserAudioQueue } from '../lib/browser-audio-queue.js';
 import { createFenixRealtimeClient } from '../lib/realtime-client.js';
 import { createInitialSessionState, createTimelineEntry, sessionReducer } from '../lib/session-state.js';
-import { demoSessionSnapshot, demoTokens } from '../lib/demo-scene.js';
+import { demoSessionSnapshot } from '../lib/demo-scene.js';
 
 const FenixSessionContext = createContext(null);
 
@@ -37,14 +37,27 @@ function runtimeScene(scene) {
   };
 }
 
-function snapshotForCampaign(campaign, scene = null) {
+function snapshotActor(actor) {
+  return {
+    id: actor.id,
+    name: actor.name || actor.id,
+    type: actor.kind === 'npc' ? 'npc' : 'character'
+  };
+}
+
+function snapshotForCampaign(campaign, scene = null, actors = []) {
   const activeScene = runtimeScene(scene);
   const snapshot = {
     ...structuredClone(demoSessionSnapshot),
     activeScene,
+    visibleActors: (Array.isArray(actors) ? actors : []).map(snapshotActor),
     campaign: {
       worldId: campaign.id,
       title: campaign.title
+    },
+    system: {
+      id: campaign.systemId || 'generic',
+      version: '1'
     },
     metadata: {
       ...(demoSessionSnapshot.metadata ?? {}),
@@ -71,9 +84,58 @@ function snapshotForCampaign(campaign, scene = null) {
   return snapshot;
 }
 
+function actorIdFor(kind = 'character') {
+  const prefix = kind === 'npc' ? 'npc' : 'actor';
+  const unique = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  return `${prefix}-${unique}`;
+}
+
+function initialActorSheet() {
+  return {
+    height: 1.8,
+    movement: {
+      defaultMode: 'walk',
+      speeds: {
+        walk: { distance: 9, unit: 'm' },
+        swim: { distance: 0, unit: 'm' },
+        fly: { distance: 0, unit: 'm' }
+      }
+    },
+    vision: {
+      enabled: true,
+      eyeHeight: 1.6,
+      preferredSense: 'normal',
+      senses: {
+        normal: { distance: 12, unit: 'm', enabled: true }
+      }
+    },
+    attributes: {},
+    conditions: [],
+    metadata: {}
+  };
+}
+
+function tokenStartForScene(scene, index = 0) {
+  const grid = Math.max(24, Number(scene?.grid?.size) || 70);
+  const margin = Math.max(grid, 40);
+  const spacing = Math.max(grid * 1.25, 52);
+  const usableWidth = Math.max(grid, Number(scene?.width) - margin * 2);
+  const columns = Math.max(1, Math.floor(usableWidth / spacing));
+  const column = index % columns;
+  const row = Math.floor(index / columns);
+  const maxX = Math.max(margin, Number(scene?.width) - margin);
+  const maxY = Math.max(margin, Number(scene?.height) - margin);
+  return {
+    x: Math.min(maxX, margin + column * spacing),
+    y: Math.min(maxY, margin + row * spacing),
+    size: Math.max(28, Math.min(120, grid * 0.8))
+  };
+}
+
 export function FenixSessionProvider({ children, campaign, currentUser }) {
   const [state, dispatch] = useReducer(sessionReducer, undefined, createInitialSessionState);
   const [sceneCatalog, setSceneCatalog] = useState({ scenes: [], assets: [], activeSceneId: null });
+  const [actorCatalog, setActorCatalog] = useState([]);
   const client = useMemo(() => createFenixApiClient(), []);
   const audioQueueRef = useRef(null);
   const realtimeRef = useRef(null);
@@ -95,6 +157,13 @@ export function FenixSessionProvider({ children, campaign, currentUser }) {
       activeSceneId: catalog.activeSceneId ?? catalog.scenes?.[0]?.id ?? null
     });
     return catalog;
+  }, [campaign.id, client]);
+
+  const refreshActors = useCallback(async () => {
+    const catalog = await client.listActors(campaign.id);
+    const actors = Array.isArray(catalog.actors) ? catalog.actors : [];
+    setActorCatalog(actors);
+    return actors;
   }, [campaign.id, client]);
 
   const appendRealtimeNarration = useCallback((payload) => {
@@ -178,10 +247,7 @@ export function FenixSessionProvider({ children, campaign, currentUser }) {
     try {
       await realtime.connect(sessionId);
       dispatch({ type: 'REALTIME_CONNECTION', status: 'connected', error: null });
-      if (seedWorld && isGm) {
-        realtime.updateScene(runtimeScene(activeScene));
-        for (const token of demoTokens) realtime.moveToken(token, { roomId: null });
-      }
+      if (seedWorld && isGm) realtime.updateScene(runtimeScene(activeScene));
       return true;
     } catch (error) {
       dispatch({ type: 'REALTIME_CONNECTION', status: 'disconnected', error: errorMessage(error) });
@@ -196,6 +262,9 @@ export function FenixSessionProvider({ children, campaign, currentUser }) {
     if (membership?.actorId) dispatch({ type: 'SELECT_ACTOR', actorId: membership.actorId });
 
     void refreshScenes().catch((error) => {
+      if (active) dispatch({ type: 'CONNECTION_ERROR', disconnected: false, error: errorMessage(error) });
+    });
+    void refreshActors().catch((error) => {
       if (active) dispatch({ type: 'CONNECTION_ERROR', disconnected: false, error: errorMessage(error) });
     });
 
@@ -233,7 +302,16 @@ export function FenixSessionProvider({ children, campaign, currentUser }) {
       audioQueueRef.current?.destroy();
       audioQueueRef.current = null;
     };
-  }, [campaign.id, client, handleRealtimeEvent, membership?.actorId, refreshScenes]);
+  }, [campaign.id, client, handleRealtimeEvent, membership?.actorId, refreshActors, refreshScenes]);
+
+  useEffect(() => {
+    const preferredActorId = membership?.actorId ?? actorCatalog[0]?.id ?? null;
+    if (!preferredActorId) return;
+    const selectedExists = actorCatalog.some((actor) => actor.id === state.selectedActorId);
+    if (!state.selectedActorId || (!selectedExists && isGm) || (!isGm && state.selectedActorId !== membership?.actorId)) {
+      dispatch({ type: 'SELECT_ACTOR', actorId: preferredActorId });
+    }
+  }, [actorCatalog, isGm, membership?.actorId, state.selectedActorId]);
 
   const ensureSession = useCallback(async () => {
     const status = await client.status(campaign.id);
@@ -244,7 +322,8 @@ export function FenixSessionProvider({ children, campaign, currentUser }) {
     }
 
     if (!isGm) throw new Error('Aguarde o mestre iniciar a sessão desta campanha.');
-    const snapshot = snapshotForCampaign(campaign, activeScene);
+    const actors = await refreshActors();
+    const snapshot = snapshotForCampaign(campaign, activeScene, actors);
     const started = await client.start(snapshot, campaign.id);
     const entry = createTimelineEntry({
       type: 'SESSION_OPENING',
@@ -256,7 +335,7 @@ export function FenixSessionProvider({ children, campaign, currentUser }) {
     enqueueAudio(started.audio);
     await connectRealtime(started.sessionId, { hydrateHistory: false, seedWorld: true });
     return started;
-  }, [activeScene, campaign, client, connectRealtime, enqueueAudio, isGm]);
+  }, [activeScene, campaign, client, connectRealtime, enqueueAudio, isGm, refreshActors]);
 
   const connect = useCallback(async () => {
     dispatch({ type: 'REQUEST_BEGIN' });
@@ -375,8 +454,82 @@ export function FenixSessionProvider({ children, campaign, currentUser }) {
 
   const createInvite = useCallback(async (actorId) => {
     if (!isGm) throw new Error('Somente o mestre pode criar convites.');
+    const actor = actorCatalog.find((item) => item.id === actorId);
+    if (!actor) throw new Error('Crie a ficha do personagem antes de gerar o convite.');
+    if (actor.kind === 'npc') throw new Error('Convites só podem ser vinculados a personagens de jogador.');
     return client.createInvite(campaign.id, actorId);
-  }, [campaign.id, client, isGm]);
+  }, [actorCatalog, campaign.id, client, isGm]);
+
+  const createActor = useCallback(async ({ name, kind = 'character' } = {}) => {
+    if (!isGm) throw new Error('Somente o mestre pode criar atores.');
+    const actorName = String(name ?? '').trim();
+    if (actorName.length < 2) throw new Error('Informe um nome válido para o ator.');
+    const normalizedKind = kind === 'npc' ? 'npc' : 'character';
+    const actorId = actorIdFor(normalizedKind);
+    dispatch({ type: 'REQUEST_BEGIN' });
+    try {
+      const result = await client.upsertActor(campaign.id, actorId, {
+        name: actorName,
+        kind: normalizedKind,
+        systemId: campaign.systemId || 'generic',
+        sheet: initialActorSheet()
+      });
+      await refreshActors();
+      dispatch({ type: 'SELECT_ACTOR', actorId });
+      return result.actor;
+    } catch (error) {
+      dispatch({ type: 'CONNECTION_ERROR', disconnected: false, error: errorMessage(error) });
+      throw error;
+    } finally {
+      dispatch({ type: 'REQUEST_END' });
+    }
+  }, [campaign.id, campaign.systemId, client, isGm, refreshActors]);
+
+  const placeActorToken = useCallback(async (actorId) => {
+    if (!isGm) throw new Error('Somente o mestre pode colocar tokens na cena.');
+    if (!activeScene) throw new Error('Crie ou ative um mapa antes de colocar tokens.');
+    let actor = actorCatalog.find((item) => item.id === actorId) ?? null;
+    if (!actor) actor = (await refreshActors()).find((item) => item.id === actorId) ?? null;
+    if (!actor) throw new Error('Ator não encontrado na campanha.');
+
+    const existing = state.tokens.find((token) => (token.actorId ?? token.id) === actor.id) ?? null;
+    if (existing) {
+      dispatch({ type: 'SELECT_ACTOR', actorId: actor.id });
+      return { actor, token: existing, existing: true };
+    }
+
+    dispatch({ type: 'REQUEST_BEGIN' });
+    try {
+      await ensureSession();
+      const realtime = realtimeRef.current;
+      if (!realtime?.connected) throw new Error('Canal realtime indisponível para colocar o token.');
+      const start = tokenStartForScene(activeScene, state.tokens.length);
+      const token = {
+        id: `token-${actor.id}`,
+        tokenId: `token-${actor.id}`,
+        actorId: actor.id,
+        sheetId: actor.sheetId,
+        systemId: actor.systemId,
+        kind: actor.kind,
+        name: actor.name,
+        image: actor.image ?? null,
+        x: start.x,
+        y: start.y,
+        elevation: 0,
+        size: start.size,
+        visible: true
+      };
+      realtime.moveToken(token, { roomId: null });
+      dispatch({ type: 'REALTIME_TOKEN', token, revision: state.revision });
+      dispatch({ type: 'SELECT_ACTOR', actorId: actor.id });
+      return { actor, token, existing: false };
+    } catch (error) {
+      dispatch({ type: 'CONNECTION_ERROR', disconnected: error?.code === 'FENIX_API_UNREACHABLE', error: errorMessage(error) });
+      throw error;
+    } finally {
+      dispatch({ type: 'REQUEST_END' });
+    }
+  }, [activeScene, actorCatalog, ensureSession, isGm, refreshActors, state.revision, state.tokens]);
 
   const createMapScene = useCallback(async ({ file, name, description, width, height, gridSize }) => {
     if (!isGm) throw new Error('Somente o mestre pode criar cenas.');
@@ -540,6 +693,7 @@ export function FenixSessionProvider({ children, campaign, currentUser }) {
     membership,
     isGm,
     identity: selfPresence ?? membership,
+    actors: actorCatalog,
     scenes: sceneCatalog.scenes,
     activeScene,
     connect,
@@ -548,6 +702,9 @@ export function FenixSessionProvider({ children, campaign, currentUser }) {
     moveToken,
     endSession,
     createInvite,
+    createActor,
+    placeActorToken,
+    refreshActors,
     createMapScene,
     createRemoteMapScene,
     activateScene,
@@ -564,10 +721,10 @@ export function FenixSessionProvider({ children, campaign, currentUser }) {
     clearError: () => dispatch({ type: 'CLEAR_ERROR' }),
     replayAudio: (audio) => enqueueAudio(audio)
   }), [
-    activeScene, activateScene, campaign, client, connect, createInvite, createMapScene, createRemoteMapScene,
-    currentUser, endSession, enqueueAudio, enterRoom, isGm, membership, moveToken, sceneCatalog.scenes,
-    selfPresence, state, submitAction, updateSceneElevation, updateSceneFog, updateSceneGrid, updateSceneLighting,
-    updateSceneRegions, updateSceneWalls
+    activeScene, activateScene, actorCatalog, campaign, client, connect, createActor, createInvite, createMapScene,
+    createRemoteMapScene, currentUser, endSession, enqueueAudio, enterRoom, isGm, membership, moveToken,
+    placeActorToken, refreshActors, sceneCatalog.scenes, selfPresence, state, submitAction, updateSceneElevation,
+    updateSceneFog, updateSceneGrid, updateSceneLighting, updateSceneRegions, updateSceneWalls
   ]);
 
   return <FenixSessionContext.Provider value={value}>{children}</FenixSessionContext.Provider>;
