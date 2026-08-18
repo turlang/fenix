@@ -48,6 +48,14 @@ function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+async function responseJson(response) {
+  try {
+    return typeof response?.json === 'function' ? await response.json() : null;
+  } catch {
+    return null;
+  }
+}
+
 function launchValues(record) {
   return {
     renderSessionId: record.renderSessionId,
@@ -94,6 +102,10 @@ export class ProcessRenderRuntimeLauncher {
     cwd = null,
     streamerUrlTemplate,
     bootstrapBaseUrl = null,
+    runtimeStatusBaseUrl = null,
+    requireRuntimeEvidence = false,
+    runtimeEvidenceTimeoutMs = 20_000,
+    runtimeEvidenceIntervalMs = 250,
     readyUrlTemplate = null,
     extraArgs = [],
     startupGraceMs = 1500,
@@ -108,6 +120,10 @@ export class ProcessRenderRuntimeLauncher {
     this.cwd = cwd ? clean(cwd) : undefined;
     this.streamerUrlTemplate = String(streamerUrlTemplate ?? '').trim();
     this.bootstrapBaseUrl = safeHttpBaseUrl(bootstrapBaseUrl);
+    this.runtimeStatusBaseUrl = safeHttpBaseUrl(runtimeStatusBaseUrl ?? bootstrapBaseUrl);
+    this.requireRuntimeEvidence = requireRuntimeEvidence === true;
+    this.runtimeEvidenceTimeoutMs = Math.max(500, Number(runtimeEvidenceTimeoutMs) || 20_000);
+    this.runtimeEvidenceIntervalMs = Math.max(100, Number(runtimeEvidenceIntervalMs) || 250);
     this.readyUrlTemplate = String(readyUrlTemplate ?? '').trim();
     this.extraArgs = Array.isArray(extraArgs) ? extraArgs.map(String) : [];
     this.startupGraceMs = Math.max(100, Number(startupGraceMs) || 1500);
@@ -128,13 +144,72 @@ export class ProcessRenderRuntimeLauncher {
     return Boolean(this.readyUrlTemplate && this.fetchImpl);
   }
 
+  get evidenceRequired() {
+    return this.requireRuntimeEvidence;
+  }
+
+  get evidenceConfigured() {
+    return Boolean(this.runtimeStatusBaseUrl && this.fetchImpl);
+  }
+
   list() {
     return [...this.processes.entries()].map(([renderSessionId, entry]) => ({
       renderSessionId,
       pid: entry.child.pid ?? null,
       startedAt: entry.startedAt,
-      readyAt: entry.readyAt ?? null
+      readyAt: entry.readyAt ?? null,
+      runtimeStage: entry.runtimeEvidence?.stage ?? null
     }));
+  }
+
+  async #waitForRuntimeEvidence(record, child) {
+    if (!this.requireRuntimeEvidence) return null;
+    if (!this.evidenceConfigured) {
+      throw launcherError('Runtime evidence é obrigatório, mas o endpoint interno não está configurado.', 'FENIX_RENDER_RUNTIME_EVIDENCE_NOT_CONFIGURED', 503);
+    }
+    const url = `${this.runtimeStatusBaseUrl}/v1/runtime/status/${encodeURIComponent(record.renderSessionId)}`;
+    const deadline = Date.now() + this.runtimeEvidenceTimeoutMs;
+    let lastError = null;
+
+    while (Date.now() < deadline) {
+      if (child.exitCode != null) {
+        throw launcherError('Runtime 3D encerrou antes de comprovar inicialização.', 'FENIX_RENDER_RUNTIME_EARLY_EXIT', 503, lastError);
+      }
+      try {
+        const response = await this.fetchImpl(url, {
+          method: 'GET',
+          headers: { Authorization: `Bearer ${record.runtimeAccessToken}` },
+          redirect: 'error',
+          cache: 'no-store',
+          signal: AbortSignal.timeout(Math.min(3000, this.runtimeEvidenceIntervalMs * 6))
+        });
+        const body = await responseJson(response);
+        if (response.status >= 200 && response.status < 300 && body?.failed === true) {
+          throw launcherError(body.message || 'Fenix3D reportou falha durante bootstrap.', 'FENIX_RENDER_RUNTIME_REPORTED_FAILURE', 503);
+        }
+        if (response.status >= 200 && response.status < 300 && body?.ready === true && body?.stage === 'ready') {
+          if (body.worldBuilt !== true) {
+            lastError = new Error('Runtime ready sem worldBuilt.');
+          } else {
+            return Object.freeze({
+              stage: body.stage,
+              reportedAt: body.reportedAt ?? null,
+              worldBuilt: true,
+              controlConfigured: body.controlConfigured === true,
+              manifest: body.manifest ?? null
+            });
+          }
+        } else if (response.status >= 400) {
+          lastError = new Error(`HTTP ${response.status}`);
+        }
+      } catch (error) {
+        if (error?.code === 'FENIX_RENDER_RUNTIME_REPORTED_FAILURE') throw error;
+        lastError = error;
+      }
+      await delay(this.runtimeEvidenceIntervalMs);
+    }
+
+    throw launcherError('Fenix3D não comprovou manifest/mundo/controle dentro do timeout.', 'FENIX_RENDER_RUNTIME_EVIDENCE_TIMEOUT', 503, lastError);
   }
 
   async #waitUntilReady(record, child) {
@@ -184,6 +259,9 @@ export class ProcessRenderRuntimeLauncher {
     const manifestUrl = record.runtimeManifest && this.bootstrapBaseUrl
       ? `${this.bootstrapBaseUrl}/v1/runtime/bootstrap/${encodeURIComponent(record.renderSessionId)}`
       : '';
+    const runtimeStatusUrl = this.runtimeStatusBaseUrl
+      ? `${this.runtimeStatusBaseUrl}/v1/runtime/status/${encodeURIComponent(record.renderSessionId)}`
+      : '';
     const runtimeControl = record.request?.runtimeControl ?? null;
 
     let child;
@@ -201,6 +279,8 @@ export class ProcessRenderRuntimeLauncher {
           FENIX_RUNTIME_MANIFEST_TOKEN: manifestUrl ? record.runtimeAccessToken : '',
           FENIX_WORLD_BOOTSTRAP_URL: manifestUrl,
           FENIX_WORLD_BOOTSTRAP_TOKEN: manifestUrl ? record.runtimeAccessToken : '',
+          FENIX_RUNTIME_STATUS_URL: runtimeStatusUrl,
+          FENIX_RUNTIME_STATUS_TOKEN: runtimeStatusUrl ? record.runtimeAccessToken : '',
           FENIX_RUNTIME_CONTROL_ID: runtimeControl?.controlId ?? '',
           FENIX_RUNTIME_CONTROL_URL: runtimeControl?.inputUrl ?? '',
           FENIX_RUNTIME_CONTROL_TOKEN: runtimeControl?.accessToken ?? ''
@@ -233,8 +313,10 @@ export class ProcessRenderRuntimeLauncher {
       throw launcherError('Runtime 3D encerrou durante a inicialização.', 'FENIX_RENDER_RUNTIME_EARLY_EXIT', 503, launchError);
     }
 
+    let runtimeEvidence = null;
     let readiness = null;
     try {
+      runtimeEvidence = await this.#waitForRuntimeEvidence(record, child);
       readiness = await this.#waitUntilReady(record, child);
     } catch (error) {
       try { child.kill('SIGTERM'); } catch { /* processo já saiu */ }
@@ -245,7 +327,8 @@ export class ProcessRenderRuntimeLauncher {
       child,
       args,
       startedAt: new Date().toISOString(),
-      readyAt: readiness?.readyAt ?? null,
+      readyAt: new Date().toISOString(),
+      runtimeEvidence,
       readiness
     });
     this.processes.set(record.renderSessionId, entry);
@@ -253,7 +336,8 @@ export class ProcessRenderRuntimeLauncher {
       renderSessionId: record.renderSessionId,
       pid: child.pid ?? null,
       command: this.command,
-      readyAt: entry.readyAt
+      readyAt: entry.readyAt,
+      runtimeStage: runtimeEvidence?.stage ?? null
     });
     return entry;
   }

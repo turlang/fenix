@@ -9,6 +9,7 @@ class AFenixFirstPersonPawn;
 class AFenixWorldBuilder;
 class UFenixRuntimeBootstrapClient;
 class UFenixRuntimeControlClient;
+class UFenixRuntimeStatusClient;
 
 UCLASS()
 class FENIX3D_API AFenixRuntimeGameMode : public AGameModeBase
@@ -29,6 +30,9 @@ private:
     TObjectPtr<UFenixRuntimeControlClient> ControlClient;
 
     UPROPERTY()
+    TObjectPtr<UFenixRuntimeStatusClient> StatusClient;
+
+    UPROPERTY()
     TObjectPtr<AFenixWorldBuilder> WorldBuilder;
 
     UPROPERTY()
@@ -41,6 +45,7 @@ private:
     void HandleManifestError(const FString& Error);
     void HandleStateSync(const FFenixRuntimeStateSync& Sync);
     void HandleControlError(const FString& Error);
+    void HandleStatusError(const FString& Error);
     void HandleActionResult(const FString& Json);
     void HandleCollisionFeedback(const FString& WallId);
 

@@ -8,6 +8,12 @@ function text(value, fallback = '') {
   return String(value ?? fallback).trim();
 }
 
+function boolean(value, fallback = false) {
+  const raw = text(value);
+  if (!raw) return fallback;
+  return /^(1|true|yes|on)$/i.test(raw);
+}
+
 function stringArray(value) {
   const raw = text(value);
   if (!raw) return [];
@@ -85,11 +91,16 @@ export function createRenderNodeConfig(env = process.env) {
     streamerUrlTemplate,
     runtimeBootstrapBaseUrl,
     runtimeReadyUrlTemplate,
+    runtimeEvidenceRequired: runtimeMode === 'process'
+      ? boolean(env.FENIX_RENDER_RUNTIME_EVIDENCE_REQUIRED, true)
+      : false,
+    runtimeEvidenceTimeoutMs: integer(env.FENIX_RENDER_RUNTIME_EVIDENCE_TIMEOUT_MS, 20_000, 500, 120_000),
+    runtimeEvidenceIntervalMs: integer(env.FENIX_RENDER_RUNTIME_EVIDENCE_INTERVAL_MS, 250, 100, 10_000),
     runtimeReadyTimeoutMs: integer(env.FENIX_RENDER_RUNTIME_READY_TIMEOUT_MS, 15_000, 500, 120_000),
     runtimeReadyIntervalMs: integer(env.FENIX_RENDER_RUNTIME_READY_INTERVAL_MS, 500, 100, 10_000),
     runtimeStartupGraceMs: integer(env.FENIX_RENDER_RUNTIME_STARTUP_GRACE_MS, 1500, 100, 60_000),
     runtimeStopTimeoutMs: integer(env.FENIX_RENDER_RUNTIME_STOP_TIMEOUT_MS, 5000, 500, 60_000),
     runtimeConfigured: Boolean(playerUrlTemplate) && (runtimeMode === 'external' || processConfigured),
-    allowUnauthenticatedHealth: /^(1|true|yes|on)$/i.test(text(env.FENIX_RENDER_NODE_PUBLIC_HEALTH, 'false'))
+    allowUnauthenticatedHealth: boolean(env.FENIX_RENDER_NODE_PUBLIC_HEALTH, false)
   });
 }

@@ -72,6 +72,7 @@ export function createRenderNodeHandler({ config, registry, runtimeLauncher = nu
     const url = new URL(request.url ?? '/', 'http://render-node.internal');
     const pathname = url.pathname;
     const bootstrapMatch = pathname.match(/^\/v1\/runtime\/bootstrap\/([^/]+)$/);
+    const runtimeStatusMatch = pathname.match(/^\/v1\/runtime\/status\/([^/]+)$/);
 
     if (request.method === 'GET' && bootstrapMatch) {
       const renderSessionId = decodeURIComponent(bootstrapMatch[1]);
@@ -83,6 +84,27 @@ export function createRenderNodeHandler({ config, registry, runtimeLauncher = nu
         return sendJson(response, 401, { code: 'FENIX_RENDER_BOOTSTRAP_UNAUTHORIZED', message: 'Credencial da sessão de runtime inválida.' });
       }
       return sendJson(response, 200, record.runtimeManifest);
+    }
+
+    if (runtimeStatusMatch && ['GET', 'POST'].includes(request.method)) {
+      const renderSessionId = decodeURIComponent(runtimeStatusMatch[1]);
+      const record = registry.get(renderSessionId);
+      if (!record) {
+        return sendJson(response, 404, { code: 'FENIX_RENDER_SESSION_NOT_FOUND', message: 'Sessão de render não encontrada.' });
+      }
+      if (!safeEqual(bearerToken(request), record.runtimeAccessToken)) {
+        return sendJson(response, 401, { code: 'FENIX_RENDER_RUNTIME_STATUS_UNAUTHORIZED', message: 'Credencial da sessão de runtime inválida.' });
+      }
+      try {
+        if (request.method === 'POST') {
+          const body = await readJsonBody(request);
+          const report = registry.reportRuntime(renderSessionId, body);
+          return sendJson(response, 202, report);
+        }
+        return sendJson(response, 200, registry.runtimeStatus(renderSessionId));
+      } catch (error) {
+        return sendJson(response, Number(error?.statusCode) || 400, errorPayload(error));
+      }
     }
 
     if (!(pathname === '/health' && config.allowUnauthenticatedHealth)) {
@@ -114,12 +136,14 @@ export function createRenderNodeHandler({ config, registry, runtimeLauncher = nu
           runtimeProcess: runtimeLauncher ? {
             enabled: runtimeLauncher.enabled,
             readinessConfigured: runtimeLauncher.readinessConfigured,
+            evidenceRequired: runtimeLauncher.evidenceRequired,
             activeProcesses: runtimeLauncher.list().length,
             processes: runtimeLauncher.list()
           } : null,
           configured: status.configured && launcherReady,
           capacity: status.capacity,
           activeSessions: status.activeSessions,
+          runtimeReadySessions: status.runtimeReadySessions,
           availableSlots: status.availableSlots,
           available: status.available && launcherReady
         });
@@ -138,6 +162,14 @@ export function createRenderNodeHandler({ config, registry, runtimeLauncher = nu
           }
         }
         return sendJson(response, 201, record.descriptor);
+      }
+
+      const runtimeAdminMatch = pathname.match(/^\/v1\/render-sessions\/([^/]+)\/runtime-status$/);
+      if (request.method === 'GET' && runtimeAdminMatch) {
+        const renderSessionId = decodeURIComponent(runtimeAdminMatch[1]);
+        const record = registry.get(renderSessionId);
+        if (!record) return sendJson(response, 404, { code: 'FENIX_RENDER_SESSION_NOT_FOUND', message: 'Sessão de render não encontrada.' });
+        return sendJson(response, 200, registry.runtimeStatus(renderSessionId));
       }
 
       const sessionMatch = pathname.match(/^\/v1\/render-sessions\/([^/]+)$/);

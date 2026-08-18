@@ -5,6 +5,8 @@ import {
 } from '../../../packages/render-stream-contract/src/index.js';
 import { createFenix3dRuntimeManifest } from '../../../packages/render-runtime-adapter/src/index.js';
 
+const RUNTIME_STAGES = new Set(['booting', 'manifest-ready', 'control-ready', 'ready', 'failed']);
+
 function registryError(message, code, statusCode = 400) {
   const error = new Error(message);
   error.code = code;
@@ -22,6 +24,30 @@ function fillTemplate(template, values) {
 
 function sessionKey(request) {
   return [request.campaignId, request.sceneId, request.actorId, request.tokenId].join(':');
+}
+
+function text(value, max = 240) {
+  return String(value ?? '').trim().slice(0, max);
+}
+
+function runtimeIdentity(record) {
+  return Object.freeze({
+    campaignId: record.request.campaignId,
+    sceneId: record.request.sceneId,
+    actorId: record.request.actorId,
+    tokenId: record.request.tokenId ?? null
+  });
+}
+
+function assertIdentity(record, input = {}) {
+  const expected = runtimeIdentity(record);
+  for (const [key, value] of Object.entries(expected)) {
+    const incoming = input[key];
+    if (incoming == null || incoming === '') continue;
+    if (String(incoming) !== String(value ?? '')) {
+      throw registryError(`Runtime report não corresponde a ${key} da sessão.`, 'FENIX_RENDER_RUNTIME_IDENTITY_MISMATCH', 409);
+    }
+  }
 }
 
 export class RenderSessionRegistry {
@@ -47,6 +73,7 @@ export class RenderSessionRegistry {
     this.now = now;
     this.sessions = new Map();
     this.byKey = new Map();
+    this.runtimeReports = new Map();
   }
 
   get configured() {
@@ -63,15 +90,18 @@ export class RenderSessionRegistry {
   }
 
   status() {
+    this.expire();
+    const runtimeReadySessions = [...this.runtimeReports.values()].filter((report) => report.ready === true).length;
     return Object.freeze({
       nodeId: this.nodeId,
       region: this.region,
       renderer: this.renderer,
       configured: this.configured,
       capacity: this.capacity,
-      activeSessions: this.size,
-      availableSlots: this.availableSlots,
-      available: this.configured && this.availableSlots > 0
+      activeSessions: this.sessions.size,
+      runtimeReadySessions,
+      availableSlots: Math.max(0, this.capacity - this.sessions.size),
+      available: this.configured && this.sessions.size < this.capacity
     });
   }
 
@@ -131,12 +161,71 @@ export class RenderSessionRegistry {
     });
     this.sessions.set(renderSessionId, record);
     this.byKey.set(key, renderSessionId);
+    this.runtimeReports.set(renderSessionId, Object.freeze({
+      renderSessionId,
+      stage: 'starting',
+      ready: false,
+      failed: false,
+      identity: runtimeIdentity(record),
+      manifest: null,
+      worldBuilt: false,
+      controlConfigured: false,
+      message: null,
+      reportedAt: null,
+      history: Object.freeze([])
+    }));
     return record;
   }
 
   get(renderSessionId) {
     this.expire();
     return this.sessions.get(String(renderSessionId)) ?? null;
+  }
+
+  reportRuntime(renderSessionId, input = {}) {
+    const id = String(renderSessionId ?? '');
+    const record = this.get(id);
+    if (!record) throw registryError('Sessão de render não encontrada.', 'FENIX_RENDER_SESSION_NOT_FOUND', 404);
+    assertIdentity(record, input);
+
+    const stage = text(input.stage, 40).toLowerCase();
+    if (!RUNTIME_STAGES.has(stage)) {
+      throw registryError('Stage de runtime inválido.', 'FENIX_RENDER_RUNTIME_STAGE_INVALID', 400);
+    }
+
+    const previous = this.runtimeReports.get(id);
+    const event = Object.freeze({
+      stage,
+      reportedAt: new Date(this.now()).toISOString(),
+      message: text(input.message, 500) || null
+    });
+    const history = [...(previous?.history ?? []), event].slice(-16);
+    const manifestSchema = text(input.manifestSchema, 120) || previous?.manifest?.schema || null;
+    const manifestVersion = Number.isFinite(Number(input.manifestVersion))
+      ? Number(input.manifestVersion)
+      : previous?.manifest?.version ?? null;
+    const report = Object.freeze({
+      renderSessionId: id,
+      stage,
+      ready: stage === 'ready',
+      failed: stage === 'failed',
+      identity: runtimeIdentity(record),
+      manifest: manifestSchema ? Object.freeze({ schema: manifestSchema, version: manifestVersion }) : null,
+      worldBuilt: input.worldBuilt === true || previous?.worldBuilt === true,
+      controlConfigured: input.controlConfigured === true || previous?.controlConfigured === true,
+      message: event.message,
+      reportedAt: event.reportedAt,
+      history: Object.freeze(history)
+    });
+    this.runtimeReports.set(id, report);
+    return report;
+  }
+
+  runtimeStatus(renderSessionId) {
+    const id = String(renderSessionId ?? '');
+    const record = this.get(id);
+    if (!record) return null;
+    return this.runtimeReports.get(id) ?? null;
   }
 
   delete(renderSessionId) {
@@ -165,6 +254,7 @@ export class RenderSessionRegistry {
 
   #remove(record) {
     this.sessions.delete(record.renderSessionId);
+    this.runtimeReports.delete(record.renderSessionId);
     if (this.byKey.get(record.key) === record.renderSessionId) this.byKey.delete(record.key);
   }
 }

@@ -9,9 +9,9 @@ on:
         default: true
         type: boolean
       run_stream_smoke:
-        description: Run Render Node -> Pixel Streaming smoke after native build/package
+        description: Run first native Render Node -> Pixel Streaming session and capture evidence
         required: false
-        default: false
+        default: true
         type: boolean
 
 permissions:
@@ -51,10 +51,23 @@ jobs:
           FENIX_UNREAL_PACKAGE_CONFIG: Development
         run: npm run package:fenix3d
 
-      - name: Render Node and Pixel Streaming smoke
+      - name: First native GPU session smoke
         if: ${{ inputs.run_stream_smoke }}
         shell: powershell
         env:
           FENIX_RENDER_NODE_INTERNAL_URL: ${{ vars.FENIX_RENDER_NODE_INTERNAL_URL }}
           FENIX_RENDER_NODE_TOKEN: ${{ secrets.FENIX_RENDER_NODE_TOKEN }}
+          FENIX_3D_SMOKE_REQUIRE_PROCESS: true
+          FENIX_3D_SMOKE_REQUIRE_EVIDENCE: true
+          FENIX_3D_SMOKE_REQUIRE_READINESS: true
+          FENIX_3D_SMOKE_REPORT_PATH: artifacts/fenix3d-native-session.json
         run: npm run smoke:fenix3d
+
+      - name: Upload native session evidence
+        if: ${{ always() && inputs.run_stream_smoke }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: fenix3d-native-session-evidence
+          path: artifacts/fenix3d-native-session.json
+          if-no-files-found: error
+          retention-days: 14
