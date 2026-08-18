@@ -16,6 +16,8 @@
     "dev:render-node": "node apps/render-node/src/server.js",
     "start:render-node": "node apps/render-node/src/server.js",
     "build:fenix3d-native": "node scripts/fenix3d-native-build.mjs",
+    "package:fenix3d": "node scripts/fenix3d-package-runtime.mjs",
+    "preflight:fenix3d-gpu": "node scripts/fenix3d-gpu-preflight.mjs",
     "smoke:fenix3d": "node scripts/fenix3d-render-smoke.mjs",
     "test": "node --test",
     "test:realtime-integration": "node integration-tests/realtime-websocket.mjs",
