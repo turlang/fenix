@@ -81,26 +81,47 @@ void UFenixRuntimeStatusClient::Report(
         return;
     }
 
+    QueueBody(MoveTemp(Body));
+}
+
+void UFenixRuntimeStatusClient::QueueBody(FString&& Body)
+{
+    PendingBodies.Add(MoveTemp(Body));
+    PumpQueue();
+}
+
+void UFenixRuntimeStatusClient::PumpQueue()
+{
+    if (bRequestInFlight || PendingBodies.IsEmpty() || !IsConfigured()) return;
+
+    bRequestInFlight = true;
     TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = FHttpModule::Get().CreateRequest();
     Request->SetURL(StatusUrl);
     Request->SetVerb(TEXT("POST"));
     Request->SetHeader(TEXT("Accept"), TEXT("application/json"));
     Request->SetHeader(TEXT("Content-Type"), TEXT("application/json"));
     Request->SetHeader(TEXT("Authorization"), FString::Printf(TEXT("Bearer %s"), *AccessToken));
-    Request->SetContentAsString(Body);
+    Request->SetContentAsString(PendingBodies[0]);
     Request->OnProcessRequestComplete().BindUObject(this, &UFenixRuntimeStatusClient::HandleReportResponse);
 
     if (!Request->ProcessRequest())
     {
+        bRequestInFlight = false;
+        PendingBodies.RemoveAt(0);
         OnStatusError.Broadcast(TEXT("Não foi possível enviar runtime evidence ao Render Node."));
+        PumpQueue();
     }
 }
 
 void UFenixRuntimeStatusClient::HandleReportResponse(FHttpRequestPtr Request, FHttpResponsePtr Response, bool bSucceeded)
 {
+    if (!PendingBodies.IsEmpty()) PendingBodies.RemoveAt(0);
+    bRequestInFlight = false;
+
     if (!bSucceeded || !Response.IsValid())
     {
         OnStatusError.Broadcast(TEXT("Render Node não respondeu ao runtime evidence."));
+        PumpQueue();
         return;
     }
     const int32 StatusCode = Response->GetResponseCode();
@@ -108,4 +129,5 @@ void UFenixRuntimeStatusClient::HandleReportResponse(FHttpRequestPtr Request, FH
     {
         OnStatusError.Broadcast(FString::Printf(TEXT("Runtime evidence recusado pelo Render Node (HTTP %d)."), StatusCode));
     }
+    PumpQueue();
 }
