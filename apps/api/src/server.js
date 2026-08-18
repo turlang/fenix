@@ -29,6 +29,8 @@ import {
   AuthoritativeRealtimeSessionGateway,
   AuthoritativeRealtimeSessionHub
 } from '../../../packages/authoritative-token-runtime/src/index.js';
+import { RenderNodeGateway, createHttpRenderNode } from '../../../packages/render-node-gateway/src/index.js';
+import { RemoteRenderBrokerService } from '../../../packages/remote-render-broker/src/index.js';
 import { createApiApp } from './app.js';
 import { createOwnerAwareWebSocketProxy } from './realtime/owner-aware-websocket-proxy.js';
 
@@ -85,11 +87,7 @@ const campaignService = new CampaignService({ repository, authService, logger })
 await campaignService.initialize();
 const actorService = new CampaignActorService({ campaignService, repository });
 const tokenService = new CampaignTokenService({ campaignService, repository });
-const explorationService = new CampaignExplorationService({
-  campaignService,
-  actorService,
-  repository
-});
+const explorationService = new CampaignExplorationService({ campaignService, actorService, repository });
 const assetStorage = createAssetStorageFromEnv();
 await assetStorage.initialize();
 const remoteMapImporter = new RemoteMapImporter({
@@ -97,11 +95,25 @@ const remoteMapImporter = new RemoteMapImporter({
   timeoutMs: config.remoteMapTimeoutMs,
   maxRedirects: config.remoteMapMaxRedirects
 });
-const sceneService = new CampaignSceneService({
+const sceneService = new CampaignSceneService({ campaignService, repository, assetStorage, remoteMapImporter });
+
+const renderGateway = new RenderNodeGateway({ logger });
+const renderNodeUrl = process.env.FENIX_RENDER_NODE_URL?.trim();
+if (renderNodeUrl) {
+  renderGateway.register(createHttpRenderNode({
+    id: process.env.FENIX_RENDER_NODE_ID?.trim() || 'render-node-01',
+    baseUrl: renderNodeUrl,
+    authToken: process.env.FENIX_RENDER_NODE_TOKEN?.trim() || '',
+    region: process.env.FENIX_RENDER_NODE_REGION?.trim() || null,
+    priority: Number(process.env.FENIX_RENDER_NODE_PRIORITY) || 100,
+    timeoutMs: Number(process.env.FENIX_RENDER_NODE_TIMEOUT_MS) || 10_000
+  }));
+}
+const renderBrokerService = new RemoteRenderBrokerService({
   campaignService,
-  repository,
-  assetStorage,
-  remoteMapImporter
+  actorService,
+  tokenService,
+  renderGateway
 });
 
 const runtimeRouter = leaseManager && config.internalRoutingSecret
@@ -289,6 +301,7 @@ const app = await createApiApp({
   campaignService,
   sceneService,
   actorService,
+  renderBrokerService,
   runtimeRouter,
   realtimeProxy,
   commandLedger,
