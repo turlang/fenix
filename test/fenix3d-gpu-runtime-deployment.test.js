@@ -40,9 +40,9 @@ class FakeChild extends EventEmitter {
 
   kill(signal) {
     this.kills.push(signal);
-    if (signal === 'SIGKILL') {
-      this.exitCode = 1;
-      this.emit('exit', 1, signal);
+    if (signal === 'SIGTERM' || signal === 'SIGKILL') {
+      this.exitCode = signal === 'SIGTERM' ? 0 : 1;
+      queueMicrotask(() => this.emit('exit', this.exitCode, signal));
     }
     return true;
   }
@@ -82,6 +82,7 @@ test('process launcher waits for Pixel Streaming readiness before registering ac
     startupGraceMs: 100,
     readyTimeoutMs: 500,
     readyIntervalMs: 100,
+    stopTimeoutMs: 500,
     spawnImpl: () => child,
     fetchImpl: async (url) => {
       probes += 1;
@@ -97,6 +98,7 @@ test('process launcher waits for Pixel Streaming readiness before registering ac
   assert.ok(entry.readyAt);
   assert.equal(launcher.list().length, 1);
   await launcher.stop('render-123');
+  assert.equal(launcher.list().length, 0);
 });
 
 test('readiness timeout terminates the spawned runtime instead of leaking a GPU process', async () => {
