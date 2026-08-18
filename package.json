@@ -13,6 +13,8 @@
     "start": "node apps/api/src/server.js",
     "dev:vtt": "npm --workspace @fenix/vtt run dev",
     "build:vtt": "npm --workspace @fenix/vtt run build",
+    "dev:render-node": "npm --workspace @fenix/render-node run dev",
+    "start:render-node": "npm --workspace @fenix/render-node run start",
     "test": "node --test",
     "test:realtime-integration": "node integration-tests/realtime-websocket.mjs",
     "test:auth-integration": "node integration-tests/auth-campaign-http.mjs",
