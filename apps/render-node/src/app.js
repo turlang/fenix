@@ -113,7 +113,9 @@ export function createRenderNodeHandler({ config, registry, runtimeLauncher = nu
           runtimeMode: config.runtimeMode,
           runtimeProcess: runtimeLauncher ? {
             enabled: runtimeLauncher.enabled,
-            activeProcesses: runtimeLauncher.list().length
+            readinessConfigured: runtimeLauncher.readinessConfigured,
+            activeProcesses: runtimeLauncher.list().length,
+            processes: runtimeLauncher.list()
           } : null,
           configured: status.configured && launcherReady,
           capacity: status.capacity,
