@@ -31,6 +31,14 @@ function safeUrl(value, allowedProtocols) {
   }
 }
 
+function normalizeWorldBootstrap(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  if (value.schema !== 'fenix.render-world-bootstrap' || Number(value.version) !== 1) {
+    throw renderError('World bootstrap inválido.', 'FENIX_RENDER_BOOTSTRAP_INVALID');
+  }
+  return Object.freeze(structuredClone(value));
+}
+
 export const RenderTransport = Object.freeze({
   WEBRTC: 'webrtc'
 });
@@ -75,7 +83,8 @@ export function createRemoteRenderSessionRequest(input = {}) {
     preferredCodecs: Object.freeze(preferredCodecs),
     targetFps: Math.max(24, Math.min(120, Number(input.targetFps) || 60)),
     maxWidth: Math.max(640, Math.min(3840, Number(input.maxWidth) || 1920)),
-    maxHeight: Math.max(360, Math.min(2160, Number(input.maxHeight) || 1080))
+    maxHeight: Math.max(360, Math.min(2160, Number(input.maxHeight) || 1080)),
+    worldBootstrap: normalizeWorldBootstrap(input.worldBootstrap)
   });
 }
 

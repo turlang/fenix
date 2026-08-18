@@ -30,6 +30,15 @@ function safeWebSocketUrl(value) {
   }
 }
 
+function safeHttpBaseUrl(value) {
+  try {
+    const parsed = new URL(String(value));
+    return ['http:', 'https:'].includes(parsed.protocol) ? parsed.toString().replace(/\/$/, '') : null;
+  } catch {
+    return null;
+  }
+}
+
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -76,6 +85,7 @@ export class ProcessRenderRuntimeLauncher {
     command,
     cwd = null,
     streamerUrlTemplate,
+    bootstrapBaseUrl = null,
     extraArgs = [],
     startupGraceMs = 2500,
     stopTimeoutMs = 5000,
@@ -85,6 +95,7 @@ export class ProcessRenderRuntimeLauncher {
     this.command = clean(command);
     this.cwd = cwd ? clean(cwd) : undefined;
     this.streamerUrlTemplate = String(streamerUrlTemplate ?? '').trim();
+    this.bootstrapBaseUrl = safeHttpBaseUrl(bootstrapBaseUrl);
     this.extraArgs = Array.isArray(extraArgs) ? extraArgs.map(String) : [];
     this.startupGraceMs = Math.max(100, Number(startupGraceMs) || 2500);
     this.stopTimeoutMs = Math.max(500, Number(stopTimeoutMs) || 5000);
@@ -116,6 +127,9 @@ export class ProcessRenderRuntimeLauncher {
       streamerUrlTemplate: this.streamerUrlTemplate,
       extraArgs: this.extraArgs
     });
+    const bootstrapUrl = record.request?.worldBootstrap && this.bootstrapBaseUrl
+      ? `${this.bootstrapBaseUrl}/v1/runtime/bootstrap/${encodeURIComponent(record.renderSessionId)}`
+      : '';
 
     let child;
     try {
@@ -127,7 +141,9 @@ export class ProcessRenderRuntimeLauncher {
           FENIX_CAMPAIGN_ID: record.request.campaignId,
           FENIX_SCENE_ID: record.request.sceneId,
           FENIX_ACTOR_ID: record.request.actorId,
-          FENIX_TOKEN_ID: record.request.tokenId ?? ''
+          FENIX_TOKEN_ID: record.request.tokenId ?? '',
+          FENIX_WORLD_BOOTSTRAP_URL: bootstrapUrl,
+          FENIX_WORLD_BOOTSTRAP_TOKEN: bootstrapUrl ? record.runtimeAccessToken : ''
         },
         shell: false,
         windowsHide: true,

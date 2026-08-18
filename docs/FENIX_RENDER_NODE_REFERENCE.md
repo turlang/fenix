@@ -2,44 +2,57 @@
 
 ## Objetivo
 
-`apps/render-node` é o serviço interno executado no servidor de render GPU. Ele implementa o contrato que o App Server consome:
+`apps/render-node` é o serviço interno executado no servidor de render GPU. O navegador não chama este serviço diretamente; o App Server continua sendo o broker autenticado entre jogador, estado autoritativo e infraestrutura GPU.
+
+API interna principal:
 
 - `GET /health`
 - `POST /v1/render-sessions`
 - `GET /v1/render-sessions/:renderSessionId`
 - `DELETE /v1/render-sessions/:renderSessionId`
 
-O navegador não chama este serviço diretamente. O App Server continua sendo o broker autenticado entre jogador, estado autoritativo e infraestrutura GPU.
+Runtime 3D process mode também recebe um endpoint efêmero:
+
+- `GET /v1/runtime/bootstrap/:renderSessionId`
+
+Esse endpoint usa um token exclusivo daquela sessão, diferente do Bearer administrativo do Render Node.
 
 ## Fluxo
 
 ```text
 Browser Fênix
     |
-    | cookie/auth do jogador
     v
 App Server / RemoteRenderBroker
     |
-    | Bearer interno + rede privada
+    | valida Campaign -> Actor -> Token -> Scene
+    | monta World Bootstrap
+    | Bearer interno
     v
-Reference Render Node (GPU server)
+Reference Render Node
     |
-    +---- external mode ----> Pixel Streaming já implantado
+    | reserva GPU/session
+    | gera runtimeAccessToken efêmero
+    v
+Runtime 3D supervisionado
     |
-    +---- process mode -----> executável 3D supervisionado por sessão
-                                  |
-                                  v
-                          Signalling / WebRTC
-                                  |
-                                  v
-                             Browser Fênix
+    | FENIX_WORLD_BOOTSTRAP_URL
+    | FENIX_WORLD_BOOTSTRAP_TOKEN
+    v
+GET /v1/runtime/bootstrap/:renderSessionId
+    |
+    v
+Cena física + Viewer Token + Actor/Sheet + câmera
+    |
+    v
+Signalling / WebRTC -> Browser
 ```
 
-## Dois modos de runtime
+## Modos de runtime
 
 ### `external`
 
-O Render Node controla alocação, capacidade e TTL, mas a infraestrutura 3D/Pixel Streaming já está em execução fora dele. Esse modo preserva integrações com clusters, containers, serviços gerenciados ou warm pools externos.
+A infraestrutura 3D/Pixel Streaming já existe fora do processo do Render Node. O node cuida de alocação, capacidade, TTL e descritores públicos.
 
 ```env
 FENIX_RENDER_RUNTIME_MODE=external
@@ -47,7 +60,7 @@ FENIX_RENDER_RUNTIME_MODE=external
 
 ### `process`
 
-O Render Node inicia e supervisiona um executável 3D empacotado para cada sessão alocada.
+O Render Node inicia e supervisiona um executável 3D por sessão.
 
 ```env
 FENIX_RENDER_RUNTIME_MODE=process
@@ -56,14 +69,14 @@ FENIX_RENDER_RUNTIME_CWD=/opt/fenix3d
 FENIX_RENDER_STREAMER_URL_TEMPLATE=ws://127.0.0.1:8888
 ```
 
-O comando e diretório vêm somente da configuração do servidor GPU. O payload de jogador/sessão não pode escolher executável, shell ou argumentos privilegiados.
+O launcher usa `spawn()` com `shell: false`. Comando, cwd e argumentos privilegiados são definidos somente no servidor GPU.
 
-O launcher usa `spawn()` com `shell: false` e adiciona os argumentos de sessão necessários ao runtime:
+Argumentos base:
 
 ```text
 -RenderOffscreen
--PixelStreamingURL=<ws/wss do signalling>
--PixelStreamingWebRTCMaxFps=<fps solicitado>
+-PixelStreamingURL=<ws/wss>
+-PixelStreamingWebRTCMaxFps=<fps>
 -FenixRenderSessionId=<id>
 -FenixCampaignId=<id>
 -FenixSceneId=<id>
@@ -71,115 +84,93 @@ O launcher usa `spawn()` com `shell: false` e adiciona os argumentos de sessão 
 -FenixTokenId=<id>
 ```
 
-Os argumentos `Fenix*` são o contrato interno para o futuro projeto/runtime 3D carregar o contexto correto da plataforma.
+## World Bootstrap
+
+`packages/render-world-bootstrap` cria o snapshot autoritativo enviado ao Render Node. O browser não recebe esse objeto.
+
+O bootstrap contém:
+
+- Campaign/System;
+- Scene id, dimensões e background asset id;
+- grid + escala física, com default de `1.5 m` por célula;
+- walls;
+- lighting;
+- elevation/levels;
+- floor/stair/ramp regions;
+- Fog explorado apenas para o viewer;
+- tokens visíveis para aquele usuário;
+- Actor/Sheet resolvido;
+- viewer Token persistente;
+- movimento resolvido;
+- visão/sentido resolvido;
+- câmera First Person derivada de `token.elevation + actor.eyeHeight`.
+
+Exemplo conceitual:
+
+```json
+{
+  "schema": "fenix.render-world-bootstrap",
+  "version": 1,
+  "viewer": {
+    "camera": {
+      "sceneX": 350,
+      "sceneY": 420,
+      "groundElevation": 3,
+      "eyeHeight": 1.58,
+      "elevation": 4.58,
+      "unit": "m"
+    }
+  }
+}
+```
+
+## Credencial efêmera do runtime
+
+Cada `renderSessionId` recebe um `runtimeAccessToken` aleatório de uso interno. Ele:
+
+- não aparece no descriptor WebRTC;
+- não aparece na resposta do broker para o navegador;
+- não é o `FENIX_RENDER_NODE_TOKEN` administrativo;
+- só autoriza o bootstrap daquela sessão;
+- deixa de funcionar assim que a sessão é removida/expira.
+
+No process mode o launcher injeta somente no ambiente do processo:
+
+```text
+FENIX_WORLD_BOOTSTRAP_URL=http://127.0.0.1:9000/v1/runtime/bootstrap/<renderSessionId>
+FENIX_WORLD_BOOTSTRAP_TOKEN=<token efêmero>
+```
+
+O endereço pode ser ajustado com:
+
+```env
+FENIX_RENDER_RUNTIME_BOOTSTRAP_BASE_URL=http://127.0.0.1:9000
+```
 
 ## Lifecycle GPU
 
-No modo `process`:
-
-1. o broker valida Campanha → Membership → Ator → Token → Cena;
-2. o Render Node reserva um slot;
-3. o launcher inicia o runtime 3D;
-4. se o processo morrer durante o grace period, a reserva é revertida e o App Server recebe erro;
-5. `DELETE` encerra o processo e libera a reserva;
-6. TTL de sessão abandonada também dispara encerramento;
-7. shutdown do Render Node executa `stopAll()` para reduzir risco de processos/VRAM órfãos.
-
-O launcher tenta `SIGTERM` primeiro e usa término forçado depois do timeout configurado quando necessário.
-
-## Configuração básica do Render Node
-
-```env
-FENIX_RENDER_NODE_HOST=0.0.0.0
-FENIX_RENDER_NODE_PORT=9000
-FENIX_RENDER_NODE_ID=render-gpu-01
-FENIX_RENDER_NODE_REGION=br-1
-FENIX_RENDER_NODE_TOKEN=um-segredo-interno-forte
-FENIX_RENDER_NODE_CAPACITY=2
-FENIX_RENDER_SESSION_TTL_MS=1800000
-FENIX_RENDERER_KIND=unreal-pixel-streaming
-FENIX_RENDER_PLAYER_URL_TEMPLATE=https://stream.example.com/player?renderSessionId={renderSessionId}&actorId={actorId}
-FENIX_RENDER_SIGNALLING_URL_TEMPLATE=wss://stream.example.com/signalling/{renderSessionId}
-```
-
-Placeholders do player/signalling:
-
-- `{renderSessionId}`
-- `{campaignId}`
-- `{sessionId}`
-- `{sceneId}`
-- `{actorId}`
-- `{tokenId}`
-
-Os valores inseridos nesses templates são URL-encoded.
-
-## Configuração process mode
-
-Exemplo Linux:
-
-```env
-FENIX_RENDER_RUNTIME_MODE=process
-FENIX_RENDER_RUNTIME_COMMAND=/opt/fenix3d/Fenix3D.sh
-FENIX_RENDER_RUNTIME_CWD=/opt/fenix3d
-FENIX_RENDER_STREAMER_URL_TEMPLATE=ws://127.0.0.1:8888
-FENIX_RENDER_RUNTIME_EXTRA_ARGS_JSON=["-ResX={maxWidth}","-ResY={maxHeight}"]
-FENIX_RENDER_RUNTIME_STARTUP_GRACE_MS=2500
-FENIX_RENDER_RUNTIME_STOP_TIMEOUT_MS=5000
-```
-
-Exemplo Windows:
-
-```env
-FENIX_RENDER_RUNTIME_MODE=process
-FENIX_RENDER_RUNTIME_COMMAND=C:\Fenix3D\Fenix3D.exe
-FENIX_RENDER_RUNTIME_CWD=C:\Fenix3D
-FENIX_RENDER_STREAMER_URL_TEMPLATE=ws://127.0.0.1:8888
-```
-
-Placeholders aceitos nos argumentos extras:
-
-- `{renderSessionId}`
-- `{campaignId}`
-- `{sessionId}`
-- `{sceneId}`
-- `{actorId}`
-- `{tokenId}`
-- `{targetFps}`
-- `{maxWidth}`
-- `{maxHeight}`
-
-## Inicialização
-
-No servidor GPU:
-
-```bash
-npm ci
-npm run start:render-node
-```
-
-O App Server aponta para o serviço interno:
-
-```env
-FENIX_RENDER_NODE_URL=http://gpu-render.internal:9000
-FENIX_RENDER_NODE_TOKEN=o-mesmo-segredo-interno
-```
-
-## Infraestrutura que continua separada
-
-O launcher supervisiona o executável 3D, mas signalling, frontend/player WebRTC, TURN/STUN e eventual SFU continuam componentes de infraestrutura próprios. O `FENIX_RENDER_STREAMER_URL_TEMPLATE` indica onde o executável 3D deve registrar seu streamer; `FENIX_RENDER_PLAYER_URL_TEMPLATE` indica o endpoint público que o thin client Fênix pode incorporar.
+1. App Server autoriza o jogador e monta o World Bootstrap.
+2. Render Node reserva um slot.
+3. Process mode inicia o runtime 3D.
+4. Early exit reverte a reserva.
+5. Runtime busca apenas seu bootstrap.
+6. `DELETE` encerra processo e sessão.
+7. TTL encerra sessões abandonadas.
+8. Shutdown executa `stopAll()`.
 
 ## Segurança
 
-- mantenha a porta do Render Node em rede privada sempre que possível;
-- `FENIX_RENDER_NODE_TOKEN` nunca deve ser `NEXT_PUBLIC_*`;
-- browser recebe somente descritor público pelo Remote Render Broker;
-- health exige Bearer por padrão;
-- comando do runtime nunca vem do navegador;
-- `shell` permanece desativado no launcher;
-- streamer URL aceita somente `ws://` ou `wss://`;
-- player URL aceita somente `http://` ou `https://`;
-- movimento, visão, colisão e regras permanecem autoridade do Fênix Core, não do renderer.
+- porta administrativa do Render Node deve ficar em rede privada;
+- `FENIX_RENDER_NODE_TOKEN` nunca deve ser enviado ao browser;
+- World Bootstrap nunca integra o descriptor público;
+- Fog de outros atores não entra no bootstrap do jogador;
+- runtime token é escopado a uma única sessão;
+- comando do runtime nunca vem do payload do jogador;
+- `shell` permanece desativado;
+- streamer aceita somente `ws://`/`wss://`;
+- player público aceita somente `http://`/`https://`;
+- movimento, visão, colisão e regras continuam autoridade do Fênix Core.
 
 ## Próximo estágio
 
-O processo Unreal agora pode ser iniciado de forma segura, mas ele ainda precisa receber o **World Bootstrap** real. O próximo marco deve fornecer ao runtime 3D um snapshot autenticado por `renderSessionId` contendo Cena física, Token persistente, Actor/Sheet resolvido, altura dos olhos, visão, iluminação e elevação. A partir daí a câmera First Person poderá nascer do mesmo estado usado pela Top View.
+O próximo marco é o **Fênix 3D Runtime Adapter**: definir como o projeto Unreal interpreta o World Bootstrap, converte coordenadas 2D/escala física para o mundo 3D, cria a câmera na altura dos olhos, materializa walls/doors/floors/ramps/lights e devolve inputs de movimento como intents ao Core em vez de movimentar o personagem localmente como autoridade.

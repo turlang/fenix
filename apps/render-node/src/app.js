@@ -1,5 +1,7 @@
 import { timingSafeEqual } from 'node:crypto';
 
+const RENDER_SESSION_BODY_LIMIT = 4 * 1024 * 1024;
+
 function safeEqual(left, right) {
   const a = Buffer.from(String(left ?? ''));
   const b = Buffer.from(String(right ?? ''));
@@ -69,6 +71,19 @@ export function createRenderNodeHandler({ config, registry, runtimeLauncher = nu
   return async function renderNodeHandler(request, response) {
     const url = new URL(request.url ?? '/', 'http://render-node.internal');
     const pathname = url.pathname;
+    const bootstrapMatch = pathname.match(/^\/v1\/runtime\/bootstrap\/([^/]+)$/);
+
+    if (request.method === 'GET' && bootstrapMatch) {
+      const renderSessionId = decodeURIComponent(bootstrapMatch[1]);
+      const record = registry.get(renderSessionId);
+      if (!record?.request?.worldBootstrap) {
+        return sendJson(response, 404, { code: 'FENIX_RENDER_BOOTSTRAP_NOT_FOUND', message: 'World bootstrap não encontrado.' });
+      }
+      if (!safeEqual(bearerToken(request), record.runtimeAccessToken)) {
+        return sendJson(response, 401, { code: 'FENIX_RENDER_BOOTSTRAP_UNAUTHORIZED', message: 'Credencial da sessão de runtime inválida.' });
+      }
+      return sendJson(response, 200, record.request.worldBootstrap);
+    }
 
     if (!(pathname === '/health' && config.allowUnauthenticatedHealth)) {
       if (!config.authToken) {
@@ -109,7 +124,7 @@ export function createRenderNodeHandler({ config, registry, runtimeLauncher = nu
       }
 
       if (request.method === 'POST' && pathname === '/v1/render-sessions') {
-        const body = await readJsonBody(request);
+        const body = await readJsonBody(request, RENDER_SESSION_BODY_LIMIT);
         if (config.runtimeMode === 'process' && runtimeLauncher?.enabled !== true) throw launcherRequiredError();
         const record = registry.create(body);
         if (config.runtimeMode === 'process') {
