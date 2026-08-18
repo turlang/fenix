@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import {
   createRemoteRenderSessionRequest,
   createRenderSessionDescriptor
@@ -89,6 +89,7 @@ export class RenderSessionRegistry {
     }
 
     const renderSessionId = randomUUID();
+    const runtimeAccessToken = randomBytes(32).toString('base64url');
     const createdAtMs = this.now();
     const expiresAtMs = createdAtMs + this.sessionTtlMs;
     const values = {
@@ -117,6 +118,7 @@ export class RenderSessionRegistry {
       key,
       request,
       descriptor,
+      runtimeAccessToken,
       createdAt: new Date(createdAtMs).toISOString(),
       expiresAt: new Date(expiresAtMs).toISOString()
     });
