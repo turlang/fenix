@@ -1,6 +1,7 @@
+import { createServer } from 'node:http';
 import { createRenderNodeConfig } from './config.js';
 import { RenderSessionRegistry } from './session-registry.js';
-import { createRenderNodeApp } from './app.js';
+import { createRenderNodeHandler } from './app.js';
 
 const config = createRenderNodeConfig();
 const registry = new RenderSessionRegistry({
@@ -12,25 +13,34 @@ const registry = new RenderSessionRegistry({
   playerUrlTemplate: config.playerUrlTemplate,
   signallingUrlTemplate: config.signallingUrlTemplate
 });
-const app = createRenderNodeApp({ config, registry });
+const server = createServer(createRenderNodeHandler({ config, registry }));
+
+function closeServer() {
+  return new Promise((resolve, reject) => {
+    server.close((error) => error ? reject(error) : resolve());
+  });
+}
 
 async function shutdown(signal) {
-  app.log.info({ signal, activeSessions: registry.size }, 'Encerrando Fênix Render Node');
-  await app.close();
+  console.info('[Fênix][Render Node] encerrando', { signal, activeSessions: registry.size });
+  await closeServer();
 }
 
 for (const signal of ['SIGINT', 'SIGTERM']) {
   process.once(signal, () => shutdown(signal).catch((error) => {
-    app.log.error(error, 'Falha ao encerrar Render Node');
+    console.error('[Fênix][Render Node] falha ao encerrar', error);
     process.exitCode = 1;
   }));
 }
 
-await app.listen({ host: config.host, port: config.port });
-app.log.info({
-  nodeId: config.nodeId,
-  region: config.region,
-  capacity: config.capacity,
-  renderer: config.renderer,
-  runtimeConfigured: config.runtimeConfigured
-}, 'Fênix Render Node iniciado');
+server.listen(config.port, config.host, () => {
+  console.info('[Fênix][Render Node] iniciado', {
+    host: config.host,
+    port: config.port,
+    nodeId: config.nodeId,
+    region: config.region,
+    capacity: config.capacity,
+    renderer: config.renderer,
+    runtimeConfigured: config.runtimeConfigured
+  });
+});
