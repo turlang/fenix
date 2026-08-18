@@ -87,6 +87,7 @@ struct FFenixRuntimeScene
     double WidthCm = 1.0;
     double HeightCm = 1.0;
     double CentimetersPerPixel = 1.0;
+    FString SceneUnit = TEXT("m");
     FString BackgroundAssetId;
     double Darkness = 0.0;
     bool bLightingEnabled = false;
