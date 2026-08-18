@@ -21,7 +21,7 @@ function finite(value, fallback = 0, min = -1, max = 1) {
 }
 
 function safeUrl(value, allowedProtocols) {
-  const raw = text(value, 1000);
+  const raw = text(value, 2000);
   if (!raw) return null;
   try {
     const parsed = new URL(raw);
@@ -37,6 +37,17 @@ function normalizeWorldBootstrap(value) {
     throw renderError('World bootstrap inválido.', 'FENIX_RENDER_BOOTSTRAP_INVALID');
   }
   return Object.freeze(structuredClone(value));
+}
+
+export function normalizeRuntimeControl(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const controlId = text(value.controlId, 200);
+  const inputUrl = safeUrl(value.inputUrl, ['https:', 'http:']);
+  const accessToken = text(value.accessToken, 512);
+  if (!controlId || !inputUrl || accessToken.length < 24) {
+    throw renderError('Canal privado de controle do runtime inválido.', 'FENIX_RENDER_RUNTIME_CONTROL_INVALID');
+  }
+  return Object.freeze({ controlId, inputUrl, accessToken });
 }
 
 export const RenderTransport = Object.freeze({
@@ -84,7 +95,8 @@ export function createRemoteRenderSessionRequest(input = {}) {
     targetFps: Math.max(24, Math.min(120, Number(input.targetFps) || 60)),
     maxWidth: Math.max(640, Math.min(3840, Number(input.maxWidth) || 1920)),
     maxHeight: Math.max(360, Math.min(2160, Number(input.maxHeight) || 1080)),
-    worldBootstrap: normalizeWorldBootstrap(input.worldBootstrap)
+    worldBootstrap: normalizeWorldBootstrap(input.worldBootstrap),
+    runtimeControl: normalizeRuntimeControl(input.runtimeControl)
   });
 }
 
