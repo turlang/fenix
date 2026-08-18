@@ -36,6 +36,8 @@ void AFenixFirstPersonPawn::Tick(float DeltaSeconds)
 {
     Super::Tick(DeltaSeconds);
 
+    ReconcileAuthoritativeTransform(DeltaSeconds);
+
     IntentAccumulator += DeltaSeconds;
     if (IntentAccumulator >= IntentIntervalSeconds)
     {
@@ -52,6 +54,10 @@ void AFenixFirstPersonPawn::InitializeFromManifest(const FFenixRuntimeManifest& 
 
     const FVector PawnLocation = RuntimeCamera.Location - FVector(0.0, 0.0, RuntimeCamera.EyeHeightCm);
     SetActorLocationAndRotation(PawnLocation, FRotator(0.0, CurrentYaw, 0.0), false, nullptr, ETeleportType::TeleportPhysics);
+    AuthoritativeTargetLocation = PawnLocation;
+    AuthoritativeTargetRotation = FRotator(0.0, CurrentYaw, 0.0);
+    bHasAuthoritativeTarget = true;
+
     Camera->SetRelativeLocation(FVector(0.0, 0.0, RuntimeCamera.EyeHeightCm));
     Camera->SetRelativeRotation(FRotator(CurrentPitch, 0.0, 0.0));
     Camera->SetFieldOfView(FMath::Clamp(static_cast<float>(RuntimeCamera.FovDegrees), 60.0f, 120.0f));
@@ -61,14 +67,34 @@ void AFenixFirstPersonPawn::ApplyAuthoritativeState(const FFenixRuntimeStateSync
 {
     const double CmPerPixel = FMath::Max(0.0001, Manifest.Scene.CentimetersPerPixel);
     const double ElevationCm = State.Elevation * (Manifest.Scene.SceneUnit == TEXT("ft") ? 30.48 : 100.0);
-    const FVector AcceptedLocation(
+    AuthoritativeTargetLocation = FVector(
         State.ScenePosition.X * CmPerPixel,
         -State.ScenePosition.Y * CmPerPixel,
         ElevationCm
     );
+    AuthoritativeTargetRotation = FRotator(0.0, State.Rotation, 0.0);
+    bHasAuthoritativeTarget = true;
 
-    CurrentYaw = static_cast<float>(State.Rotation);
-    SetActorLocationAndRotation(AcceptedLocation, FRotator(0.0, CurrentYaw, 0.0), false, nullptr, ETeleportType::TeleportPhysics);
+    if (State.bCollisionBlocked)
+    {
+        OnCollisionFeedback.Broadcast(State.CollisionWallId);
+    }
+}
+
+void AFenixFirstPersonPawn::ReconcileAuthoritativeTransform(float DeltaSeconds)
+{
+    if (!bHasAuthoritativeTarget) return;
+
+    const FVector CurrentLocation = GetActorLocation();
+    const FVector NextLocation = FMath::VInterpTo(CurrentLocation, AuthoritativeTargetLocation, DeltaSeconds, ReconciliationSpeed);
+    const FRotator CurrentRotation = GetActorRotation();
+    const FRotator NextRotation = FMath::RInterpTo(CurrentRotation, AuthoritativeTargetRotation, DeltaSeconds, ReconciliationSpeed);
+    SetActorLocationAndRotation(NextLocation, NextRotation, false, nullptr, ETeleportType::None);
+
+    if (FVector::DistSquared(NextLocation, AuthoritativeTargetLocation) < 0.25)
+    {
+        SetActorLocation(AuthoritativeTargetLocation, false, nullptr, ETeleportType::None);
+    }
 }
 
 void AFenixFirstPersonPawn::MoveForward(float Value)
