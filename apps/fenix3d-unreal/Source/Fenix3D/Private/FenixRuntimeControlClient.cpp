@@ -16,6 +16,13 @@ TSharedPtr<FJsonObject> ChildObject(const TSharedPtr<FJsonObject>& Parent, const
     return Parent->TryGetObjectField(Name, Found) && Found ? *Found : nullptr;
 }
 
+const TArray<TSharedPtr<FJsonValue>>* ChildArray(const TSharedPtr<FJsonObject>& Parent, const TCHAR* Name)
+{
+    if (!Parent.IsValid()) return nullptr;
+    const TArray<TSharedPtr<FJsonValue>>* Found = nullptr;
+    return Parent->TryGetArrayField(Name, Found) ? Found : nullptr;
+}
+
 FString ReadString(const TSharedPtr<FJsonObject>& Object, const TCHAR* Name)
 {
     FString Value;
@@ -198,6 +205,26 @@ bool UFenixRuntimeControlClient::ParseStateSync(const TSharedPtr<FJsonObject>& R
     const TSharedPtr<FJsonObject> Collision = ChildObject(Result, TEXT("collision"));
     OutSync.bCollisionBlocked = ReadBool(Collision, TEXT("blocked"));
     OutSync.CollisionWallId = ReadString(Collision, TEXT("wallId"));
+
+    if (const TArray<TSharedPtr<FJsonValue>>* Entities = ChildArray(Result, TEXT("entities")))
+    {
+        for (const TSharedPtr<FJsonValue>& Value : *Entities)
+        {
+            const TSharedPtr<FJsonObject> Object = Value.IsValid() ? Value->AsObject() : nullptr;
+            if (!Object.IsValid()) continue;
+            FFenixRuntimeEntityState Entity;
+            Entity.TokenId = ReadString(Object, TEXT("tokenId"));
+            if (Entity.TokenId.IsEmpty()) continue;
+            Entity.ActorId = ReadString(Object, TEXT("actorId"));
+            Entity.ScenePosition.X = ReadNumber(Object, TEXT("x"));
+            Entity.ScenePosition.Y = ReadNumber(Object, TEXT("y"));
+            Entity.Elevation = ReadNumber(Object, TEXT("elevation"));
+            Entity.Rotation = ReadNumber(Object, TEXT("rotation"));
+            Entity.bVisible = ReadBool(Object, TEXT("visible"), true);
+            Entity.MovementMode = ReadString(Object, TEXT("movementMode"));
+            OutSync.Entities.Add(MoveTemp(Entity));
+        }
+    }
 
     return !OutSync.TokenId.IsEmpty() && (RenderSessionId.IsEmpty() || OutSync.RenderSessionId == RenderSessionId);
 }
