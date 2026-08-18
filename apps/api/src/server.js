@@ -31,6 +31,7 @@ import {
 } from '../../../packages/authoritative-token-runtime/src/index.js';
 import { RenderNodeGateway, createHttpRenderNode } from '../../../packages/render-node-gateway/src/index.js';
 import { RemoteRenderBrokerService } from '../../../packages/remote-render-broker/src/index.js';
+import { createAuthoritativeRuntimeInputHandler } from '../../../packages/render-runtime-control/src/index.js';
 import { createApiApp } from './app.js';
 import { createOwnerAwareWebSocketProxy } from './realtime/owner-aware-websocket-proxy.js';
 
@@ -109,12 +110,6 @@ if (renderNodeUrl) {
     timeoutMs: Number(process.env.FENIX_RENDER_NODE_TIMEOUT_MS) || 10_000
   }));
 }
-const renderBrokerService = new RemoteRenderBrokerService({
-  campaignService,
-  actorService,
-  tokenService,
-  renderGateway
-});
 
 const runtimeRouter = leaseManager && config.internalRoutingSecret
   ? new OwnerAwareRuntimeRouter({
@@ -176,6 +171,27 @@ const sessionService = new CampaignRuntimeRegistry({
   })
 });
 await sessionService.initialize();
+
+const runtimeInputHandler = createAuthoritativeRuntimeInputHandler({
+  sessionService,
+  realtimeHub,
+  campaignService,
+  tokenService,
+  explorationService,
+  logger
+});
+const runtimeControlBaseUrl = process.env.FENIX_RENDER_CONTROL_BASE_URL?.trim()
+  || config.instancePublicUrl
+  || null;
+const renderBrokerService = new RemoteRenderBrokerService({
+  campaignService,
+  actorService,
+  tokenService,
+  sceneService,
+  renderGateway,
+  runtimeControlBaseUrl,
+  runtimeInputHandler
+});
 
 let coordinationRefresh = Promise.resolve();
 const unsubscribeCoordination = coordinationBus?.subscribe((event) => {

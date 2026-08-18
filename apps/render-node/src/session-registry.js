@@ -3,6 +3,7 @@ import {
   createRemoteRenderSessionRequest,
   createRenderSessionDescriptor
 } from '../../../packages/render-stream-contract/src/index.js';
+import { createFenix3dRuntimeManifest } from '../../../packages/render-runtime-adapter/src/index.js';
 
 function registryError(message, code, statusCode = 400) {
   const error = new Error(message);
@@ -113,11 +114,17 @@ export class RenderSessionRegistry {
       throw registryError('Player URL gerada pelo Render Node é inválida.', 'FENIX_RENDER_PLAYER_URL_INVALID', 500);
     }
 
+    let runtimeManifest = null;
+    if (request.worldBootstrap) {
+      runtimeManifest = createFenix3dRuntimeManifest(request.worldBootstrap);
+    }
+
     const record = Object.freeze({
       renderSessionId,
       key,
       request,
       descriptor,
+      runtimeManifest,
       runtimeAccessToken,
       createdAt: new Date(createdAtMs).toISOString(),
       expiresAt: new Date(expiresAtMs).toISOString()

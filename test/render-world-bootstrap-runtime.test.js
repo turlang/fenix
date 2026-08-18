@@ -12,24 +12,43 @@ function bootstrap() {
   return {
     schema: 'fenix.render-world-bootstrap',
     version: 1,
+    createdAt: '2026-08-18T03:00:00.000Z',
     campaign: { id: 'campaign-1', systemId: 'dnd5e' },
-    scene: { id: 'scene-1', grid: { size: 70, scale: { distancePerCell: 1.5, unit: 'm' } } },
+    scene: {
+      id: 'scene-1',
+      width: 700,
+      height: 560,
+      grid: { size: 70, scale: { distancePerCell: 1.5, unit: 'm' } },
+      physical: {
+        walls: [],
+        regions: [],
+        elevation: { enabled: false, unit: 'm', levelHeight: 3, levels: [] },
+        lighting: { enabled: false, darkness: 0, sources: [] }
+      },
+      fog: { enabled: false, exploredCells: [] }
+    },
     viewer: {
       actor: { actorId: 'actor-1', sheetId: 'sheet-1', systemId: 'dnd5e' },
-      token: { tokenId: 'token-1', actorId: 'actor-1', x: 100, y: 120, elevation: 0 },
-      camera: { sceneX: 100, sceneY: 120, elevation: 1.6, unit: 'm' }
+      token: { tokenId: 'token-1', actorId: 'actor-1', x: 100, y: 120, elevation: 0, height: 1.8 },
+      camera: { sceneX: 100, sceneY: 120, elevation: 1.6, eyeHeight: 1.6, visionDistance: 12, unit: 'm' }
     },
-    tokens: []
+    tokens: [{ tokenId: 'token-1', actorId: 'actor-1', x: 100, y: 120, elevation: 0, height: 1.8 }]
   };
 }
 
 function request() {
   return {
     campaignId: 'campaign-1',
+    sessionId: 'session-1',
     sceneId: 'scene-1',
     actorId: 'actor-1',
     tokenId: 'token-1',
-    worldBootstrap: bootstrap()
+    worldBootstrap: bootstrap(),
+    runtimeControl: {
+      controlId: 'control-1',
+      inputUrl: 'http://app.internal:3001/v1/runtime/render-control/control-1/input',
+      accessToken: 'runtime-control-secret-1234567890'
+    }
   };
 }
 
@@ -70,16 +89,19 @@ class FakeChild extends EventEmitter {
   }
 }
 
-test('Render Node stores bootstrap privately and descriptor never exposes runtime token or world snapshot', () => {
+test('Render Node converts bootstrap to private 3D manifest and descriptor exposes no runtime secrets', () => {
   const renderRegistry = registry();
   const record = renderRegistry.create(request());
   assert.equal(record.request.worldBootstrap.schema, 'fenix.render-world-bootstrap');
+  assert.equal(record.runtimeManifest.schema, 'fenix.3d-runtime-manifest');
   assert.ok(record.runtimeAccessToken.length >= 32);
   assert.equal(Object.hasOwn(record.descriptor, 'runtimeAccessToken'), false);
   assert.equal(Object.hasOwn(record.descriptor, 'worldBootstrap'), false);
+  assert.equal(Object.hasOwn(record.descriptor, 'runtimeManifest'), false);
+  assert.equal(Object.hasOwn(record.descriptor, 'runtimeControl'), false);
 });
 
-test('runtime bootstrap endpoint accepts only the scoped per-session token', async () => {
+test('runtime manifest endpoint accepts only the scoped per-session token', async () => {
   const renderRegistry = registry();
   const record = renderRegistry.create(request());
   const config = createRenderNodeConfig({
@@ -99,13 +121,15 @@ test('runtime bootstrap endpoint accepts only the scoped per-session token', asy
     const runtime = await fetch(path, { headers: { authorization: `Bearer ${record.runtimeAccessToken}` } });
     assert.equal(runtime.status, 200);
     const payload = await runtime.json();
-    assert.equal(payload.schema, 'fenix.render-world-bootstrap');
-    assert.equal(payload.viewer.actor.actorId, 'actor-1');
+    assert.equal(payload.schema, 'fenix.3d-runtime-manifest');
+    assert.equal(payload.viewer.actorId, 'actor-1');
+    assert.equal(payload.viewer.tokenId, 'token-1');
     assert.equal(JSON.stringify(payload).includes(record.runtimeAccessToken), false);
+    assert.equal(JSON.stringify(payload).includes(request().runtimeControl.accessToken), false);
   });
 });
 
-test('bootstrap credential stops working as soon as the render session is removed', async () => {
+test('runtime manifest credential stops working as soon as the render session is removed', async () => {
   const renderRegistry = registry();
   const record = renderRegistry.create(request());
   const config = createRenderNodeConfig({
@@ -122,7 +146,7 @@ test('bootstrap credential stops working as soon as the render session is remove
   });
 });
 
-test('process launcher receives bootstrap URL and scoped token only through server-controlled environment', async () => {
+test('process launcher receives manifest and control credentials only through server-controlled environment', async () => {
   const renderRegistry = registry();
   const record = renderRegistry.create(request());
   const child = new FakeChild();
@@ -141,12 +165,15 @@ test('process launcher receives bootstrap URL and scoped token only through serv
 
   await launcher.start(record);
   assert.equal(
-    spawnOptions.env.FENIX_WORLD_BOOTSTRAP_URL,
+    spawnOptions.env.FENIX_RUNTIME_MANIFEST_URL,
     `http://127.0.0.1:9000/v1/runtime/bootstrap/${record.renderSessionId}`
   );
-  assert.equal(spawnOptions.env.FENIX_WORLD_BOOTSTRAP_TOKEN, record.runtimeAccessToken);
+  assert.equal(spawnOptions.env.FENIX_RUNTIME_MANIFEST_TOKEN, record.runtimeAccessToken);
+  assert.equal(spawnOptions.env.FENIX_RUNTIME_CONTROL_ID, request().runtimeControl.controlId);
+  assert.equal(spawnOptions.env.FENIX_RUNTIME_CONTROL_URL, request().runtimeControl.inputUrl);
+  assert.equal(spawnOptions.env.FENIX_RUNTIME_CONTROL_TOKEN, request().runtimeControl.accessToken);
   assert.equal(spawnOptions.shell, false);
-  assert.equal(spawnOptions.env.FENIX_WORLD_BOOTSTRAP_TOKEN === 'admin-node-secret', false);
+  assert.notEqual(spawnOptions.env.FENIX_RUNTIME_MANIFEST_TOKEN, 'admin-node-secret');
   await launcher.stopAll();
 });
 

@@ -127,9 +127,10 @@ export class ProcessRenderRuntimeLauncher {
       streamerUrlTemplate: this.streamerUrlTemplate,
       extraArgs: this.extraArgs
     });
-    const bootstrapUrl = record.request?.worldBootstrap && this.bootstrapBaseUrl
+    const manifestUrl = record.runtimeManifest && this.bootstrapBaseUrl
       ? `${this.bootstrapBaseUrl}/v1/runtime/bootstrap/${encodeURIComponent(record.renderSessionId)}`
       : '';
+    const runtimeControl = record.request?.runtimeControl ?? null;
 
     let child;
     try {
@@ -142,8 +143,14 @@ export class ProcessRenderRuntimeLauncher {
           FENIX_SCENE_ID: record.request.sceneId,
           FENIX_ACTOR_ID: record.request.actorId,
           FENIX_TOKEN_ID: record.request.tokenId ?? '',
-          FENIX_WORLD_BOOTSTRAP_URL: bootstrapUrl,
-          FENIX_WORLD_BOOTSTRAP_TOKEN: bootstrapUrl ? record.runtimeAccessToken : ''
+          FENIX_RUNTIME_MANIFEST_URL: manifestUrl,
+          FENIX_RUNTIME_MANIFEST_TOKEN: manifestUrl ? record.runtimeAccessToken : '',
+          // Aliases mantidos durante a migração do primeiro runtime 3D.
+          FENIX_WORLD_BOOTSTRAP_URL: manifestUrl,
+          FENIX_WORLD_BOOTSTRAP_TOKEN: manifestUrl ? record.runtimeAccessToken : '',
+          FENIX_RUNTIME_CONTROL_ID: runtimeControl?.controlId ?? '',
+          FENIX_RUNTIME_CONTROL_URL: runtimeControl?.inputUrl ?? '',
+          FENIX_RUNTIME_CONTROL_TOKEN: runtimeControl?.accessToken ?? ''
         },
         shell: false,
         windowsHide: true,

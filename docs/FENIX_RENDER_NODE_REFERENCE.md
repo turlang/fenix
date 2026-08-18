@@ -11,11 +11,11 @@ API interna principal:
 - `GET /v1/render-sessions/:renderSessionId`
 - `DELETE /v1/render-sessions/:renderSessionId`
 
-Runtime 3D process mode também recebe um endpoint efêmero:
+No `process mode`, cada processo 3D também recebe acesso efêmero ao seu manifest:
 
 - `GET /v1/runtime/bootstrap/:renderSessionId`
 
-Esse endpoint usa um token exclusivo daquela sessão, diferente do Bearer administrativo do Render Node.
+Esse endpoint usa um token exclusivo da render session e não aceita o Bearer administrativo do Render Node.
 
 ## Fluxo
 
@@ -27,25 +27,26 @@ App Server / RemoteRenderBroker
     |
     | valida Campaign -> Actor -> Token -> Scene
     | monta World Bootstrap
-    | Bearer interno
+    | cria controlId/token efêmeros para input 3D
     v
 Reference Render Node
     |
     | reserva GPU/session
+    | transforma bootstrap em 3D Runtime Manifest
     | gera runtimeAccessToken efêmero
     v
 Runtime 3D supervisionado
     |
-    | FENIX_WORLD_BOOTSTRAP_URL
-    | FENIX_WORLD_BOOTSTRAP_TOKEN
+    | FENIX_RUNTIME_MANIFEST_URL/TOKEN
+    | FENIX_RUNTIME_CONTROL_URL/TOKEN
     v
-GET /v1/runtime/bootstrap/:renderSessionId
+Manifest + move/look/action
     |
     v
-Cena física + Viewer Token + Actor/Sheet + câmera
+Fênix Core autoritativo
     |
     v
-Signalling / WebRTC -> Browser
+state-sync aceito -> Runtime 3D -> WebRTC -> Browser
 ```
 
 ## Modos de runtime
@@ -84,88 +85,113 @@ Argumentos base:
 -FenixTokenId=<id>
 ```
 
-## World Bootstrap
+## World Bootstrap e Runtime Manifest
 
-`packages/render-world-bootstrap` cria o snapshot autoritativo enviado ao Render Node. O browser não recebe esse objeto.
+`packages/render-world-bootstrap` cria o snapshot autoritativo privado. Em seguida, `packages/render-runtime-adapter` converte esse snapshot para:
 
-O bootstrap contém:
-
-- Campaign/System;
-- Scene id, dimensões e background asset id;
-- grid + escala física, com default de `1.5 m` por célula;
-- walls;
-- lighting;
-- elevation/levels;
-- floor/stair/ramp regions;
-- Fog explorado apenas para o viewer;
-- tokens visíveis para aquele usuário;
-- Actor/Sheet resolvido;
-- viewer Token persistente;
-- movimento resolvido;
-- visão/sentido resolvido;
-- câmera First Person derivada de `token.elevation + actor.eyeHeight`.
-
-Exemplo conceitual:
-
-```json
-{
-  "schema": "fenix.render-world-bootstrap",
-  "version": 1,
-  "viewer": {
-    "camera": {
-      "sceneX": 350,
-      "sceneY": 420,
-      "groundElevation": 3,
-      "eyeHeight": 1.58,
-      "elevation": 4.58,
-      "unit": "m"
-    }
-  }
-}
+```text
+fenix.3d-runtime-manifest / v1
 ```
 
-## Credencial efêmera do runtime
+O browser não recebe nenhum desses objetos.
 
-Cada `renderSessionId` recebe um `runtimeAccessToken` aleatório de uso interno. Ele:
+O manifest contém dados já preparados para um runtime 3D:
+
+- dimensões de cena em pixels e centímetros;
+- grid + escala física, default `1,5 m` por célula;
+- walls/doors com faixa vertical em centímetros;
+- elevation levels;
+- floor/stair/ramp regions;
+- luzes e raios em centímetros;
+- entidades Token visíveis;
+- viewer Actor/Sheet;
+- câmera First Person;
+- Fog explorado do viewer.
+
+A conversão usa centímetros como unidade do runtime e inverte o eixo Y do canvas 2D.
+
+Documentação detalhada: `docs/FENIX_3D_RUNTIME_ADAPTER.md`.
+
+## Credencial efêmera do manifest
+
+Cada `renderSessionId` recebe um `runtimeAccessToken` aleatório. Ele:
 
 - não aparece no descriptor WebRTC;
 - não aparece na resposta do broker para o navegador;
-- não é o `FENIX_RENDER_NODE_TOKEN` administrativo;
-- só autoriza o bootstrap daquela sessão;
-- deixa de funcionar assim que a sessão é removida/expira.
+- não é `FENIX_RENDER_NODE_TOKEN`;
+- só autoriza o manifest daquela sessão;
+- deixa de funcionar quando a sessão é removida/expira.
 
-No process mode o launcher injeta somente no ambiente do processo:
+No process mode o launcher injeta:
 
 ```text
-FENIX_WORLD_BOOTSTRAP_URL=http://127.0.0.1:9000/v1/runtime/bootstrap/<renderSessionId>
-FENIX_WORLD_BOOTSTRAP_TOKEN=<token efêmero>
+FENIX_RUNTIME_MANIFEST_URL=http://127.0.0.1:9000/v1/runtime/bootstrap/<renderSessionId>
+FENIX_RUNTIME_MANIFEST_TOKEN=<token efêmero>
 ```
 
-O endereço pode ser ajustado com:
+Durante a migração, os aliases `FENIX_WORLD_BOOTSTRAP_URL/TOKEN` continuam disponíveis.
+
+O endereço local pode ser alterado com:
 
 ```env
 FENIX_RENDER_RUNTIME_BOOTSTRAP_BASE_URL=http://127.0.0.1:9000
 ```
 
+## Canal de input do runtime 3D
+
+Quando uma render session está associada a uma sessão VTT ativa e o App Server tem `FENIX_RENDER_CONTROL_BASE_URL` ou `FENIX_INSTANCE_PUBLIC_URL`, o broker cria outra credencial efêmera, específica para controle.
+
+O launcher injeta no processo:
+
+```text
+FENIX_RUNTIME_CONTROL_ID=<controlId>
+FENIX_RUNTIME_CONTROL_URL=https://api-internal/.../v1/runtime/render-control/<controlId>/input
+FENIX_RUNTIME_CONTROL_TOKEN=<token efêmero>
+```
+
+O processo usa esse canal para enviar somente intents:
+
+- `move`;
+- `look`;
+- `action`.
+
+O runtime não pode enviar `x/y/z`, posição, transform, teleport, actorId, tokenId ou sceneId como autoridade. O App Server rejeita esses campos.
+
+O `AuthoritativeRealtimeSessionGateway` existente continua responsável por:
+
+- associação Token -> Actor;
+- paredes/portas;
+- limites da cena;
+- elevação;
+- regiões físicas;
+- persistência;
+- Fog/exploração.
+
+A resposta para o runtime é `fenix.3d-runtime-state-sync`, contendo a posição aceita pelo Core.
+
 ## Lifecycle GPU
 
-1. App Server autoriza o jogador e monta o World Bootstrap.
-2. Render Node reserva um slot.
-3. Process mode inicia o runtime 3D.
-4. Early exit reverte a reserva.
-5. Runtime busca apenas seu bootstrap.
-6. `DELETE` encerra processo e sessão.
-7. TTL encerra sessões abandonadas.
-8. Shutdown executa `stopAll()`.
+1. App Server autoriza jogador e monta World Bootstrap.
+2. Broker cria o canal de controle efêmero, quando aplicável.
+3. Render Node reserva slot e cria o Runtime Manifest.
+4. Process mode inicia o runtime 3D.
+5. Runtime busca somente seu manifest.
+6. Runtime envia intents usando sua credencial de controle.
+7. Core aceita/corrige o estado e devolve state-sync.
+8. Early exit reverte a reserva.
+9. `DELETE` encerra processo e sessão.
+10. TTL encerra sessões abandonadas.
+11. Shutdown executa `stopAll()`.
 
 ## Segurança
 
 - porta administrativa do Render Node deve ficar em rede privada;
-- `FENIX_RENDER_NODE_TOKEN` nunca deve ser enviado ao browser;
-- World Bootstrap nunca integra o descriptor público;
-- Fog de outros atores não entra no bootstrap do jogador;
-- runtime token é escopado a uma única sessão;
-- comando do runtime nunca vem do payload do jogador;
+- `FENIX_RENDER_NODE_TOKEN` nunca deve ser enviado ao browser ou runtime 3D;
+- Runtime Manifest nunca integra o descriptor público;
+- Fog de outros atores não entra no manifest do jogador;
+- manifest token e runtime-control token são credenciais diferentes e escopadas;
+- runtime-control token não é cookie do jogador;
+- comandos/paths do executável nunca vêm do navegador;
 - `shell` permanece desativado;
 - streamer aceita somente `ws://`/`wss://`;
 - player público aceita somente `http://`/`https://`;
@@ -173,4 +199,4 @@ FENIX_RENDER_RUNTIME_BOOTSTRAP_BASE_URL=http://127.0.0.1:9000
 
 ## Próximo estágio
 
-O próximo marco é o **Fênix 3D Runtime Adapter**: definir como o projeto Unreal interpreta o World Bootstrap, converte coordenadas 2D/escala física para o mundo 3D, cria a câmera na altura dos olhos, materializa walls/doors/floors/ramps/lights e devolve inputs de movimento como intents ao Core em vez de movimentar o personagem localmente como autoridade.
+O próximo marco é o **Unreal Runtime Skeleton / Fenix3D v0.1**: implementar no projeto Unreal o cliente do manifest, um world builder mínimo, um First Person Pawn e o cliente de `move/look/action` com reconciliação pelo state-sync.
