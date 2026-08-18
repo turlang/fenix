@@ -1,0 +1,19 @@
+{
+  "FileVersion": 3,
+  "EngineAssociation": "5.5",
+  "Category": "Games",
+  "Description": "Fenix 3D thin runtime for authoritative remote-render sessions.",
+  "Modules": [
+    {
+      "Name": "Fenix3D",
+      "Type": "Runtime",
+      "LoadingPhase": "Default"
+    }
+  ],
+  "Plugins": [
+    {
+      "Name": "PixelStreaming2",
+      "Enabled": true
+    }
+  ]
+}
