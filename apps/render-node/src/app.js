@@ -1,5 +1,4 @@
 import { timingSafeEqual } from 'node:crypto';
-import Fastify from 'fastify';
 
 function safeEqual(left, right) {
   const a = Buffer.from(String(left ?? ''));
@@ -20,64 +19,105 @@ function errorPayload(error) {
   };
 }
 
-export function createRenderNodeApp({ config, registry, logger = true } = {}) {
+function sendJson(response, statusCode, payload) {
+  const body = JSON.stringify(payload);
+  response.writeHead(statusCode, {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Content-Length': Buffer.byteLength(body),
+    'Cache-Control': 'no-store'
+  });
+  response.end(body);
+}
+
+async function readJsonBody(request, maxBytes = 64 * 1024) {
+  let size = 0;
+  const chunks = [];
+  for await (const chunk of request) {
+    size += chunk.length;
+    if (size > maxBytes) {
+      const error = new Error('Payload do Render Node excedeu o limite.');
+      error.code = 'FENIX_RENDER_NODE_BODY_TOO_LARGE';
+      error.statusCode = 413;
+      throw error;
+    }
+    chunks.push(chunk);
+  }
+  if (!chunks.length) return {};
+  try {
+    const parsed = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('body-object-required');
+    return parsed;
+  } catch {
+    const error = new Error('Payload JSON inválido.');
+    error.code = 'FENIX_RENDER_NODE_INVALID_JSON';
+    error.statusCode = 400;
+    throw error;
+  }
+}
+
+export function createRenderNodeHandler({ config, registry } = {}) {
   if (!config) throw new TypeError('config é obrigatório.');
   if (!registry) throw new TypeError('registry é obrigatório.');
-  const app = Fastify({ logger });
 
-  function requireInternalAuth(request, reply) {
-    if (request.url === '/health' && config.allowUnauthenticatedHealth) return true;
-    if (!config.authToken) {
-      reply.code(503).send({ code: 'FENIX_RENDER_NODE_AUTH_NOT_CONFIGURED', message: 'Token interno do Render Node não configurado.' });
-      return false;
+  return async function renderNodeHandler(request, response) {
+    const url = new URL(request.url ?? '/', 'http://render-node.internal');
+    const pathname = url.pathname;
+
+    if (!(pathname === '/health' && config.allowUnauthenticatedHealth)) {
+      if (!config.authToken) {
+        return sendJson(response, 503, {
+          code: 'FENIX_RENDER_NODE_AUTH_NOT_CONFIGURED',
+          message: 'Token interno do Render Node não configurado.'
+        });
+      }
+      if (!safeEqual(bearerToken(request), config.authToken)) {
+        return sendJson(response, 401, {
+          code: 'FENIX_RENDER_NODE_UNAUTHORIZED',
+          message: 'Credencial interna inválida.'
+        });
+      }
     }
-    if (!safeEqual(bearerToken(request), config.authToken)) {
-      reply.code(401).send({ code: 'FENIX_RENDER_NODE_UNAUTHORIZED', message: 'Credencial interna inválida.' });
-      return false;
-    }
-    return true;
-  }
 
-  app.addHook('onRequest', async (request, reply) => {
-    if (!requireInternalAuth(request, reply)) return reply;
-  });
-
-  app.get('/health', async () => {
-    const status = registry.status();
-    return {
-      status: status.configured ? 'ok' : 'degraded',
-      service: 'fenix-render-node',
-      nodeId: status.nodeId,
-      region: status.region,
-      renderer: status.renderer,
-      configured: status.configured,
-      capacity: status.capacity,
-      activeSessions: status.activeSessions,
-      availableSlots: status.availableSlots,
-      available: status.available
-    };
-  });
-
-  app.post('/v1/render-sessions', async (request, reply) => {
     try {
-      const record = registry.create(request.body ?? {});
-      return reply.code(201).send(record.descriptor);
+      if (request.method === 'GET' && pathname === '/health') {
+        const status = registry.status();
+        return sendJson(response, 200, {
+          status: status.configured ? 'ok' : 'degraded',
+          service: 'fenix-render-node',
+          nodeId: status.nodeId,
+          region: status.region,
+          renderer: status.renderer,
+          configured: status.configured,
+          capacity: status.capacity,
+          activeSessions: status.activeSessions,
+          availableSlots: status.availableSlots,
+          available: status.available
+        });
+      }
+
+      if (request.method === 'POST' && pathname === '/v1/render-sessions') {
+        const record = registry.create(await readJsonBody(request));
+        return sendJson(response, 201, record.descriptor);
+      }
+
+      const sessionMatch = pathname.match(/^\/v1\/render-sessions\/([^/]+)$/);
+      if (sessionMatch) {
+        const renderSessionId = decodeURIComponent(sessionMatch[1]);
+        if (request.method === 'GET') {
+          const record = registry.get(renderSessionId);
+          if (!record) return sendJson(response, 404, { code: 'FENIX_RENDER_SESSION_NOT_FOUND', message: 'Sessão de render não encontrada.' });
+          return sendJson(response, 200, record.descriptor);
+        }
+        if (request.method === 'DELETE') {
+          const ended = registry.delete(renderSessionId);
+          if (!ended) return sendJson(response, 404, { code: 'FENIX_RENDER_SESSION_NOT_FOUND', message: 'Sessão de render não encontrada.' });
+          return sendJson(response, 200, { renderSessionId, ended: true });
+        }
+      }
+
+      return sendJson(response, 404, { code: 'FENIX_RENDER_NODE_ROUTE_NOT_FOUND', message: 'Rota não encontrada.' });
     } catch (error) {
-      return reply.code(Number(error?.statusCode) || 400).send(errorPayload(error));
+      return sendJson(response, Number(error?.statusCode) || 400, errorPayload(error));
     }
-  });
-
-  app.get('/v1/render-sessions/:renderSessionId', async (request, reply) => {
-    const record = registry.get(request.params.renderSessionId);
-    if (!record) return reply.code(404).send({ code: 'FENIX_RENDER_SESSION_NOT_FOUND', message: 'Sessão de render não encontrada.' });
-    return record.descriptor;
-  });
-
-  app.delete('/v1/render-sessions/:renderSessionId', async (request, reply) => {
-    const ended = registry.delete(request.params.renderSessionId);
-    if (!ended) return reply.code(404).send({ code: 'FENIX_RENDER_SESSION_NOT_FOUND', message: 'Sessão de render não encontrada.' });
-    return { renderSessionId: request.params.renderSessionId, ended: true };
-  });
-
-  return app;
+  };
 }
