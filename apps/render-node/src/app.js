@@ -55,7 +55,7 @@ async function readJsonBody(request, maxBytes = 64 * 1024) {
   }
 }
 
-export function createRenderNodeHandler({ config, registry } = {}) {
+export function createRenderNodeHandler({ config, registry, runtimeLauncher = null } = {}) {
   if (!config) throw new TypeError('config é obrigatório.');
   if (!registry) throw new TypeError('registry é obrigatório.');
 
@@ -81,22 +81,37 @@ export function createRenderNodeHandler({ config, registry } = {}) {
     try {
       if (request.method === 'GET' && pathname === '/health') {
         const status = registry.status();
+        const launcherReady = config.runtimeMode !== 'process' || runtimeLauncher?.enabled === true;
         return sendJson(response, 200, {
-          status: status.configured ? 'ok' : 'degraded',
+          status: status.configured && launcherReady ? 'ok' : 'degraded',
           service: 'fenix-render-node',
           nodeId: status.nodeId,
           region: status.region,
           renderer: status.renderer,
-          configured: status.configured,
+          runtimeMode: config.runtimeMode,
+          runtimeProcess: runtimeLauncher ? {
+            enabled: runtimeLauncher.enabled,
+            activeProcesses: runtimeLauncher.list().length
+          } : null,
+          configured: status.configured && launcherReady,
           capacity: status.capacity,
           activeSessions: status.activeSessions,
           availableSlots: status.availableSlots,
-          available: status.available
+          available: status.available && launcherReady
         });
       }
 
       if (request.method === 'POST' && pathname === '/v1/render-sessions') {
-        const record = registry.create(await readJsonBody(request));
+        const body = await readJsonBody(request);
+        const record = registry.create(body);
+        if (config.runtimeMode === 'process') {
+          try {
+            await runtimeLauncher?.start(record);
+          } catch (error) {
+            registry.delete(record.renderSessionId);
+            throw error;
+          }
+        }
         return sendJson(response, 201, record.descriptor);
       }
 
@@ -109,8 +124,10 @@ export function createRenderNodeHandler({ config, registry } = {}) {
           return sendJson(response, 200, record.descriptor);
         }
         if (request.method === 'DELETE') {
-          const ended = registry.delete(renderSessionId);
-          if (!ended) return sendJson(response, 404, { code: 'FENIX_RENDER_SESSION_NOT_FOUND', message: 'Sessão de render não encontrada.' });
+          const record = registry.get(renderSessionId);
+          if (!record) return sendJson(response, 404, { code: 'FENIX_RENDER_SESSION_NOT_FOUND', message: 'Sessão de render não encontrada.' });
+          if (config.runtimeMode === 'process') await runtimeLauncher?.stop(renderSessionId);
+          registry.delete(renderSessionId);
           return sendJson(response, 200, { renderSessionId, ended: true });
         }
       }
