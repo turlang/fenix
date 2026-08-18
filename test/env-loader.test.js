@@ -16,8 +16,10 @@ test('Engine carrega automaticamente o arquivo .env antes de criar providers', a
   assert.ok(providerCallIndex > loadIndex, 'loadEnvFile deve executar antes da criação dos providers');
 });
 
-test('health reporta o estado do provider sem acoplar criação ao Fastify', async () => {
+test('health reporta gateways sem acoplar criação de providers ao Fastify', async () => {
   const source = await readFile(appPath, 'utf8');
-  assert.match(source, /ai: narrator \? 'groq' : 'not-configured'/);
+  assert.match(source, /gateway:\$\{narrator\.routingPolicy\}/);
+  assert.match(source, /remoteRender: renderBrokerService\?\.enabled \? 'gpu-broker' : 'disabled'/);
   assert.doesNotMatch(source, /createNarrativeProviderFromEnv/);
+  assert.doesNotMatch(source, /createHttpRenderNode/);
 });
