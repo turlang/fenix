@@ -11,3 +11,10 @@ data/*.json
 data/fenix-assets/
 !data/.gitkeep
 
+# Unreal Engine generated artifacts
+apps/fenix3d-unreal/Binaries/
+apps/fenix3d-unreal/DerivedDataCache/
+apps/fenix3d-unreal/Intermediate/
+apps/fenix3d-unreal/Saved/
+apps/fenix3d-unreal/.vs/
+apps/fenix3d-unreal/*.sln
