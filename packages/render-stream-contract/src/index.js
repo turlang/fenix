@@ -20,6 +20,17 @@ function finite(value, fallback = 0, min = -1, max = 1) {
   return Math.max(min, Math.min(max, number));
 }
 
+function safeUrl(value, allowedProtocols) {
+  const raw = text(value, 1000);
+  if (!raw) return null;
+  try {
+    const parsed = new URL(raw);
+    return allowedProtocols.includes(parsed.protocol) ? parsed.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
 export const RenderTransport = Object.freeze({
   WEBRTC: 'webrtc'
 });
@@ -110,7 +121,8 @@ export function createRenderSessionDescriptor(input = {}) {
     renderSessionId,
     status: text(input.status, 40) || 'ready',
     transport: RenderTransport.WEBRTC,
-    signallingUrl: text(input.signallingUrl, 1000) || null,
+    playerUrl: safeUrl(input.playerUrl, ['https:', 'http:']),
+    signallingUrl: safeUrl(input.signallingUrl, ['wss:', 'ws:']),
     expiresAt: input.expiresAt ? new Date(input.expiresAt).toISOString() : null,
     renderer: text(input.renderer, 120) || 'remote-3d-runtime',
     region: text(input.region, 120) || null

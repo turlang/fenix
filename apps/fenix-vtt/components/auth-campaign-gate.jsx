@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createFenixApiClient } from '../lib/fenix-api-client.js';
 import { FenixSessionProvider } from './session-provider.jsx';
-import { VttShell } from './vtt-shell.jsx';
+import { DualViewVttShell } from './dual-view-vtt-shell.jsx';
 
 function readInviteToken() {
   if (typeof window === 'undefined') return null;
@@ -195,7 +195,7 @@ export function AuthCampaignGate() {
   if (selectedCampaign && user) {
     return (
       <FenixSessionProvider campaign={selectedCampaign} currentUser={user}>
-        <VttShell onExitCampaign={() => setSelectedCampaign(null)} onLogout={logout} />
+        <DualViewVttShell onExitCampaign={() => setSelectedCampaign(null)} onLogout={logout} />
       </FenixSessionProvider>
     );
   }
