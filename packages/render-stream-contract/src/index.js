@@ -110,6 +110,7 @@ export function createRenderSessionDescriptor(input = {}) {
     renderSessionId,
     status: text(input.status, 40) || 'ready',
     transport: RenderTransport.WEBRTC,
+    playerUrl: text(input.playerUrl, 1000) || null,
     signallingUrl: text(input.signallingUrl, 1000) || null,
     expiresAt: input.expiresAt ? new Date(input.expiresAt).toISOString() : null,
     renderer: text(input.renderer, 120) || 'remote-3d-runtime',
