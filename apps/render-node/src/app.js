@@ -29,6 +29,13 @@ function sendJson(response, statusCode, payload) {
   response.end(body);
 }
 
+function launcherRequiredError() {
+  const error = new Error('Process mode exige launcher de runtime 3D configurado.');
+  error.code = 'FENIX_RENDER_RUNTIME_LAUNCHER_NOT_CONFIGURED';
+  error.statusCode = 503;
+  return error;
+}
+
 async function readJsonBody(request, maxBytes = 64 * 1024) {
   let size = 0;
   const chunks = [];
@@ -103,10 +110,11 @@ export function createRenderNodeHandler({ config, registry, runtimeLauncher = nu
 
       if (request.method === 'POST' && pathname === '/v1/render-sessions') {
         const body = await readJsonBody(request);
+        if (config.runtimeMode === 'process' && runtimeLauncher?.enabled !== true) throw launcherRequiredError();
         const record = registry.create(body);
         if (config.runtimeMode === 'process') {
           try {
-            await runtimeLauncher?.start(record);
+            await runtimeLauncher.start(record);
           } catch (error) {
             registry.delete(record.renderSessionId);
             throw error;
