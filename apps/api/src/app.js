@@ -8,6 +8,7 @@ import { registerAuthRoutes } from './http/register-auth-routes.js';
 import { registerCampaignRoutes } from './http/register-campaign-routes.js';
 import { registerSceneRoutes } from './http/register-scene-routes.js';
 import { registerActorRoutes } from './http/register-actor-routes.js';
+import { registerRenderRoutes } from './http/register-render-routes.js';
 import { createSessionRequestAuthorizer } from './http/session-authorizer.js';
 import { registerRealtimeRoutes } from './realtime/register-realtime-routes.js';
 
@@ -21,6 +22,7 @@ export async function createApiApp({
   campaignService = null,
   sceneService = null,
   actorService = null,
+  renderBrokerService = null,
   runtimeRouter = null,
   realtimeProxy = null,
   commandLedger = null,
@@ -52,7 +54,7 @@ export async function createApiApp({
       reply.header('Vary', 'Origin');
     }
     reply.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Idempotency-Key');
-    reply.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    reply.header('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
     if (request.method === 'OPTIONS') return reply.code(204).send();
   });
 
@@ -60,7 +62,7 @@ export async function createApiApp({
     status: 'ok',
     service: 'mestre-orc-engine',
     version: ENGINE_VERSION,
-    ai: narrator ? 'groq' : 'not-configured',
+    ai: narrator ? (narrator.routingPolicy ? `gateway:${narrator.routingPolicy}` : 'configured') : 'not-configured',
     narrativeMemory: 'persistent-file',
     persistence: campaignService ? 'campaign-file' : 'disabled',
     auth: authService ? 'opaque-session' : 'disabled',
@@ -68,6 +70,7 @@ export async function createApiApp({
     realtime: realtimeGateway ? 'websocket' : 'disabled',
     sceneManager: sceneService ? 'enabled' : 'disabled',
     actorSheets: actorService ? 'enabled' : 'disabled',
+    remoteRender: renderBrokerService?.enabled ? 'gpu-broker' : 'disabled',
     routing: runtimeRouter?.enabled ? 'owner-aware' : 'local-only',
     idempotency: commandLedger?.driver ?? 'disabled',
     runtime: sessionService.getStatus()
@@ -80,6 +83,7 @@ export async function createApiApp({
         status: 'ready',
         routing: runtimeRouter?.enabled ? 'owner-aware' : 'local-only',
         idempotency: commandLedger?.driver ?? 'disabled',
+        remoteRender: renderBrokerService?.enabled ? 'gpu-broker' : 'disabled',
         runtime: sessionService.getStatus()
       };
     } catch {
@@ -110,6 +114,7 @@ export async function createApiApp({
     registerCampaignRoutes(app, { authService, campaignService, config });
     if (sceneService) registerSceneRoutes(app, { authService, sceneService });
     if (actorService) registerActorRoutes(app, { authService, actorService });
+    if (renderBrokerService) registerRenderRoutes(app, { authService, renderBrokerService });
   }
 
   if (realtimeGateway) {
