@@ -11,6 +11,7 @@ class USceneComponent;
 DECLARE_MULTICAST_DELEGATE_ThreeParams(FFenixMoveIntentDelegate, float, float, bool);
 DECLARE_MULTICAST_DELEGATE_TwoParams(FFenixLookIntentDelegate, float, float);
 DECLARE_MULTICAST_DELEGATE_OneParam(FFenixActionIntentDelegate, const FString&);
+DECLARE_MULTICAST_DELEGATE_OneParam(FFenixCollisionFeedbackDelegate, const FString&);
 
 UCLASS()
 class FENIX3D_API AFenixFirstPersonPawn : public APawn
@@ -26,6 +27,7 @@ public:
     FFenixMoveIntentDelegate OnMoveIntent;
     FFenixLookIntentDelegate OnLookIntent;
     FFenixActionIntentDelegate OnActionIntent;
+    FFenixCollisionFeedbackDelegate OnCollisionFeedback;
 
     void InitializeFromManifest(const FFenixRuntimeManifest& Manifest);
     void ApplyAuthoritativeState(const FFenixRuntimeStateSync& State, const FFenixRuntimeManifest& Manifest);
@@ -45,8 +47,12 @@ private:
     float CurrentPitch = 0.0f;
     float IntentAccumulator = 0.0f;
     bool bRunning = false;
+    bool bHasAuthoritativeTarget = false;
+    FVector AuthoritativeTargetLocation = FVector::ZeroVector;
+    FRotator AuthoritativeTargetRotation = FRotator::ZeroRotator;
 
     static constexpr float IntentIntervalSeconds = 0.05f;
+    static constexpr float ReconciliationSpeed = 14.0f;
 
     void MoveForward(float Value);
     void MoveRight(float Value);
@@ -56,4 +62,5 @@ private:
     void RunReleased();
     void PrimaryAction();
     void EmitInputIntents();
+    void ReconcileAuthoritativeTransform(float DeltaSeconds);
 };

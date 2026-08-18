@@ -20,6 +20,7 @@ void AFenixWorldBuilder::ClearWorld()
         if (IsValid(Actor)) Actor->Destroy();
     }
     RuntimeActors.Reset();
+    RuntimeEntityActors.Reset();
 }
 
 void AFenixWorldBuilder::BuildWorld(const FFenixRuntimeManifest& Manifest)
@@ -54,6 +55,76 @@ AActor* AFenixWorldBuilder::SpawnBox(const FString& Label, const FVector& Locati
     return Actor;
 }
 
+AActor* AFenixWorldBuilder::SpawnEntityActor(const FFenixRuntimeEntity& Entity)
+{
+    if (!GetWorld() || !CylinderMesh || Entity.bViewer) return nullptr;
+
+    AStaticMeshActor* Actor = GetWorld()->SpawnActor<AStaticMeshActor>(Entity.Location, FRotator(0.0, Entity.SceneRotationDegrees, 0.0));
+    if (!Actor) return nullptr;
+
+    UStaticMeshComponent* Mesh = Actor->GetStaticMeshComponent();
+    Mesh->SetStaticMesh(CylinderMesh);
+    Mesh->SetMobility(EComponentMobility::Movable);
+    Mesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+    Mesh->SetGenerateOverlapEvents(false);
+    Actor->SetActorScale3D(FVector(
+        FMath::Max(20.0, Entity.FootprintCm) / 100.0,
+        FMath::Max(20.0, Entity.FootprintCm) / 100.0,
+        FMath::Max(20.0, Entity.HeightCm) / 100.0
+    ));
+    Actor->SetActorHiddenInGame(!Entity.bVisible);
+    Actor->Tags.Add(*FString::Printf(TEXT("Fenix.Token.%s"), *Entity.TokenId));
+    RuntimeActors.Add(Actor);
+    RuntimeEntityActors.Add(Entity.TokenId, Actor);
+    return Actor;
+}
+
+FVector AFenixWorldBuilder::SceneStateToRuntimeLocation(const FFenixRuntimeEntityState& Entity, const FFenixRuntimeManifest& Manifest) const
+{
+    const double CmPerPixel = FMath::Max(0.0001, Manifest.Scene.CentimetersPerPixel);
+    const double ElevationCm = Entity.Elevation * (Manifest.Scene.SceneUnit == TEXT("ft") ? 30.48 : 100.0);
+    return FVector(
+        Entity.ScenePosition.X * CmPerPixel,
+        -Entity.ScenePosition.Y * CmPerPixel,
+        ElevationCm
+    );
+}
+
+void AFenixWorldBuilder::ApplySceneSync(const FFenixRuntimeStateSync& Sync, const FFenixRuntimeManifest& Manifest)
+{
+    for (const FFenixRuntimeEntityState& Entity : Sync.Entities)
+    {
+        if (Entity.TokenId == Manifest.Viewer.TokenId) continue;
+
+        AActor* Actor = RuntimeEntityActors.FindRef(Entity.TokenId);
+        if (!IsValid(Actor))
+        {
+            const FFenixRuntimeEntity* Initial = Manifest.Entities.FindByPredicate([&Entity](const FFenixRuntimeEntity& Candidate)
+            {
+                return Candidate.TokenId == Entity.TokenId;
+            });
+            FFenixRuntimeEntity SpawnData;
+            if (Initial) SpawnData = *Initial;
+            SpawnData.TokenId = Entity.TokenId;
+            SpawnData.ActorId = Entity.ActorId;
+            SpawnData.Location = SceneStateToRuntimeLocation(Entity, Manifest);
+            SpawnData.SceneRotationDegrees = Entity.Rotation;
+            SpawnData.bVisible = Entity.bVisible;
+            Actor = SpawnEntityActor(SpawnData);
+        }
+        if (!IsValid(Actor)) continue;
+
+        Actor->SetActorHiddenInGame(!Entity.bVisible);
+        Actor->SetActorLocationAndRotation(
+            SceneStateToRuntimeLocation(Entity, Manifest),
+            FRotator(0.0, Entity.Rotation, 0.0),
+            false,
+            nullptr,
+            ETeleportType::TeleportPhysics
+        );
+    }
+}
+
 void AFenixWorldBuilder::BuildBaseFloor(const FFenixRuntimeManifest& Manifest)
 {
     const double Width = FMath::Max(100.0, Manifest.Scene.WidthCm);
@@ -73,12 +144,22 @@ void AFenixWorldBuilder::BuildWalls(const FFenixRuntimeManifest& Manifest)
         const double Length = FMath::Max(1.0, FVector2D(Delta.X, Delta.Y).Size());
         const double Height = FMath::Max(1.0, Wall.HeightCm);
         const double Thickness = FMath::Clamp(Wall.RecommendedThicknessCm, 2.0, 50.0);
-        const FVector Midpoint(
+        double Yaw = FMath::RadiansToDegrees(FMath::Atan2(Delta.Y, Delta.X));
+        FVector Midpoint(
             (Wall.A.X + Wall.B.X) * 0.5,
             (Wall.A.Y + Wall.B.Y) * 0.5,
             Wall.BottomZ + Height * 0.5
         );
-        const double Yaw = FMath::RadiansToDegrees(FMath::Atan2(Delta.Y, Delta.X));
+
+        if (Wall.Kind == TEXT("door") && Wall.DoorState == TEXT("open"))
+        {
+            const double OpenYaw = Yaw + 90.0;
+            const double Radians = FMath::DegreesToRadians(OpenYaw);
+            Midpoint.X = Wall.A.X + FMath::Cos(Radians) * Length * 0.5;
+            Midpoint.Y = Wall.A.Y + FMath::Sin(Radians) * Length * 0.5;
+            Yaw = OpenYaw;
+        }
+
         const FString Tag = Wall.Kind == TEXT("door")
             ? FString::Printf(TEXT("Fenix.Door.%s.%s"), *Wall.Id, *Wall.DoorState)
             : FString::Printf(TEXT("Fenix.Wall.%s"), *Wall.Id);
@@ -103,11 +184,35 @@ void AFenixWorldBuilder::BuildRegions(const FFenixRuntimeManifest& Manifest)
             Max.Y = FMath::Max(Max.Y, Point.Y);
         }
 
-        const double MidZ = (Region.BaseZ + Region.TargetZ) * 0.5;
-        const FVector Size(FMath::Max(10.0, Max.X - Min.X), FMath::Max(10.0, Max.Y - Min.Y), 8.0);
-        const FVector Center((Min.X + Max.X) * 0.5, (Min.Y + Max.Y) * 0.5, MidZ - 4.0);
-        FRotator Rotation = FRotator::ZeroRotator;
+        const FVector BoundsSize(FMath::Max(10.0, Max.X - Min.X), FMath::Max(10.0, Max.Y - Min.Y), 8.0);
+        const FVector BoundsCenter((Min.X + Max.X) * 0.5, (Min.Y + Max.Y) * 0.5, Region.BaseZ - 4.0);
 
+        if (Region.Kind == TEXT("stairs") && Region.bHasAxis)
+        {
+            constexpr int32 StepCount = 8;
+            const FVector Axis = Region.AxisEnd - Region.AxisStart;
+            for (int32 StepIndex = 0; StepIndex < StepCount; ++StepIndex)
+            {
+                const double Alpha0 = static_cast<double>(StepIndex) / StepCount;
+                const double Alpha1 = static_cast<double>(StepIndex + 1) / StepCount;
+                const FVector Start = FMath::Lerp(Region.AxisStart, Region.AxisEnd, Alpha0);
+                const FVector End = FMath::Lerp(Region.AxisStart, Region.AxisEnd, Alpha1);
+                const double StepZ = FMath::Lerp(Region.BaseZ, Region.TargetZ, Alpha1);
+                const FVector Segment = End - Start;
+                const double Length = FMath::Max(10.0, FVector2D(Segment.X, Segment.Y).Size());
+                const double Yaw = FMath::RadiansToDegrees(FMath::Atan2(Segment.Y, Segment.X));
+                SpawnBox(
+                    FString::Printf(TEXT("Fenix.Region.stairs.%s.%d"), *Region.Id, StepIndex),
+                    FVector((Start.X + End.X) * 0.5, (Start.Y + End.Y) * 0.5, StepZ - 4.0),
+                    FVector(Length, BoundsSize.Y, 8.0),
+                    FRotator(0.0, Yaw, 0.0)
+                );
+            }
+            continue;
+        }
+
+        FRotator Rotation = FRotator::ZeroRotator;
+        FVector Center = BoundsCenter;
         if (Region.bHasAxis && Region.Kind == TEXT("ramp"))
         {
             const FVector Axis = Region.AxisEnd - Region.AxisStart;
@@ -115,9 +220,10 @@ void AFenixWorldBuilder::BuildRegions(const FFenixRuntimeManifest& Manifest)
             const double Pitch = -FMath::RadiansToDegrees(FMath::Atan2(Region.TargetZ - Region.BaseZ, Horizontal));
             const double Yaw = FMath::RadiansToDegrees(FMath::Atan2(Axis.Y, Axis.X));
             Rotation = FRotator(Pitch, Yaw, 0.0);
+            Center.Z = (Region.BaseZ + Region.TargetZ) * 0.5 - 4.0;
         }
 
-        SpawnBox(FString::Printf(TEXT("Fenix.Region.%s.%s"), *Region.Kind, *Region.Id), Center, Size, Rotation);
+        SpawnBox(FString::Printf(TEXT("Fenix.Region.%s.%s"), *Region.Kind, *Region.Id), Center, BoundsSize, Rotation);
     }
 }
 
@@ -143,25 +249,9 @@ void AFenixWorldBuilder::BuildLights(const FFenixRuntimeManifest& Manifest)
 
 void AFenixWorldBuilder::BuildEntities(const FFenixRuntimeManifest& Manifest)
 {
-    if (!GetWorld() || !CylinderMesh) return;
-
     for (const FFenixRuntimeEntity& Entity : Manifest.Entities)
     {
-        if (!Entity.bVisible || Entity.bViewer) continue;
-        AStaticMeshActor* Actor = GetWorld()->SpawnActor<AStaticMeshActor>(Entity.Location, FRotator(0.0, Entity.SceneRotationDegrees, 0.0));
-        if (!Actor) continue;
-
-        UStaticMeshComponent* Mesh = Actor->GetStaticMeshComponent();
-        Mesh->SetStaticMesh(CylinderMesh);
-        Mesh->SetMobility(EComponentMobility::Movable);
-        Mesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-        Mesh->SetGenerateOverlapEvents(false);
-        Actor->SetActorScale3D(FVector(
-            FMath::Max(20.0, Entity.FootprintCm) / 100.0,
-            FMath::Max(20.0, Entity.FootprintCm) / 100.0,
-            FMath::Max(20.0, Entity.HeightCm) / 100.0
-        ));
-        Actor->Tags.Add(*FString::Printf(TEXT("Fenix.Token.%s"), *Entity.TokenId));
-        RuntimeActors.Add(Actor);
+        if (Entity.bViewer) continue;
+        SpawnEntityActor(Entity);
     }
 }

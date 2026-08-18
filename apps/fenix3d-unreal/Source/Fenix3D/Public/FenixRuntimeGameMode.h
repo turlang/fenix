@@ -42,6 +42,7 @@ private:
     void HandleStateSync(const FFenixRuntimeStateSync& Sync);
     void HandleControlError(const FString& Error);
     void HandleActionResult(const FString& Json);
+    void HandleCollisionFeedback(const FString& WallId);
 
     void HandleMoveIntent(float Forward, float Strafe, bool bRun);
     void HandleLookIntent(float Yaw, float Pitch);
