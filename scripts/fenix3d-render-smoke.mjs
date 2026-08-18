@@ -1,5 +1,9 @@
+import { mkdir, writeFile } from 'node:fs/promises';
+import path from 'node:path';
+
 const baseUrl = String(process.env.FENIX_RENDER_NODE_INTERNAL_URL ?? 'http://127.0.0.1:3100').replace(/\/$/, '');
 const token = String(process.env.FENIX_RENDER_NODE_TOKEN ?? '').trim();
+const reportPath = String(process.env.FENIX_3D_SMOKE_REPORT_PATH ?? '').trim();
 if (!token) {
   console.error('FENIX_RENDER_NODE_TOKEN é obrigatório para o smoke do Render Node.');
   process.exit(2);
@@ -28,6 +32,13 @@ async function readHealth() {
     throw new Error(`Render Node não está pronto: HTTP ${response.status} ${JSON.stringify(payload)}`);
   }
   return payload;
+}
+
+async function persistReport(report) {
+  if (!reportPath) return;
+  const target = path.resolve(reportPath);
+  await mkdir(path.dirname(target), { recursive: true });
+  await writeFile(target, `${JSON.stringify(report, null, 2)}\n`, 'utf8');
 }
 
 const health = await readHealth();
@@ -129,8 +140,11 @@ try {
     throw new Error(`Pixel Streaming player respondeu HTTP ${playerResponse.status}.`);
   }
 
-  console.log(JSON.stringify({
-    ok: true,
+  const report = {
+    schema: 'fenix.native-gpu-session-evidence',
+    version: 1,
+    passed: true,
+    checkedAt: new Date().toISOString(),
     nodeId: health.nodeId,
     runtimeMode: health.runtimeMode,
     renderSessionId,
@@ -139,7 +153,9 @@ try {
     runtimeEvidence: evidence,
     playerUrl: descriptor.playerUrl,
     signallingUrl: descriptor.signallingUrl ?? null
-  }, null, 2));
+  };
+  await persistReport(report);
+  console.log(JSON.stringify(report, null, 2));
 } finally {
   if (renderSessionId) {
     await request(`${baseUrl}/v1/render-sessions/${encodeURIComponent(renderSessionId)}`, {
