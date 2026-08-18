@@ -10,6 +10,7 @@ const runtimeLauncher = config.runtimeMode === 'process'
       command: config.runtimeCommand,
       cwd: config.runtimeCwd,
       streamerUrlTemplate: config.streamerUrlTemplate,
+      bootstrapBaseUrl: config.runtimeBootstrapBaseUrl,
       extraArgs: config.runtimeExtraArgs,
       startupGraceMs: config.runtimeStartupGraceMs,
       stopTimeoutMs: config.runtimeStopTimeoutMs,
