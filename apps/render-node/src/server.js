@@ -2,8 +2,20 @@ import { createServer } from 'node:http';
 import { createRenderNodeConfig } from './config.js';
 import { RenderSessionRegistry } from './session-registry.js';
 import { createRenderNodeHandler } from './app.js';
+import { ProcessRenderRuntimeLauncher } from './runtime-launcher.js';
 
 const config = createRenderNodeConfig();
+const runtimeLauncher = config.runtimeMode === 'process'
+  ? new ProcessRenderRuntimeLauncher({
+      command: config.runtimeCommand,
+      cwd: config.runtimeCwd,
+      streamerUrlTemplate: config.streamerUrlTemplate,
+      extraArgs: config.runtimeExtraArgs,
+      startupGraceMs: config.runtimeStartupGraceMs,
+      stopTimeoutMs: config.runtimeStopTimeoutMs,
+      logger: console
+    })
+  : null;
 const registry = new RenderSessionRegistry({
   nodeId: config.nodeId,
   region: config.region,
@@ -11,9 +23,10 @@ const registry = new RenderSessionRegistry({
   sessionTtlMs: config.sessionTtlMs,
   renderer: config.renderer,
   playerUrlTemplate: config.playerUrlTemplate,
-  signallingUrlTemplate: config.signallingUrlTemplate
+  signallingUrlTemplate: config.signallingUrlTemplate,
+  onExpire: runtimeLauncher ? (record) => runtimeLauncher.stop(record.renderSessionId) : null
 });
-const server = createServer(createRenderNodeHandler({ config, registry }));
+const server = createServer(createRenderNodeHandler({ config, registry, runtimeLauncher }));
 
 function closeServer() {
   return new Promise((resolve, reject) => {
@@ -22,8 +35,13 @@ function closeServer() {
 }
 
 async function shutdown(signal) {
-  console.info('[Fênix][Render Node] encerrando', { signal, activeSessions: registry.size });
+  console.info('[Fênix][Render Node] encerrando', {
+    signal,
+    activeSessions: registry.size,
+    activeProcesses: runtimeLauncher?.list().length ?? 0
+  });
   await closeServer();
+  await runtimeLauncher?.stopAll();
 }
 
 for (const signal of ['SIGINT', 'SIGTERM']) {
@@ -41,6 +59,8 @@ server.listen(config.port, config.host, () => {
     region: config.region,
     capacity: config.capacity,
     renderer: config.renderer,
-    runtimeConfigured: config.runtimeConfigured
+    runtimeMode: config.runtimeMode,
+    runtimeConfigured: config.runtimeConfigured,
+    processLauncherEnabled: runtimeLauncher?.enabled ?? false
   });
 });

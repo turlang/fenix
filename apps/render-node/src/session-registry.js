@@ -32,6 +32,7 @@ export class RenderSessionRegistry {
     renderer = 'unreal-pixel-streaming',
     playerUrlTemplate = '',
     signallingUrlTemplate = '',
+    onExpire = null,
     now = () => Date.now()
   } = {}) {
     this.nodeId = String(nodeId);
@@ -41,6 +42,7 @@ export class RenderSessionRegistry {
     this.renderer = String(renderer || 'unreal-pixel-streaming');
     this.playerUrlTemplate = String(playerUrlTemplate || '');
     this.signallingUrlTemplate = String(signallingUrlTemplate || '');
+    this.onExpire = typeof onExpire === 'function' ? onExpire : null;
     this.now = now;
     this.sessions = new Map();
     this.byKey = new Map();
@@ -132,20 +134,28 @@ export class RenderSessionRegistry {
     const id = String(renderSessionId ?? '');
     const record = this.sessions.get(id);
     if (!record) return false;
-    this.sessions.delete(id);
-    if (this.byKey.get(record.key) === id) this.byKey.delete(record.key);
+    this.#remove(record);
     return true;
   }
 
   expire() {
     const now = this.now();
     let removed = 0;
-    for (const [id, record] of this.sessions.entries()) {
+    for (const record of [...this.sessions.values()]) {
       if (Date.parse(record.expiresAt) > now) continue;
-      this.sessions.delete(id);
-      if (this.byKey.get(record.key) === id) this.byKey.delete(record.key);
+      this.#remove(record);
       removed += 1;
+      if (this.onExpire) {
+        Promise.resolve()
+          .then(() => this.onExpire(record))
+          .catch(() => undefined);
+      }
     }
     return removed;
+  }
+
+  #remove(record) {
+    this.sessions.delete(record.renderSessionId);
+    if (this.byKey.get(record.key) === record.renderSessionId) this.byKey.delete(record.key);
   }
 }
