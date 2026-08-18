@@ -1,8 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createServer } from 'node:http';
+import { once } from 'node:events';
 import { createRenderNodeConfig } from '../apps/render-node/src/config.js';
 import { RenderSessionRegistry } from '../apps/render-node/src/session-registry.js';
-import { createRenderNodeApp } from '../apps/render-node/src/app.js';
+import { createRenderNodeHandler } from '../apps/render-node/src/app.js';
 
 function renderRequest(actorId = 'actor-1', tokenId = 'token-1') {
   return {
@@ -29,6 +31,23 @@ function configuredRegistry(overrides = {}) {
     signallingUrlTemplate: 'wss://stream.example/signalling/{renderSessionId}',
     ...overrides
   });
+}
+
+async function withRenderServer(config, registry, run) {
+  const server = createServer(createRenderNodeHandler({ config, registry }));
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const address = server.address();
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+  try {
+    return await run(baseUrl);
+  } finally {
+    await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+  }
+}
+
+function internalHeaders() {
+  return { authorization: 'Bearer internal-secret', 'content-type': 'application/json' };
 }
 
 test('Render Node config separates internal API from public Pixel Streaming URLs', () => {
@@ -100,50 +119,38 @@ test('internal HTTP API requires Bearer and returns the exact broker-compatible 
     FENIX_RENDER_NODE_TOKEN: 'internal-secret',
     FENIX_RENDER_PLAYER_URL_TEMPLATE: 'https://stream.example/player/{renderSessionId}'
   });
-  const app = createRenderNodeApp({ config, registry, logger: false });
-  try {
-    const unauthorized = await app.inject({ method: 'GET', url: '/health' });
-    assert.equal(unauthorized.statusCode, 401);
 
-    const health = await app.inject({
-      method: 'GET',
-      url: '/health',
-      headers: { authorization: 'Bearer internal-secret' }
-    });
-    assert.equal(health.statusCode, 200);
-    assert.equal(health.json().available, true);
+  await withRenderServer(config, registry, async (baseUrl) => {
+    const unauthorized = await fetch(`${baseUrl}/health`);
+    assert.equal(unauthorized.status, 401);
 
-    const created = await app.inject({
+    const health = await fetch(`${baseUrl}/health`, { headers: internalHeaders() });
+    assert.equal(health.status, 200);
+    assert.equal((await health.json()).available, true);
+
+    const created = await fetch(`${baseUrl}/v1/render-sessions`, {
       method: 'POST',
-      url: '/v1/render-sessions',
-      headers: { authorization: 'Bearer internal-secret' },
-      payload: renderRequest()
+      headers: internalHeaders(),
+      body: JSON.stringify(renderRequest())
     });
-    assert.equal(created.statusCode, 201);
-    const descriptor = created.json();
+    assert.equal(created.status, 201);
+    const descriptor = await created.json();
     assert.ok(descriptor.renderSessionId);
     assert.equal(descriptor.transport, 'webrtc');
     assert.match(descriptor.playerUrl, /^https:/);
     assert.equal(Object.hasOwn(descriptor, 'authToken'), false);
 
-    const fetched = await app.inject({
-      method: 'GET',
-      url: `/v1/render-sessions/${descriptor.renderSessionId}`,
-      headers: { authorization: 'Bearer internal-secret' }
-    });
-    assert.equal(fetched.statusCode, 200);
-    assert.equal(fetched.json().renderSessionId, descriptor.renderSessionId);
+    const fetched = await fetch(`${baseUrl}/v1/render-sessions/${descriptor.renderSessionId}`, { headers: internalHeaders() });
+    assert.equal(fetched.status, 200);
+    assert.equal((await fetched.json()).renderSessionId, descriptor.renderSessionId);
 
-    const ended = await app.inject({
+    const ended = await fetch(`${baseUrl}/v1/render-sessions/${descriptor.renderSessionId}`, {
       method: 'DELETE',
-      url: `/v1/render-sessions/${descriptor.renderSessionId}`,
-      headers: { authorization: 'Bearer internal-secret' }
+      headers: internalHeaders()
     });
-    assert.equal(ended.statusCode, 200);
-    assert.equal(ended.json().ended, true);
-  } finally {
-    await app.close();
-  }
+    assert.equal(ended.status, 200);
+    assert.equal((await ended.json()).ended, true);
+  });
 });
 
 test('public health is opt-in and never exposes the internal token', async () => {
@@ -153,12 +160,10 @@ test('public health is opt-in and never exposes the internal token', async () =>
     FENIX_RENDER_NODE_PUBLIC_HEALTH: 'true',
     FENIX_RENDER_PLAYER_URL_TEMPLATE: 'https://stream.example/player/{renderSessionId}'
   });
-  const app = createRenderNodeApp({ config, registry, logger: false });
-  try {
-    const response = await app.inject({ method: 'GET', url: '/health' });
-    assert.equal(response.statusCode, 200);
-    assert.equal(response.body.includes('secret-never-public'), false);
-  } finally {
-    await app.close();
-  }
+
+  await withRenderServer(config, registry, async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/health`);
+    assert.equal(response.status, 200);
+    assert.equal((await response.text()).includes('secret-never-public'), false);
+  });
 });
