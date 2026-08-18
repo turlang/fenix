@@ -7,6 +7,8 @@ if (!token) {
 
 const headers = { Authorization: `Bearer ${token}` };
 const timeoutMs = Math.max(1000, Number(process.env.FENIX_3D_SMOKE_TIMEOUT_MS) || 20_000);
+const requireProcessMode = !/^(0|false|no)$/i.test(String(process.env.FENIX_3D_SMOKE_REQUIRE_PROCESS ?? 'true'));
+const requireReadiness = !/^(0|false|no)$/i.test(String(process.env.FENIX_3D_SMOKE_REQUIRE_READINESS ?? 'true'));
 
 async function request(url, options = {}) {
   const controller = new AbortController();
@@ -18,10 +20,24 @@ async function request(url, options = {}) {
   }
 }
 
-const healthResponse = await request(`${baseUrl}/health`, { headers });
-const health = await healthResponse.json().catch(() => ({}));
-if (!healthResponse.ok || health.status !== 'ok' || health.configured !== true) {
-  throw new Error(`Render Node não está pronto: HTTP ${healthResponse.status} ${JSON.stringify(health)}`);
+async function readHealth() {
+  const response = await request(`${baseUrl}/health`, { headers });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || payload.status !== 'ok' || payload.configured !== true) {
+    throw new Error(`Render Node não está pronto: HTTP ${response.status} ${JSON.stringify(payload)}`);
+  }
+  return payload;
+}
+
+const health = await readHealth();
+if (requireProcessMode && health.runtimeMode !== 'process') {
+  throw new Error(`Smoke nativo exige Render Node em process mode; recebido ${health.runtimeMode}.`);
+}
+if (requireProcessMode && health.runtimeProcess?.enabled !== true) {
+  throw new Error('Smoke nativo exige launcher Fenix3D habilitado no Render Node.');
+}
+if (requireReadiness && health.runtimeProcess?.readinessConfigured !== true) {
+  throw new Error('Smoke nativo exige readiness HTTP do Pixel Streaming configurada.');
 }
 
 const viewerToken = {
@@ -76,8 +92,17 @@ try {
   }
   renderSessionId = descriptor.renderSessionId;
 
+  const afterCreate = await readHealth();
+  const process = afterCreate.runtimeProcess?.processes?.find((entry) => entry.renderSessionId === renderSessionId);
+  if (requireProcessMode && !process?.pid) {
+    throw new Error(`Fenix3D.exe não apareceu como processo ativo para ${renderSessionId}.`);
+  }
+  if (requireReadiness && !process?.readyAt) {
+    throw new Error(`Fenix3D.exe iniciou, mas não confirmou readiness para ${renderSessionId}.`);
+  }
+
   const playerResponse = await request(descriptor.playerUrl, { redirect: 'follow' });
-  if (playerResponse.status >= 500) {
+  if (playerResponse.status < 200 || playerResponse.status >= 500) {
     throw new Error(`Pixel Streaming player respondeu HTTP ${playerResponse.status}.`);
   }
 
@@ -86,6 +111,8 @@ try {
     nodeId: health.nodeId,
     runtimeMode: health.runtimeMode,
     renderSessionId,
+    processPid: process?.pid ?? null,
+    processReadyAt: process?.readyAt ?? null,
     playerUrl: descriptor.playerUrl,
     signallingUrl: descriptor.signallingUrl ?? null
   }, null, 2));
