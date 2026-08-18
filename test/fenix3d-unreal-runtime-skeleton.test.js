@@ -25,12 +25,14 @@ test('Fenix3D is a real UE5.5 project with Pixel Streaming 2 and targets at Sour
 
 test('bootstrap client fetches only the scoped runtime manifest and validates its schema', async () => {
   const code = await source(unreal('Source/Fenix3D/Private/FenixRuntimeBootstrapClient.cpp'));
+  const types = await source(unreal('Source/Fenix3D/Public/FenixRuntimeTypes.h'));
 
   assert.match(code, /FENIX_RUNTIME_MANIFEST_URL/);
   assert.match(code, /FENIX_RUNTIME_MANIFEST_TOKEN/);
   assert.match(code, /Authorization/);
-  assert.match(code, /fenix\.3d-runtime-manifest/);
-  assert.match(code, /Version == 1|IsCompatible\(\)/);
+  assert.match(code, /OutManifest\.IsCompatible\(\)/);
+  assert.match(types, /fenix\.3d-runtime-manifest/);
+  assert.match(types, /Version == 1/);
   assert.doesNotMatch(code, /campaign-service|authoritative-token-runtime|fenix-vtt/);
 });
 
