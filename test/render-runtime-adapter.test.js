@@ -76,7 +76,7 @@ test('3D manifest converts the 1.5m grid to Unreal-friendly centimetres without 
   const manifest = createFenix3dRuntimeManifest(bootstrap());
   assert.equal(manifest.schema, 'fenix.3d-runtime-manifest');
   assert.equal(manifest.scene.units.runtime, 'cm');
-  assert.equal(Math.round(manifest.scene.units.centimetersPerPixel * 1_000_000) / 1_000_000, Math.round((150 / 70) * 1_000_000) / 1_000_000);
+  assert.ok(Math.abs(manifest.scene.units.centimetersPerPixel - (150 / 70)) < 0.00001);
   assert.deepEqual(manifest.viewer.camera.location, { x: 150, y: -300, z: 160 });
   assert.equal(manifest.viewer.camera.eyeHeightCm, 160);
   assert.equal(manifest.viewer.camera.visionDistanceCm, 1200);
