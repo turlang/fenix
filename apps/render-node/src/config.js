@@ -21,7 +21,19 @@ function stringArray(value) {
   }
 }
 
+function httpBaseUrl(value, fallback) {
+  const raw = text(value, fallback);
+  try {
+    const parsed = new URL(raw);
+    if (!['http:', 'https:'].includes(parsed.protocol)) return fallback;
+    return parsed.toString().replace(/\/$/, '');
+  } catch {
+    return fallback;
+  }
+}
+
 export function createRenderNodeConfig(env = process.env) {
+  const port = integer(env.FENIX_RENDER_NODE_PORT, 9000, 1, 65535);
   const token = text(env.FENIX_RENDER_NODE_TOKEN);
   const playerUrlTemplate = text(env.FENIX_RENDER_PLAYER_URL_TEMPLATE);
   const signallingUrlTemplate = text(env.FENIX_RENDER_SIGNALLING_URL_TEMPLATE);
@@ -31,10 +43,14 @@ export function createRenderNodeConfig(env = process.env) {
   const runtimeCommand = text(env.FENIX_RENDER_RUNTIME_COMMAND);
   const streamerUrlTemplate = text(env.FENIX_RENDER_STREAMER_URL_TEMPLATE);
   const processConfigured = Boolean(runtimeCommand && streamerUrlTemplate);
+  const runtimeBootstrapBaseUrl = httpBaseUrl(
+    env.FENIX_RENDER_RUNTIME_BOOTSTRAP_BASE_URL,
+    `http://127.0.0.1:${port}`
+  );
 
   return Object.freeze({
     host: text(env.FENIX_RENDER_NODE_HOST, '0.0.0.0'),
-    port: integer(env.FENIX_RENDER_NODE_PORT, 9000, 1, 65535),
+    port,
     nodeId,
     region: text(env.FENIX_RENDER_NODE_REGION) || null,
     authToken: token,
@@ -48,6 +64,7 @@ export function createRenderNodeConfig(env = process.env) {
     runtimeCwd: text(env.FENIX_RENDER_RUNTIME_CWD) || null,
     runtimeExtraArgs: Object.freeze(stringArray(env.FENIX_RENDER_RUNTIME_EXTRA_ARGS_JSON)),
     streamerUrlTemplate,
+    runtimeBootstrapBaseUrl,
     runtimeStartupGraceMs: integer(env.FENIX_RENDER_RUNTIME_STARTUP_GRACE_MS, 2500, 100, 60_000),
     runtimeStopTimeoutMs: integer(env.FENIX_RENDER_RUNTIME_STOP_TIMEOUT_MS, 5000, 500, 60_000),
     runtimeConfigured: Boolean(playerUrlTemplate) && (runtimeMode === 'external' || processConfigured),
