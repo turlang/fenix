@@ -7,6 +7,7 @@ import {
   createFenix3dRuntimeStateSync,
   projectRuntimeMovementIntent
 } from '../../render-runtime-adapter/src/index.js';
+import { attachRuntimeSceneEntities } from './runtime-scene-sync.js';
 
 function controlError(message, code, statusCode = 400) {
   const error = new Error(message);
@@ -145,12 +146,14 @@ export function createAuthoritativeRuntimeInputHandler({
       });
     }
 
-    return createFenix3dRuntimeStateSync({
+    const stateSync = createFenix3dRuntimeStateSync({
       renderSessionId: record.renderSessionId,
       revision: moved.revision,
       token: moved.token,
       collision: moved.collision,
       vertical: moved.vertical
     });
+    const latestSnapshot = realtimeHub.getSnapshot(record.sessionId);
+    return attachRuntimeSceneEntities(stateSync, latestSnapshot);
   };
 }
