@@ -33,8 +33,8 @@ function configuredRegistry(overrides = {}) {
   });
 }
 
-async function withRenderServer(config, registry, run) {
-  const server = createServer(createRenderNodeHandler({ config, registry }));
+async function withRenderServer(config, registry, run, runtimeLauncher = null) {
+  const server = createServer(createRenderNodeHandler({ config, registry, runtimeLauncher }));
   server.listen(0, '127.0.0.1');
   await once(server, 'listening');
   const address = server.address();
@@ -48,6 +48,20 @@ async function withRenderServer(config, registry, run) {
 
 function internalHeaders() {
   return { authorization: 'Bearer internal-secret', 'content-type': 'application/json' };
+}
+
+function processConfig(overrides = {}) {
+  return createRenderNodeConfig({
+    FENIX_RENDER_NODE_TOKEN: 'internal-secret',
+    FENIX_RENDER_NODE_ID: 'gpu-process-01',
+    FENIX_RENDER_NODE_REGION: 'br-1',
+    FENIX_RENDER_PLAYER_URL_TEMPLATE: 'https://stream.example/player/{renderSessionId}',
+    FENIX_RENDER_SIGNALLING_URL_TEMPLATE: 'wss://stream.example/signalling/{renderSessionId}',
+    FENIX_RENDER_RUNTIME_MODE: 'process',
+    FENIX_RENDER_RUNTIME_COMMAND: '/trusted/Fenix3D',
+    FENIX_RENDER_STREAMER_URL_TEMPLATE: 'ws://127.0.0.1:8888',
+    ...overrides
+  });
 }
 
 test('Render Node config separates internal API from public Pixel Streaming URLs', () => {
@@ -65,7 +79,22 @@ test('Render Node config separates internal API from public Pixel Streaming URLs
   assert.equal(config.port, 9100);
   assert.equal(config.capacity, 4);
   assert.equal(config.runtimeConfigured, true);
+  assert.equal(config.runtimeMode, 'external');
   assert.equal(config.authToken, 'internal-secret');
+});
+
+test('process mode requires server-side command and streamer URL', () => {
+  const missing = createRenderNodeConfig({
+    FENIX_RENDER_RUNTIME_MODE: 'process',
+    FENIX_RENDER_PLAYER_URL_TEMPLATE: 'https://stream.example/player/{renderSessionId}'
+  });
+  assert.equal(missing.runtimeMode, 'process');
+  assert.equal(missing.runtimeConfigured, false);
+
+  const configured = processConfig();
+  assert.equal(configured.runtimeConfigured, true);
+  assert.equal(configured.runtimeCommand, '/trusted/Fenix3D');
+  assert.equal(configured.streamerUrlTemplate, 'ws://127.0.0.1:8888');
 });
 
 test('registry creates safe public descriptor and reuses the same active actor/token allocation', () => {
@@ -94,13 +123,20 @@ test('registry enforces GPU capacity and frees a slot on delete', () => {
   assert.equal(second.request.actorId, 'actor-2');
 });
 
-test('registry expires abandoned sessions by TTL', () => {
+test('registry expires abandoned sessions by TTL and triggers runtime cleanup', async () => {
   let now = Date.parse('2026-08-18T03:00:00Z');
-  const registry = configuredRegistry({ sessionTtlMs: 60_000, now: () => now });
+  const expired = [];
+  const registry = configuredRegistry({
+    sessionTtlMs: 60_000,
+    now: () => now,
+    onExpire: async (record) => expired.push(record.renderSessionId)
+  });
   const first = registry.create(renderRequest());
   assert.ok(registry.get(first.renderSessionId));
   now += 60_001;
   assert.equal(registry.get(first.renderSessionId), null);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(expired, [first.renderSessionId]);
   assert.equal(registry.availableSlots, 2);
 });
 
@@ -150,6 +186,86 @@ test('internal HTTP API requires Bearer and returns the exact broker-compatible 
     });
     assert.equal(ended.status, 200);
     assert.equal((await ended.json()).ended, true);
+  });
+});
+
+test('process mode starts runtime before returning allocation and stops it on DELETE', async () => {
+  const registry = configuredRegistry();
+  const config = processConfig();
+  const calls = { start: [], stop: [] };
+  const launcher = {
+    enabled: true,
+    list: () => calls.start.map((id) => ({ renderSessionId: id })),
+    async start(record) { calls.start.push(record.renderSessionId); },
+    async stop(renderSessionId) { calls.stop.push(renderSessionId); return true; }
+  };
+
+  await withRenderServer(config, registry, async (baseUrl) => {
+    const created = await fetch(`${baseUrl}/v1/render-sessions`, {
+      method: 'POST',
+      headers: internalHeaders(),
+      body: JSON.stringify(renderRequest())
+    });
+    assert.equal(created.status, 201);
+    const descriptor = await created.json();
+    assert.deepEqual(calls.start, [descriptor.renderSessionId]);
+    assert.equal(registry.size, 1);
+
+    const ended = await fetch(`${baseUrl}/v1/render-sessions/${descriptor.renderSessionId}`, {
+      method: 'DELETE',
+      headers: internalHeaders()
+    });
+    assert.equal(ended.status, 200);
+    assert.deepEqual(calls.stop, [descriptor.renderSessionId]);
+    assert.equal(registry.size, 0);
+  }, launcher);
+});
+
+test('process mode rolls back allocation when runtime fails during startup', async () => {
+  const registry = configuredRegistry();
+  const config = processConfig();
+  const launcher = {
+    enabled: true,
+    list: () => [],
+    async start() {
+      const error = new Error('Unreal exited');
+      error.code = 'FENIX_RENDER_RUNTIME_EARLY_EXIT';
+      error.statusCode = 503;
+      throw error;
+    },
+    async stop() { return true; }
+  };
+
+  await withRenderServer(config, registry, async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/v1/render-sessions`, {
+      method: 'POST',
+      headers: internalHeaders(),
+      body: JSON.stringify(renderRequest())
+    });
+    assert.equal(response.status, 503);
+    assert.equal((await response.json()).code, 'FENIX_RENDER_RUNTIME_EARLY_EXIT');
+    assert.equal(registry.size, 0);
+  }, launcher);
+});
+
+test('process mode fails closed when launcher is missing', async () => {
+  const registry = configuredRegistry();
+  const config = processConfig();
+
+  await withRenderServer(config, registry, async (baseUrl) => {
+    const health = await fetch(`${baseUrl}/health`, { headers: internalHeaders() });
+    const status = await health.json();
+    assert.equal(status.available, false);
+    assert.equal(status.status, 'degraded');
+
+    const response = await fetch(`${baseUrl}/v1/render-sessions`, {
+      method: 'POST',
+      headers: internalHeaders(),
+      body: JSON.stringify(renderRequest())
+    });
+    assert.equal(response.status, 503);
+    assert.equal((await response.json()).code, 'FENIX_RENDER_RUNTIME_LAUNCHER_NOT_CONFIGURED');
+    assert.equal(registry.size, 0);
   });
 });
 
