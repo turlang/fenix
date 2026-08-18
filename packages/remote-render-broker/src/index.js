@@ -1,3 +1,5 @@
+import { createRenderWorldBootstrap } from '../../render-world-bootstrap/src/index.js';
+
 function brokerError(message, code, statusCode = 400) {
   const error = new Error(message);
   error.code = code;
@@ -9,8 +11,13 @@ function text(value, max = 200) {
   return String(value ?? '').trim().slice(0, max);
 }
 
+function rawScene(campaign, sceneId) {
+  return (Array.isArray(campaign?.scenes) ? campaign.scenes : [])
+    .find((scene) => scene.id === String(sceneId)) ?? null;
+}
+
 export class RemoteRenderBrokerService {
-  constructor({ campaignService, actorService, tokenService, renderGateway, now = () => Date.now() } = {}) {
+  constructor({ campaignService, actorService, tokenService, sceneService = null, renderGateway, now = () => Date.now() } = {}) {
     if (!campaignService) throw new TypeError('campaignService é obrigatório.');
     if (!actorService) throw new TypeError('actorService é obrigatório.');
     if (!tokenService) throw new TypeError('tokenService é obrigatório.');
@@ -18,6 +25,7 @@ export class RemoteRenderBrokerService {
     this.campaignService = campaignService;
     this.actorService = actorService;
     this.tokenService = tokenService;
+    this.sceneService = sceneService;
     this.renderGateway = renderGateway;
     this.now = now;
     this.sessions = new Map();
@@ -47,12 +55,27 @@ export class RemoteRenderBrokerService {
     }
 
     const actor = this.actorService.get({ campaignId: campaign.id, userId, actorId: normalizedActorId });
-    const tokens = this.tokenService.listRuntimeForScene({ campaignId: campaign.id, sceneId });
-    const token = tokens.find((item) => (item.tokenId ?? item.id) === String(tokenId)) ?? null;
+    const runtimeTokens = this.tokenService.listRuntimeForScene({ campaignId: campaign.id, sceneId });
+    const token = runtimeTokens.find((item) => (item.tokenId ?? item.id) === String(tokenId)) ?? null;
     if (!token) throw brokerError('Token não encontrado nesta cena.', 'FENIX_RENDER_TOKEN_NOT_FOUND', 404);
     if (token.actorId !== actor.id) {
       throw brokerError('Token não está associado ao ator solicitado.', 'FENIX_RENDER_TOKEN_ACTOR_MISMATCH', 409);
     }
+
+    const scene = this.sceneService
+      ? this.sceneService.list({ campaignId: campaign.id, userId }).scenes.find((item) => item.id === String(sceneId)) ?? null
+      : rawScene(campaign, sceneId);
+    if (!scene) throw brokerError('Cena não encontrada para renderização.', 'FENIX_RENDER_SCENE_NOT_FOUND', 404);
+    const visibleTokens = this.tokenService.list({ campaignId: campaign.id, userId, sceneId });
+    const createdAt = new Date(this.now()).toISOString();
+    const worldBootstrap = createRenderWorldBootstrap({
+      campaign,
+      scene,
+      actor,
+      viewerToken: token,
+      visibleTokens,
+      createdAt
+    });
 
     const result = await this.renderGateway.createSession({
       campaignId: campaign.id,
@@ -63,9 +86,9 @@ export class RemoteRenderBrokerService {
       preferredCodecs,
       targetFps,
       maxWidth,
-      maxHeight
+      maxHeight,
+      worldBootstrap
     });
-    const createdAt = new Date(this.now()).toISOString();
     const record = Object.freeze({
       renderSessionId: result.descriptor.renderSessionId,
       campaignId: campaign.id,
