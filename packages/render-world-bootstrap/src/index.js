@@ -44,6 +44,7 @@ function publicToken(token) {
     elevation: finite(token?.elevation),
     rotation: finite(token?.rotation),
     size: Math.max(1, finite(token?.size, 80)),
+    height: Math.max(0.1, finite(token?.height, 1.8)),
     visible: token?.visible !== false,
     hidden: token?.hidden === true,
     movementMode: text(token?.movementMode, 40) || 'ground'
@@ -132,7 +133,7 @@ export function createRenderWorldBootstrap({
         vision: Object.freeze(clone(vision, {})),
         footprint: Object.freeze(clone(actor?.resolved?.footprint, { widthCells: 1, heightCells: 1 }))
       }),
-      token: publicToken(viewerToken),
+      token: publicToken({ ...viewerToken, height: viewerToken?.height ?? actor?.sheet?.height }),
       camera: Object.freeze({
         sceneX: finite(viewerToken.x),
         sceneY: finite(viewerToken.y),
