@@ -15,6 +15,8 @@
     "build:vtt": "npm --workspace @fenix/vtt run build",
     "dev:render-node": "node apps/render-node/src/server.js",
     "start:render-node": "node apps/render-node/src/server.js",
+    "build:fenix3d-native": "node scripts/fenix3d-native-build.mjs",
+    "smoke:fenix3d": "node scripts/fenix3d-render-smoke.mjs",
     "test": "node --test",
     "test:realtime-integration": "node integration-tests/realtime-websocket.mjs",
     "test:auth-integration": "node integration-tests/auth-campaign-http.mjs",
