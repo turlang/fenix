@@ -63,7 +63,6 @@ function toRuntimePoint(point = {}, bootstrap, elevation = 0) {
   const zUnit = elevationUnit(bootstrap);
   return Object.freeze({
     x: rounded(finite(point.x) * cmPerPixel),
-    // O canvas Fênix cresce para baixo. O runtime 3D usa Y positivo para cima no plano do mapa.
     y: rounded(-finite(point.y) * cmPerPixel),
     z: rounded(distanceToMeters(elevation, zUnit) * 100)
   });
@@ -78,9 +77,6 @@ function wallVerticalRange(wall, bootstrap) {
   const enabled = config.enabled === true;
   let bottom = finite(wall?.bottomElevation, finite(config.defaultWallBottom, 0));
   let top = finite(wall?.topElevation, finite(config.defaultWallTop, bottom + finite(config.levelHeight, 3)));
-
-  // O contrato 2D legado usa -1000/+10000 como faixa infinita. No mundo 3D isso
-  // vira a parede física padrão da cena, não um objeto de quilômetros de altura.
   if (!enabled || bottom <= -999 || top >= 9999) {
     bottom = finite(config.defaultWallBottom, 0);
     top = finite(config.defaultWallTop, bottom + finite(config.levelHeight, 3));
@@ -141,9 +137,8 @@ function runtimeLevel(level, bootstrap, index) {
   });
 }
 
-function tokenHeightCm(token, bootstrap) {
+function tokenHeightCm(token) {
   const height = Math.max(0.1, finite(token?.height, 1.8));
-  // Token/Actor height is authored in metres in the Actor contract.
   return rounded(height * 100);
 }
 
@@ -168,7 +163,7 @@ function runtimeToken(token, bootstrap, viewerTokenId) {
     }),
     dimensions: Object.freeze({
       footprintCm: rounded(Math.max(1, finite(token?.size, 80)) * cmPerPixel),
-      heightCm: tokenHeightCm(token, bootstrap)
+      heightCm: tokenHeightCm(token)
     }),
     movementMode: text(token?.movementMode, 40) || 'ground'
   });
@@ -298,6 +293,7 @@ function rejectAuthoritativeFields(input) {
 
 export function normalizeFenix3dRuntimeInput(input = {}) {
   rejectAuthoritativeFields(input);
+  rejectAuthoritativeFields(input?.intent);
   const renderSessionId = text(input.renderSessionId);
   if (!renderSessionId) throw adapterError('renderSessionId é obrigatório.', 'FENIX_3D_RENDER_SESSION_REQUIRED');
   const intent = normalizePlayerInputIntent(input.intent ?? input);
@@ -327,8 +323,6 @@ export function projectRuntimeMovementIntent({ token, scene, input, yawDegrees =
   const normalizedStrafe = magnitude > 1 ? strafe / magnitude : strafe;
   const yaw = finite(yawDegrees, finite(token?.rotation, 0));
   const radians = yaw * Math.PI / 180;
-
-  // Forward 0° acompanha o eixo -Y do canvas (norte visual). Strafe positivo vai para a direita.
   const dx = (Math.sin(radians) * normalizedForward + Math.cos(radians) * normalizedStrafe) * stepPixels;
   const dy = (-Math.cos(radians) * normalizedForward + Math.sin(radians) * normalizedStrafe) * stepPixels;
   return Object.freeze({
