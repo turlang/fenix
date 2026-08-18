@@ -96,12 +96,15 @@ export function createOpenAICompatibleTextProvider({
   apiKey = '',
   model,
   timeoutMs = 60_000,
+  maxTokenField = 'max_tokens',
+  extraBody = {},
   fetchImpl = globalThis.fetch
 } = {}) {
   if (!baseUrl) throw gatewayError('baseUrl é obrigatório.', 'FENIX_AI_BASE_URL_REQUIRED');
   if (!model) throw gatewayError('model é obrigatório.', 'FENIX_AI_MODEL_REQUIRED');
   if (typeof fetchImpl !== 'function') throw gatewayError('fetch indisponível.', 'FENIX_AI_FETCH_REQUIRED');
   const endpoint = `${String(baseUrl).replace(/\/$/, '')}/chat/completions`;
+  const tokenField = ['max_tokens', 'max_completion_tokens'].includes(maxTokenField) ? maxTokenField : 'max_tokens';
 
   return Object.freeze({
     id: text(id, 120),
@@ -117,19 +120,22 @@ export function createOpenAICompatibleTextProvider({
               ...(request.system ? [{ role: 'system', content: String(request.system) }] : []),
               { role: 'user', content: String(request.prompt ?? request.content ?? '') }
             ];
+        const body = {
+          model,
+          messages,
+          temperature: Number.isFinite(Number(request.temperature)) ? Number(request.temperature) : 0.7,
+          top_p: Number.isFinite(Number(request.topP)) ? Number(request.topP) : 0.95,
+          stream: false,
+          ...extraBody,
+          [tokenField]: Math.max(1, Number(request.maxTokens) || 800)
+        };
         const response = await fetchImpl(endpoint, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {})
           },
-          body: JSON.stringify({
-            model,
-            messages,
-            temperature: Number.isFinite(Number(request.temperature)) ? Number(request.temperature) : 0.7,
-            max_tokens: Math.max(1, Number(request.maxTokens) || 800),
-            stream: false
-          }),
+          body: JSON.stringify(body),
           signal: controller.signal
         });
         const payload = await response.json().catch(() => ({}));
