@@ -1,7 +1,7 @@
 {
   "name": "mestre-orc-engine",
   "version": "0.1.0-alpha.24",
-  "description": "Fênix Shared Core para narração, Foundry VTT e cliente VTT standalone.",
+  "description": "Fênix Platform: Core VTT-agnóstico, VTT standalone, bridges externos, IA híbrida e render remoto.",
   "private": true,
   "type": "module",
   "workspaces": [
