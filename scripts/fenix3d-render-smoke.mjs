@@ -9,6 +9,7 @@ const headers = { Authorization: `Bearer ${token}` };
 const timeoutMs = Math.max(1000, Number(process.env.FENIX_3D_SMOKE_TIMEOUT_MS) || 20_000);
 const requireProcessMode = !/^(0|false|no)$/i.test(String(process.env.FENIX_3D_SMOKE_REQUIRE_PROCESS ?? 'true'));
 const requireReadiness = !/^(0|false|no)$/i.test(String(process.env.FENIX_3D_SMOKE_REQUIRE_READINESS ?? 'true'));
+const requireEvidence = !/^(0|false|no)$/i.test(String(process.env.FENIX_3D_SMOKE_REQUIRE_EVIDENCE ?? 'true'));
 
 async function request(url, options = {}) {
   const controller = new AbortController();
@@ -35,6 +36,9 @@ if (requireProcessMode && health.runtimeMode !== 'process') {
 }
 if (requireProcessMode && health.runtimeProcess?.enabled !== true) {
   throw new Error('Smoke nativo exige launcher Fenix3D habilitado no Render Node.');
+}
+if (requireEvidence && health.runtimeProcess?.evidenceRequired !== true) {
+  throw new Error('Smoke nativo exige runtime evidence habilitada no Render Node.');
 }
 if (requireReadiness && health.runtimeProcess?.readinessConfigured !== true) {
   throw new Error('Smoke nativo exige readiness HTTP do Pixel Streaming configurada.');
@@ -83,7 +87,12 @@ try {
     headers: { ...headers, 'Content-Type': 'application/json' },
     body: JSON.stringify({
       campaignId: 'smoke-campaign', sceneId: 'smoke-scene', actorId: 'smoke-actor', tokenId: 'smoke-token',
-      targetFps: 60, maxWidth: 1280, maxHeight: 720, worldBootstrap
+      targetFps: 60, maxWidth: 1280, maxHeight: 720, worldBootstrap,
+      runtimeControl: {
+        controlId: 'smoke-control',
+        inputUrl: 'http://127.0.0.1:65534/v1/runtime-control/smoke',
+        accessToken: 'smoke-runtime-control-token-000001'
+      }
     })
   });
   const descriptor = await createResponse.json().catch(() => ({}));
@@ -101,6 +110,20 @@ try {
     throw new Error(`Fenix3D.exe iniciou, mas não confirmou readiness para ${renderSessionId}.`);
   }
 
+  const evidenceResponse = await request(`${baseUrl}/v1/render-sessions/${encodeURIComponent(renderSessionId)}/runtime-status`, { headers });
+  const evidence = await evidenceResponse.json().catch(() => ({}));
+  if (requireEvidence) {
+    if (!evidenceResponse.ok || evidence.ready !== true || evidence.stage !== 'ready') {
+      throw new Error(`Fenix3D não comprovou runtime ready: HTTP ${evidenceResponse.status} ${JSON.stringify(evidence)}`);
+    }
+    if (evidence.worldBuilt !== true || evidence.controlConfigured !== true) {
+      throw new Error(`Runtime evidence incompleta: ${JSON.stringify(evidence)}`);
+    }
+    if (evidence.manifest?.schema !== 'fenix.3d-runtime-manifest' || Number(evidence.manifest?.version) !== 1) {
+      throw new Error(`Runtime carregou manifest inesperado: ${JSON.stringify(evidence.manifest)}`);
+    }
+  }
+
   const playerResponse = await request(descriptor.playerUrl, { redirect: 'follow' });
   if (playerResponse.status < 200 || playerResponse.status >= 500) {
     throw new Error(`Pixel Streaming player respondeu HTTP ${playerResponse.status}.`);
@@ -113,6 +136,7 @@ try {
     renderSessionId,
     processPid: process?.pid ?? null,
     processReadyAt: process?.readyAt ?? null,
+    runtimeEvidence: evidence,
     playerUrl: descriptor.playerUrl,
     signallingUrl: descriptor.signallingUrl ?? null
   }, null, 2));
