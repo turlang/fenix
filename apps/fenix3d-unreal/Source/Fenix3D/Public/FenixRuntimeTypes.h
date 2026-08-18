@@ -126,6 +126,17 @@ struct FFenixRuntimeManifest
     }
 };
 
+struct FFenixRuntimeEntityState
+{
+    FString TokenId;
+    FString ActorId;
+    FVector ScenePosition = FVector::ZeroVector;
+    double Elevation = 0.0;
+    double Rotation = 0.0;
+    bool bVisible = true;
+    FString MovementMode = TEXT("ground");
+};
+
 struct FFenixRuntimeStateSync
 {
     FString RenderSessionId;
@@ -138,4 +149,5 @@ struct FFenixRuntimeStateSync
     FString MovementMode = TEXT("ground");
     bool bCollisionBlocked = false;
     FString CollisionWallId;
+    TArray<FFenixRuntimeEntityState> Entities;
 };
