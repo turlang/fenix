@@ -1,4 +1,6 @@
+import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { createRenderWorldBootstrap } from '../../render-world-bootstrap/src/index.js';
+import { normalizeFenix3dRuntimeInput } from '../../render-runtime-adapter/src/index.js';
 
 function brokerError(message, code, statusCode = 400) {
   const error = new Error(message);
@@ -16,8 +18,39 @@ function rawScene(campaign, sceneId) {
     .find((scene) => scene.id === String(sceneId)) ?? null;
 }
 
+function safeHttpBaseUrl(value) {
+  const raw = String(value ?? '').trim();
+  if (!raw) return null;
+  try {
+    const parsed = new URL(raw);
+    if (!['http:', 'https:'].includes(parsed.protocol)) return null;
+    return parsed.toString().replace(/\/$/, '');
+  } catch {
+    return null;
+  }
+}
+
+function safeEqual(left, right) {
+  const a = Buffer.from(String(left ?? ''));
+  const b = Buffer.from(String(right ?? ''));
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
+function runtimeControlToken() {
+  return randomBytes(32).toString('base64url');
+}
+
 export class RemoteRenderBrokerService {
-  constructor({ campaignService, actorService, tokenService, sceneService = null, renderGateway, now = () => Date.now() } = {}) {
+  constructor({
+    campaignService,
+    actorService,
+    tokenService,
+    sceneService = null,
+    renderGateway,
+    runtimeControlBaseUrl = null,
+    runtimeInputHandler = null,
+    now = () => Date.now()
+  } = {}) {
     if (!campaignService) throw new TypeError('campaignService é obrigatório.');
     if (!actorService) throw new TypeError('actorService é obrigatório.');
     if (!tokenService) throw new TypeError('tokenService é obrigatório.');
@@ -27,12 +60,19 @@ export class RemoteRenderBrokerService {
     this.tokenService = tokenService;
     this.sceneService = sceneService;
     this.renderGateway = renderGateway;
+    this.runtimeControlBaseUrl = safeHttpBaseUrl(runtimeControlBaseUrl);
+    this.runtimeInputHandler = typeof runtimeInputHandler === 'function' ? runtimeInputHandler : null;
     this.now = now;
     this.sessions = new Map();
+    this.controls = new Map();
   }
 
   get enabled() {
     return this.renderGateway.list().length > 0;
+  }
+
+  get runtimeControlEnabled() {
+    return Boolean(this.runtimeControlBaseUrl && this.runtimeInputHandler);
   }
 
   async create({
@@ -77,6 +117,14 @@ export class RemoteRenderBrokerService {
       createdAt
     });
 
+    const controlId = this.runtimeControlEnabled && sessionId ? randomUUID() : null;
+    const controlToken = controlId ? runtimeControlToken() : null;
+    const runtimeControl = controlId ? Object.freeze({
+      controlId,
+      inputUrl: `${this.runtimeControlBaseUrl}/v1/runtime/render-control/${encodeURIComponent(controlId)}/input`,
+      accessToken: controlToken
+    }) : null;
+
     const result = await this.renderGateway.createSession({
       campaignId: campaign.id,
       sessionId,
@@ -87,7 +135,8 @@ export class RemoteRenderBrokerService {
       targetFps,
       maxWidth,
       maxHeight,
-      worldBootstrap
+      worldBootstrap,
+      runtimeControl
     });
     const record = Object.freeze({
       renderSessionId: result.descriptor.renderSessionId,
@@ -95,12 +144,23 @@ export class RemoteRenderBrokerService {
       sceneId: String(sceneId),
       actorId: actor.id,
       tokenId: token.tokenId ?? token.id,
+      sessionId: text(sessionId) || null,
       requestedByUserId: String(userId),
+      requestedByRole: membership.role,
       nodeId: result.nodeId,
+      controlId,
       createdAt,
       descriptor: result.descriptor
     });
     this.sessions.set(record.renderSessionId, record);
+    if (controlId) {
+      this.controls.set(controlId, {
+        renderSessionId: record.renderSessionId,
+        accessToken: controlToken,
+        lastSequence: -1,
+        yawDegrees: Number(token.rotation) || 0
+      });
+    }
 
     return Object.freeze({
       renderSessionId: record.renderSessionId,
@@ -129,10 +189,43 @@ export class RemoteRenderBrokerService {
     });
   }
 
+  async handleRuntimeInput({ controlId, accessToken, input } = {}) {
+    const id = text(controlId);
+    const control = this.controls.get(id) ?? null;
+    if (!control) throw brokerError('Canal de controle do runtime não encontrado.', 'FENIX_RENDER_CONTROL_NOT_FOUND', 404);
+    if (!safeEqual(accessToken, control.accessToken)) {
+      throw brokerError('Credencial do runtime inválida.', 'FENIX_RENDER_CONTROL_UNAUTHORIZED', 401);
+    }
+    const record = this.sessions.get(control.renderSessionId) ?? null;
+    if (!record || !record.sessionId) {
+      throw brokerError('Sessão VTT não está disponível para controle 3D.', 'FENIX_RENDER_CONTROL_SESSION_UNAVAILABLE', 409);
+    }
+
+    const normalized = normalizeFenix3dRuntimeInput({
+      ...(input && typeof input === 'object' ? input : {}),
+      renderSessionId: record.renderSessionId
+    });
+    if (normalized.sequence <= control.lastSequence) {
+      throw brokerError('Input de runtime repetido ou fora de ordem.', 'FENIX_RENDER_CONTROL_SEQUENCE_REJECTED', 409);
+    }
+    if (normalized.intent.type === 'look') control.yawDegrees = normalized.intent.yaw;
+
+    const result = await this.runtimeInputHandler({
+      record,
+      controlId: id,
+      input: normalized,
+      yawDegrees: control.yawDegrees
+    });
+    control.lastSequence = normalized.sequence;
+    return result;
+  }
+
   async end({ campaignId, userId, renderSessionId } = {}) {
     const current = this.get({ campaignId, userId, renderSessionId });
+    const record = this.sessions.get(current.renderSessionId);
     await this.renderGateway.endSession(current.renderSessionId);
     this.sessions.delete(current.renderSessionId);
+    if (record?.controlId) this.controls.delete(record.controlId);
     return Object.freeze({ renderSessionId: current.renderSessionId, ended: true });
   }
 }
