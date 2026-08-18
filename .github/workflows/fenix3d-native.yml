@@ -3,8 +3,13 @@ name: Fenix3D Native
 on:
   workflow_dispatch:
     inputs:
+      package_runtime:
+        description: Package Fenix3D Win64 after native build
+        required: false
+        default: true
+        type: boolean
       run_stream_smoke:
-        description: Run Render Node -> Pixel Streaming smoke after native build
+        description: Run Render Node -> Pixel Streaming smoke after native build/package
         required: false
         default: false
         type: boolean
@@ -15,7 +20,7 @@ permissions:
 jobs:
   unreal-native:
     runs-on: [self-hosted, Windows, X64, fenix3d]
-    timeout-minutes: 45
+    timeout-minutes: 90
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -25,11 +30,26 @@ jobs:
         with:
           node-version: 24
 
+      - name: GPU and UE5.5 preflight
+        shell: powershell
+        env:
+          FENIX_UNREAL_ENGINE_ROOT: ${{ vars.FENIX_UNREAL_ENGINE_ROOT }}
+        run: npm run preflight:fenix3d-gpu
+
       - name: Native UE5.5 build
         shell: powershell
         env:
           FENIX_UNREAL_ENGINE_ROOT: ${{ vars.FENIX_UNREAL_ENGINE_ROOT }}
         run: npm run build:fenix3d-native
+
+      - name: Package Win64 runtime
+        if: ${{ inputs.package_runtime }}
+        shell: powershell
+        env:
+          FENIX_UNREAL_ENGINE_ROOT: ${{ vars.FENIX_UNREAL_ENGINE_ROOT }}
+          FENIX_UNREAL_ARCHIVE_DIR: ${{ vars.FENIX_UNREAL_ARCHIVE_DIR }}
+          FENIX_UNREAL_PACKAGE_CONFIG: Development
+        run: npm run package:fenix3d
 
       - name: Render Node and Pixel Streaming smoke
         if: ${{ inputs.run_stream_smoke }}

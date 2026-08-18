@@ -32,6 +32,24 @@ function httpBaseUrl(value, fallback) {
   }
 }
 
+function httpTemplate(value) {
+  const raw = text(value);
+  if (!raw) return '';
+  const probe = raw
+    .replaceAll('{renderSessionId}', 'probe-session')
+    .replaceAll('{campaignId}', 'probe-campaign')
+    .replaceAll('{sessionId}', 'probe-game-session')
+    .replaceAll('{sceneId}', 'probe-scene')
+    .replaceAll('{actorId}', 'probe-actor')
+    .replaceAll('{tokenId}', 'probe-token');
+  try {
+    const parsed = new URL(probe);
+    return ['http:', 'https:'].includes(parsed.protocol) ? raw : '';
+  } catch {
+    return '';
+  }
+}
+
 export function createRenderNodeConfig(env = process.env) {
   const port = integer(env.FENIX_RENDER_NODE_PORT, 9000, 1, 65535);
   const token = text(env.FENIX_RENDER_NODE_TOKEN);
@@ -42,6 +60,7 @@ export function createRenderNodeConfig(env = process.env) {
   const runtimeMode = requestedMode === 'process' ? 'process' : 'external';
   const runtimeCommand = text(env.FENIX_RENDER_RUNTIME_COMMAND);
   const streamerUrlTemplate = text(env.FENIX_RENDER_STREAMER_URL_TEMPLATE);
+  const runtimeReadyUrlTemplate = httpTemplate(env.FENIX_RENDER_RUNTIME_READY_URL_TEMPLATE);
   const processConfigured = Boolean(runtimeCommand && streamerUrlTemplate);
   const runtimeBootstrapBaseUrl = httpBaseUrl(
     env.FENIX_RENDER_RUNTIME_BOOTSTRAP_BASE_URL,
@@ -65,7 +84,10 @@ export function createRenderNodeConfig(env = process.env) {
     runtimeExtraArgs: Object.freeze(stringArray(env.FENIX_RENDER_RUNTIME_EXTRA_ARGS_JSON)),
     streamerUrlTemplate,
     runtimeBootstrapBaseUrl,
-    runtimeStartupGraceMs: integer(env.FENIX_RENDER_RUNTIME_STARTUP_GRACE_MS, 2500, 100, 60_000),
+    runtimeReadyUrlTemplate,
+    runtimeReadyTimeoutMs: integer(env.FENIX_RENDER_RUNTIME_READY_TIMEOUT_MS, 15_000, 500, 120_000),
+    runtimeReadyIntervalMs: integer(env.FENIX_RENDER_RUNTIME_READY_INTERVAL_MS, 500, 100, 10_000),
+    runtimeStartupGraceMs: integer(env.FENIX_RENDER_RUNTIME_STARTUP_GRACE_MS, 1500, 100, 60_000),
     runtimeStopTimeoutMs: integer(env.FENIX_RENDER_RUNTIME_STOP_TIMEOUT_MS, 5000, 500, 60_000),
     runtimeConfigured: Boolean(playerUrlTemplate) && (runtimeMode === 'external' || processConfigured),
     allowUnauthenticatedHealth: /^(1|true|yes|on)$/i.test(text(env.FENIX_RENDER_NODE_PUBLIC_HEALTH, 'false'))

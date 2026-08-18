@@ -11,8 +11,11 @@ const runtimeLauncher = config.runtimeMode === 'process'
       cwd: config.runtimeCwd,
       streamerUrlTemplate: config.streamerUrlTemplate,
       bootstrapBaseUrl: config.runtimeBootstrapBaseUrl,
+      readyUrlTemplate: config.runtimeReadyUrlTemplate,
       extraArgs: config.runtimeExtraArgs,
       startupGraceMs: config.runtimeStartupGraceMs,
+      readyTimeoutMs: config.runtimeReadyTimeoutMs,
+      readyIntervalMs: config.runtimeReadyIntervalMs,
       stopTimeoutMs: config.runtimeStopTimeoutMs,
       logger: console
     })
@@ -62,6 +65,7 @@ server.listen(config.port, config.host, () => {
     renderer: config.renderer,
     runtimeMode: config.runtimeMode,
     runtimeConfigured: config.runtimeConfigured,
-    processLauncherEnabled: runtimeLauncher?.enabled ?? false
+    processLauncherEnabled: runtimeLauncher?.enabled ?? false,
+    runtimeReadinessConfigured: runtimeLauncher?.readinessConfigured ?? false
   });
 });
