@@ -32,7 +32,11 @@ private:
     FString SceneId;
     FString ActorId;
     FString TokenId;
+    bool bRequestInFlight = false;
+    TArray<FString> PendingBodies;
 
     void Report(const FString& Stage, const FFenixRuntimeManifest* Manifest, bool bWorldBuilt, bool bControlConfigured, const FString& Message = FString());
+    void QueueBody(FString&& Body);
+    void PumpQueue();
     void HandleReportResponse(FHttpRequestPtr Request, FHttpResponsePtr Response, bool bSucceeded);
 };
