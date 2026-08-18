@@ -1,0 +1,40 @@
+name: Fenix3D Native
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_stream_smoke:
+        description: Run Render Node -> Pixel Streaming smoke after native build
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  unreal-native:
+    runs-on: [self-hosted, Windows, X64, fenix3d]
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Native UE5.5 build
+        shell: powershell
+        env:
+          FENIX_UNREAL_ENGINE_ROOT: ${{ vars.FENIX_UNREAL_ENGINE_ROOT }}
+        run: npm run build:fenix3d-native
+
+      - name: Render Node and Pixel Streaming smoke
+        if: ${{ inputs.run_stream_smoke }}
+        shell: powershell
+        env:
+          FENIX_RENDER_NODE_INTERNAL_URL: ${{ vars.FENIX_RENDER_NODE_INTERNAL_URL }}
+          FENIX_RENDER_NODE_TOKEN: ${{ secrets.FENIX_RENDER_NODE_TOKEN }}
+        run: npm run smoke:fenix3d
