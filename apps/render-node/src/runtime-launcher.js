@@ -30,13 +30,18 @@ function safeWebSocketUrl(value) {
   }
 }
 
-function safeHttpBaseUrl(value) {
+function safeHttpUrl(value) {
   try {
     const parsed = new URL(String(value));
-    return ['http:', 'https:'].includes(parsed.protocol) ? parsed.toString().replace(/\/$/, '') : null;
+    return ['http:', 'https:'].includes(parsed.protocol) ? parsed.toString() : null;
   } catch {
     return null;
   }
+}
+
+function safeHttpBaseUrl(value) {
+  const url = safeHttpUrl(value);
+  return url ? url.replace(/\/$/, '') : null;
 }
 
 function delay(ms) {
@@ -70,7 +75,10 @@ export function createUnrealPixelStreamingArgs(record, {
   return Object.freeze([
     '-RenderOffscreen',
     `-PixelStreamingURL=${streamerUrl}`,
+    `-PixelStreamingID=${clean(record.renderSessionId)}`,
     `-PixelStreamingWebRTCMaxFps=${Math.max(24, Math.min(120, Number(record.request.targetFps) || 60))}`,
+    `-ResX=${Math.max(640, Math.min(3840, Number(record.request.maxWidth) || 1920))}`,
+    `-ResY=${Math.max(360, Math.min(2160, Number(record.request.maxHeight) || 1080))}`,
     `-FenixRenderSessionId=${clean(record.renderSessionId)}`,
     `-FenixCampaignId=${clean(record.request.campaignId)}`,
     `-FenixSceneId=${clean(record.request.sceneId)}`,
@@ -86,20 +94,28 @@ export class ProcessRenderRuntimeLauncher {
     cwd = null,
     streamerUrlTemplate,
     bootstrapBaseUrl = null,
+    readyUrlTemplate = null,
     extraArgs = [],
-    startupGraceMs = 2500,
+    startupGraceMs = 1500,
+    readyTimeoutMs = 15_000,
+    readyIntervalMs = 500,
     stopTimeoutMs = 5000,
     spawnImpl = spawn,
+    fetchImpl = globalThis.fetch,
     logger = console
   } = {}) {
     this.command = clean(command);
     this.cwd = cwd ? clean(cwd) : undefined;
     this.streamerUrlTemplate = String(streamerUrlTemplate ?? '').trim();
     this.bootstrapBaseUrl = safeHttpBaseUrl(bootstrapBaseUrl);
+    this.readyUrlTemplate = String(readyUrlTemplate ?? '').trim();
     this.extraArgs = Array.isArray(extraArgs) ? extraArgs.map(String) : [];
-    this.startupGraceMs = Math.max(100, Number(startupGraceMs) || 2500);
+    this.startupGraceMs = Math.max(100, Number(startupGraceMs) || 1500);
+    this.readyTimeoutMs = Math.max(500, Number(readyTimeoutMs) || 15_000);
+    this.readyIntervalMs = Math.max(100, Number(readyIntervalMs) || 500);
     this.stopTimeoutMs = Math.max(500, Number(stopTimeoutMs) || 5000);
     this.spawnImpl = spawnImpl;
+    this.fetchImpl = typeof fetchImpl === 'function' ? fetchImpl : null;
     this.logger = logger;
     this.processes = new Map();
   }
@@ -108,12 +124,50 @@ export class ProcessRenderRuntimeLauncher {
     return Boolean(this.command && this.streamerUrlTemplate);
   }
 
+  get readinessConfigured() {
+    return Boolean(this.readyUrlTemplate && this.fetchImpl);
+  }
+
   list() {
     return [...this.processes.entries()].map(([renderSessionId, entry]) => ({
       renderSessionId,
       pid: entry.child.pid ?? null,
-      startedAt: entry.startedAt
+      startedAt: entry.startedAt,
+      readyAt: entry.readyAt ?? null
     }));
+  }
+
+  async #waitUntilReady(record, child) {
+    if (!this.readinessConfigured) return null;
+    const url = safeHttpUrl(fillTemplate(this.readyUrlTemplate, launchValues(record)));
+    if (!url) {
+      throw launcherError('FENIX_RENDER_RUNTIME_READY_URL_TEMPLATE precisa gerar http:// ou https://.', 'FENIX_RENDER_RUNTIME_READY_URL_INVALID', 503);
+    }
+
+    const deadline = Date.now() + this.readyTimeoutMs;
+    let lastError = null;
+    while (Date.now() < deadline) {
+      if (child.exitCode != null) {
+        throw launcherError('Runtime 3D encerrou antes de ficar pronto.', 'FENIX_RENDER_RUNTIME_EARLY_EXIT', 503, lastError);
+      }
+      try {
+        const response = await this.fetchImpl(url, {
+          method: 'GET',
+          redirect: 'follow',
+          cache: 'no-store',
+          signal: AbortSignal.timeout(Math.min(3000, this.readyIntervalMs * 4))
+        });
+        if (response.status >= 200 && response.status < 400) {
+          return Object.freeze({ url, status: response.status, readyAt: new Date().toISOString() });
+        }
+        lastError = new Error(`HTTP ${response.status}`);
+      } catch (error) {
+        lastError = error;
+      }
+      await delay(this.readyIntervalMs);
+    }
+
+    throw launcherError('Pixel Streaming não ficou pronto dentro do timeout.', 'FENIX_RENDER_RUNTIME_READY_TIMEOUT', 503, lastError);
   }
 
   async start(record) {
@@ -145,7 +199,6 @@ export class ProcessRenderRuntimeLauncher {
           FENIX_TOKEN_ID: record.request.tokenId ?? '',
           FENIX_RUNTIME_MANIFEST_URL: manifestUrl,
           FENIX_RUNTIME_MANIFEST_TOKEN: manifestUrl ? record.runtimeAccessToken : '',
-          // Aliases mantidos durante a migração do primeiro runtime 3D.
           FENIX_WORLD_BOOTSTRAP_URL: manifestUrl,
           FENIX_WORLD_BOOTSTRAP_TOKEN: manifestUrl ? record.runtimeAccessToken : '',
           FENIX_RUNTIME_CONTROL_ID: runtimeControl?.controlId ?? '',
@@ -180,16 +233,27 @@ export class ProcessRenderRuntimeLauncher {
       throw launcherError('Runtime 3D encerrou durante a inicialização.', 'FENIX_RENDER_RUNTIME_EARLY_EXIT', 503, launchError);
     }
 
+    let readiness = null;
+    try {
+      readiness = await this.#waitUntilReady(record, child);
+    } catch (error) {
+      try { child.kill('SIGTERM'); } catch { /* processo já saiu */ }
+      throw error;
+    }
+
     const entry = Object.freeze({
       child,
       args,
-      startedAt: new Date().toISOString()
+      startedAt: new Date().toISOString(),
+      readyAt: readiness?.readyAt ?? null,
+      readiness
     });
     this.processes.set(record.renderSessionId, entry);
     this.logger.info?.('[Fênix][Render Runtime] processo iniciado', {
       renderSessionId: record.renderSessionId,
       pid: child.pid ?? null,
-      command: this.command
+      command: this.command,
+      readyAt: entry.readyAt
     });
     return entry;
   }
