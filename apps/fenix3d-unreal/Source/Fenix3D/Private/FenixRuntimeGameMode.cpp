@@ -1,5 +1,6 @@
 #include "FenixRuntimeGameMode.h"
 
+#include "Engine/Engine.h"
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
@@ -72,9 +73,11 @@ void AFenixRuntimeGameMode::BindPawn(AFenixFirstPersonPawn* Pawn)
     Pawn->OnMoveIntent.RemoveAll(this);
     Pawn->OnLookIntent.RemoveAll(this);
     Pawn->OnActionIntent.RemoveAll(this);
+    Pawn->OnCollisionFeedback.RemoveAll(this);
     Pawn->OnMoveIntent.AddUObject(this, &AFenixRuntimeGameMode::HandleMoveIntent);
     Pawn->OnLookIntent.AddUObject(this, &AFenixRuntimeGameMode::HandleLookIntent);
     Pawn->OnActionIntent.AddUObject(this, &AFenixRuntimeGameMode::HandleActionIntent);
+    Pawn->OnCollisionFeedback.AddUObject(this, &AFenixRuntimeGameMode::HandleCollisionFeedback);
 }
 
 void AFenixRuntimeGameMode::HandleManifestError(const FString& Error)
@@ -92,6 +95,7 @@ void AFenixRuntimeGameMode::HandleStateSync(const FFenixRuntimeStateSync& Sync)
     }
 
     ViewerPawn->ApplyAuthoritativeState(Sync, CurrentManifest);
+    if (WorldBuilder) WorldBuilder->ApplySceneSync(Sync, CurrentManifest);
 }
 
 void AFenixRuntimeGameMode::HandleControlError(const FString& Error)
@@ -102,6 +106,18 @@ void AFenixRuntimeGameMode::HandleControlError(const FString& Error)
 void AFenixRuntimeGameMode::HandleActionResult(const FString& Json)
 {
     UE_LOG(LogTemp, Verbose, TEXT("[Fenix3D] Action result received (%d chars)."), Json.Len());
+}
+
+void AFenixRuntimeGameMode::HandleCollisionFeedback(const FString& WallId)
+{
+    const FString Message = WallId.IsEmpty()
+        ? TEXT("Movimento bloqueado pelo Fênix Core")
+        : FString::Printf(TEXT("Movimento bloqueado: %s"), *WallId);
+    UE_LOG(LogTemp, Display, TEXT("[Fenix3D] %s"), *Message);
+    if (GEngine)
+    {
+        GEngine->AddOnScreenDebugMessage(77, 0.35f, FColor::Orange, Message);
+    }
 }
 
 void AFenixRuntimeGameMode::HandleMoveIntent(float Forward, float Strafe, bool bRun)
