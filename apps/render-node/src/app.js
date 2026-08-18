@@ -1,5 +1,7 @@
 import { timingSafeEqual } from 'node:crypto';
 
+const RENDER_SESSION_BODY_LIMIT = 4 * 1024 * 1024;
+
 function safeEqual(left, right) {
   const a = Buffer.from(String(left ?? ''));
   const b = Buffer.from(String(right ?? ''));
@@ -122,7 +124,7 @@ export function createRenderNodeHandler({ config, registry, runtimeLauncher = nu
       }
 
       if (request.method === 'POST' && pathname === '/v1/render-sessions') {
-        const body = await readJsonBody(request);
+        const body = await readJsonBody(request, RENDER_SESSION_BODY_LIMIT);
         if (config.runtimeMode === 'process' && runtimeLauncher?.enabled !== true) throw launcherRequiredError();
         const record = registry.create(body);
         if (config.runtimeMode === 'process') {
