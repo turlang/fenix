@@ -6,12 +6,12 @@ import path from 'node:path';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const project = path.join(root, 'apps', 'fenix3d-unreal', 'Fenix3D.uproject');
 const engineRoot = String(process.env.FENIX_UNREAL_ENGINE_ROOT ?? '').trim();
-const configuration = /^(shipping|development)$/i.test(String(process.env.FENIX_UNREAL_PACKAGE_CONFIG ?? 'Development'))
-  ? String(process.env.FENIX_UNREAL_PACKAGE_CONFIG ?? 'Development')
+const requestedConfiguration = String(process.env.FENIX_UNREAL_PACKAGE_CONFIG ?? 'Development').trim() || 'Development';
+const configuration = /^(shipping|development)$/i.test(requestedConfiguration)
+  ? requestedConfiguration
   : 'Development';
-const archiveRoot = path.resolve(
-  String(process.env.FENIX_UNREAL_ARCHIVE_DIR ?? path.join(root, 'dist', 'fenix3d', 'Win64'))
-);
+const configuredArchiveRoot = String(process.env.FENIX_UNREAL_ARCHIVE_DIR ?? '').trim();
+const archiveRoot = path.resolve(configuredArchiveRoot || path.join(root, 'dist', 'fenix3d', 'Win64'));
 const runUat = engineRoot ? path.join(engineRoot, 'Engine', 'Build', 'BatchFiles', 'RunUAT.bat') : '';
 
 function findExecutable(directory) {
