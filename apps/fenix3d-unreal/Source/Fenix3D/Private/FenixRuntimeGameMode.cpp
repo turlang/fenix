@@ -7,6 +7,7 @@
 #include "FenixFirstPersonPawn.h"
 #include "FenixRuntimeBootstrapClient.h"
 #include "FenixRuntimeControlClient.h"
+#include "FenixRuntimeStatusClient.h"
 #include "FenixWorldBuilder.h"
 
 AFenixRuntimeGameMode::AFenixRuntimeGameMode()
@@ -18,15 +19,19 @@ void AFenixRuntimeGameMode::BeginPlay()
 {
     Super::BeginPlay();
 
+    StatusClient = NewObject<UFenixRuntimeStatusClient>(this);
     BootstrapClient = NewObject<UFenixRuntimeBootstrapClient>(this);
     ControlClient = NewObject<UFenixRuntimeControlClient>(this);
 
+    StatusClient->OnStatusError.AddUObject(this, &AFenixRuntimeGameMode::HandleStatusError);
     BootstrapClient->OnManifestReady.AddUObject(this, &AFenixRuntimeGameMode::HandleManifestReady);
     BootstrapClient->OnManifestError.AddUObject(this, &AFenixRuntimeGameMode::HandleManifestError);
     ControlClient->OnStateSync.AddUObject(this, &AFenixRuntimeGameMode::HandleStateSync);
     ControlClient->OnControlError.AddUObject(this, &AFenixRuntimeGameMode::HandleControlError);
     ControlClient->OnActionResult.AddUObject(this, &AFenixRuntimeGameMode::HandleActionResult);
 
+    StatusClient->Start();
+    StatusClient->ReportBooting();
     ControlClient->Start();
     BootstrapClient->Start();
 }
@@ -35,6 +40,7 @@ void AFenixRuntimeGameMode::HandleManifestReady(const FFenixRuntimeManifest& Man
 {
     CurrentManifest = Manifest;
     bManifestReady = true;
+    if (StatusClient) StatusClient->ReportManifestReady(CurrentManifest);
 
     if (!WorldBuilder && GetWorld())
     {
@@ -58,12 +64,17 @@ void AFenixRuntimeGameMode::HandleManifestReady(const FFenixRuntimeManifest& Man
         BindPawn(ViewerPawn);
     }
 
-    UE_LOG(LogTemp, Display, TEXT("[Fenix3D] Runtime ready: campaign=%s scene=%s token=%s walls=%d entities=%d"),
+    const bool bWorldBuilt = WorldBuilder != nullptr && ViewerPawn != nullptr;
+    const bool bControlConfigured = ControlClient != nullptr && ControlClient->IsConfigured();
+    if (StatusClient) StatusClient->ReportReady(CurrentManifest, bWorldBuilt, bControlConfigured);
+
+    UE_LOG(LogTemp, Display, TEXT("[Fenix3D] Runtime ready: campaign=%s scene=%s token=%s walls=%d entities=%d control=%s"),
         *CurrentManifest.CampaignId,
         *CurrentManifest.Scene.Id,
         *CurrentManifest.Viewer.TokenId,
         CurrentManifest.Walls.Num(),
-        CurrentManifest.Entities.Num());
+        CurrentManifest.Entities.Num(),
+        bControlConfigured ? TEXT("ready") : TEXT("missing"));
 }
 
 void AFenixRuntimeGameMode::BindPawn(AFenixFirstPersonPawn* Pawn)
@@ -82,6 +93,7 @@ void AFenixRuntimeGameMode::BindPawn(AFenixFirstPersonPawn* Pawn)
 
 void AFenixRuntimeGameMode::HandleManifestError(const FString& Error)
 {
+    if (StatusClient) StatusClient->ReportFailure(Error);
     UE_LOG(LogTemp, Error, TEXT("[Fenix3D] Manifest bootstrap failed: %s"), *Error);
 }
 
@@ -101,6 +113,11 @@ void AFenixRuntimeGameMode::HandleStateSync(const FFenixRuntimeStateSync& Sync)
 void AFenixRuntimeGameMode::HandleControlError(const FString& Error)
 {
     UE_LOG(LogTemp, Warning, TEXT("[Fenix3D] Runtime control: %s"), *Error);
+}
+
+void AFenixRuntimeGameMode::HandleStatusError(const FString& Error)
+{
+    UE_LOG(LogTemp, Warning, TEXT("[Fenix3D] Runtime evidence: %s"), *Error);
 }
 
 void AFenixRuntimeGameMode::HandleActionResult(const FString& Json)
