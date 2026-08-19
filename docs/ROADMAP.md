@@ -68,7 +68,7 @@ O primeiro marco executável deverá demonstrar, com material de teste autorizad
 
 ### Status — PDF Semantic Adventure Compiler v1
 
-**Implementado neste marco executável.**
+**Implementado.**
 
 Entregas:
 
@@ -88,21 +88,48 @@ Entregas:
 
 Documento operacional: [`FENIX_PDF_SEMANTIC_ADVENTURE_COMPILER_V1.md`](./FENIX_PDF_SEMANTIC_ADVENTURE_COMPILER_V1.md).
 
-Limitações mantidas como próximas evoluções: OCR, PDF criptografado, layout multi-coluna complexo, classificação visual sem rótulo, tabelas avançadas, mapas/assets e revisão por confidence score.
+### Status — Content Importer v1.1: Layout Semantics & Review Queue
+
+**Implementado neste marco.**
+
+Entregas:
+
+- `fenix.pdf-layout-semantics` com coordenadas, font size, linhas, retângulos e candidatos;
+- detecção de headings por destaque tipográfico;
+- detecção de boxed text por posição/retângulo, inclusive sem rótulo `Read Aloud`;
+- `confidence` para inferências de layout;
+- `fenix.content-review-queue` com política fail-closed;
+- candidatos pendentes permanecem GM-only até decisão explícita;
+- accept promove somente o chunk confirmado para `read-aloud/player`;
+- reject preserva o conteúdo como GM-only;
+- inferência visual não duplica read-aloud explicitamente reconhecido pelo v1;
+- persistência de `fenix.adventure-model` por campanha através de `FileSemanticAdventureStore`;
+- índice lexical derivado `fenix.semantic-adventure-index` com autorização final ainda feita pelo Knowledge retrieval;
+- reconstrução do índice após decisão de revisão;
+- propostas revisáveis Adventure Area → Scene/Region sem mutar estado autoritativo da Cena;
+- CLI `import:adventure` promovida para o pipeline v1.1;
+- testes para layout, review queue, persistência, indexação e scene bindings.
+
+Documento operacional: [`FENIX_CONTENT_IMPORTER_V11_LAYOUT_REVIEW.md`](./FENIX_CONTENT_IMPORTER_V11_LAYOUT_REVIEW.md).
 
 ## Próximo marco do importador
 
-**Content Importer v1.1 — Layout Semantics & Review Queue**
+**Content Importer v1.2 — OCR/Vision & Review Workspace**
 
-- preservar coordenadas e blocos de layout;
-- detectar caixas de read-aloud por tipografia/posição, não apenas por rótulo;
-- confidence score por entidade extraída;
-- fila de revisão do Mestre para baixa confiança;
-- persistência/indexação do Adventure Model por campanha;
-- vínculo revisável entre áreas importadas e Scene/regions do Fênix.
+Objetivos planejados:
+
+- PDF escaneado por OCR/visão com provenance por página;
+- confidence por bloco OCR e revisão obrigatória abaixo do limite seguro;
+- identificação visual mais robusta de caixas, colunas e tabelas;
+- interface de Review Queue dentro do Fênix VTT;
+- preview da página/recorte junto do item a revisar;
+- confirmação assistida de headings/areas/read-aloud/checks/tesouros;
+- persistência PostgreSQL do Adventure Model e decisões de review;
+- promoção dos bindings aceitos para triggers de Knowledge/room-entry sem alterar geometria de Scene;
+- início do pipeline de imagens/mapas extraídos do PDF.
 
 ## Observação histórica
 
 A antiga classificação da importação semântica de PDF/DOCX como “fora de escopo” fica superada por esta decisão arquitetural. O desenvolvimento deve seguir os marcos e guardrails atuais do projeto e a especificação normativa acima.
 
-Itens que continuam dependentes de priorização própria incluem automação avançada de mapas, geradores de aventuras/NPCs/dungeons e demais expansões que não sejam necessárias ao primeiro importador funcional.
+Itens que continuam dependentes de priorização própria incluem automação avançada de mapas, geradores de aventuras/NPCs/dungeons e demais expansões que não sejam necessárias ao importador funcional atual.
