@@ -8,7 +8,7 @@ import {
   createOpenAICompatibleTextProvider
 } from '../packages/ai-inference-gateway/src/index.js';
 import { createAiGatewayTranslator } from '../packages/content-ingestion/src/index.js';
-import { importDigitalPdfAdventureV11 } from '../packages/content-ingestion/src/layout-review.js';
+import { importDigitalPdfAdventureV11 } from '../packages/content-ingestion/src/importer-v11.js';
 
 function usage() {
   console.log(`Uso:
