@@ -80,6 +80,45 @@ Roteamento de inferência entre GPU local e providers cloud. Políticas iniciais
 
 O adapter OpenAI-compatible permite conectar runtimes locais compatíveis sem acoplamento a vendor. O `ai-provider` atual permanece ativo até a migração controlada do Mestre Fênix para o gateway.
 
+### Content Ingestion, Localization & Knowledge
+
+Importadores são adapters de entrada e não fazem parte do domínio autoritativo de regras. PDF, Foundry JSON/Bridge, DOCX e outras fontes devem ser normalizados para um **Fênix Adventure Model** VTT-agnóstico antes de alimentar o Mestre Fênix.
+
+Fluxo normativo:
+
+```text
+Source Original
+      ↓
+Extraction / Source Adapter
+      ↓
+Normalization
+      ↓
+Language Detection + Localization
+      ↓
+Semantic Compiler
+      ↓
+Fênix Adventure Model
+      ↓
+Knowledge Engine / RAG
+      ↓
+Narration Context Builder
+      ↓
+Mestre Fênix
+```
+
+Regras de fronteira:
+
+- a fonte original e sua proveniência são preservadas;
+- localização é uma camada derivada e versionável, inicialmente priorizando `pt-BR`;
+- tradução e adaptação narrativa são processos separados;
+- fatos mecânicos estruturados têm precedência sobre prosa localizada ou gerada;
+- conteúdo secreto/GM-only mantém política explícita de revelação;
+- o Mestre Fênix recebe contexto recuperado relevante, não o documento completo como prompt bruto;
+- geometria de mapa inferida de PDF não vira Cena autoritativa sem confiança suficiente e revisão do GM;
+- Foundry e outras fontes externas fornecem conteúdo, não autoridade de regras.
+
+A especificação normativa desta camada está em [`FENIX_CONTENT_IMPORT_LOCALIZATION.md`](./FENIX_CONTENT_IMPORT_LOCALIZATION.md).
+
 ## Infraestrutura híbrida alvo
 
 ```text
@@ -114,19 +153,24 @@ O renderer recebe o resultado resolvido. Ele não concede capacidades ao persona
 
 ## Sequência de implementação
 
-1. **Architecture 2.0 Foundation** — protocolo, Bridge SDK, contratos de Cloud Render, Render Node Gateway e AI Gateway. (este marco)
+1. **Architecture 2.0 Foundation** — protocolo, Bridge SDK, contratos de Cloud Render, Render Node Gateway e AI Gateway.
 2. **AI Gateway Runtime** — ligar Mestre Fênix ao gateway e configurar Local LLM + fallback.
 3. **VTT Bridge v1** — adapter Foundry usando o protocolo comum.
 4. **Remote Render Broker API** — autenticação, autorização, criação/encerramento de sessões GPU e signalling.
 5. **First Person Runtime Prototype** — uma cena real do Fênix renderizada remotamente e controlada por intents.
 6. **Dual View Sync** — alternar Top View / First Person sobre a mesma cena e token persistente.
 7. **GPU Scheduler/Scaling** — capacidade, filas, regiões, métricas e múltiplos Render Nodes.
+8. **Universal Content Importer / PDF Semantic Adventure Compiler** — ingestão estruturada de PDF e Foundry, localização `pt-BR`, proveniência, Knowledge Engine/RAG e políticas de segredo conforme a especificação normativa.
 
 ## Guardrails
 
 - `platform-protocol`, `vtt-bridge-sdk`, `render-stream-contract`, `render-node-gateway` e `ai-inference-gateway` não importam componentes de `apps/fenix-vtt`.
-- VTT externo nunca vira fonte de regra; adapters traduzem eventos.
+- VTT externo nunca vira fonte de regra; adapters traduzem eventos e conteúdo.
 - cliente First Person nunca envia teleport/posição como autoridade.
 - navegador nunca recebe credenciais da LLM local.
 - navegador não se conecta diretamente ao AI GPU Node.
 - AI e render são workloads GPU distintos, mesmo quando hospedados no mesmo servidor físico.
+- importadores externos nunca escrevem diretamente em domínios autoritativos sem normalização/validação.
+- texto original importado não é substituído destrutivamente por tradução.
+- tradução/narração não alteram fatos mecânicos estruturados.
+- material de terceiros só pode ser importado/armazenado conforme direitos e autorização aplicáveis; código sem licença compatível não é copiado para o projeto.
