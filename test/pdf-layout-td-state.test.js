@@ -12,16 +12,16 @@ function makePdf() {
   const content = [
     '60 600 490 100 re S',
     'BT',
+    '/F1 18 Tf',
+    '1 0 0 1 72 744 Tm',
+    '(1. Cellar) Tj',
+    'ET',
+    'BT',
     '/F1 12 Tf',
     '80 670 Td',
     `(${literal(first)}) Tj`,
     '0 -22 Td',
     `(${literal(second)}) Tj`,
-    'ET',
-    'BT',
-    '/F1 18 Tf',
-    '1 0 0 1 72 744 Tm',
-    '(1. Cellar) Tj',
     'ET'
   ].join('\n');
 
