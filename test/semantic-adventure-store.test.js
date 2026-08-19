@@ -3,7 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { importDigitalPdfAdventureV11 } from '../packages/content-ingestion/src/layout-review.js';
+import { importDigitalPdfAdventureV11 } from '../packages/content-ingestion/src/importer-v11.js';
 import { FileSemanticAdventureStore } from '../packages/adventure-library/src/semantic-model-store.js';
 
 function pdfLiteral(value) {
