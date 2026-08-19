@@ -19,6 +19,7 @@
     "package:fenix3d": "node scripts/fenix3d-package-runtime.mjs",
     "preflight:fenix3d-gpu": "node scripts/fenix3d-gpu-preflight.mjs",
     "smoke:fenix3d": "node scripts/fenix3d-render-smoke.mjs",
+    "import:adventure": "node scripts/fenix-import-adventure.mjs",
     "test": "node --test",
     "test:realtime-integration": "node integration-tests/realtime-websocket.mjs",
     "test:auth-integration": "node integration-tests/auth-campaign-http.mjs",

@@ -16,6 +16,34 @@ function asId(value) {
   return asText(value?.id ?? value?._id ?? value?.uuid ?? value);
 }
 
+function normalizeAdventureKnowledge(value) {
+  if (!value || typeof value !== 'object') return null;
+  const chunks = asArray(value.chunks).slice(0, 16).map((chunk) => ({
+    id: asId(chunk),
+    type: asText(chunk?.type),
+    sectionId: asText(chunk?.sectionId),
+    sectionTitle: asText(chunk?.sectionTitle),
+    text: asText(chunk?.text),
+    score: Number.isFinite(Number(chunk?.score)) ? Number(chunk.score) : 0,
+    source: chunk?.source && typeof chunk.source === 'object' ? {
+      type: asText(chunk.source.type),
+      documentId: asText(chunk.source.documentId),
+      page: Number.isFinite(Number(chunk.source.page)) ? Number(chunk.source.page) : null,
+      section: asText(chunk.source.section)
+    } : null
+  })).filter((chunk) => chunk.text);
+
+  if (!chunks.length && !asText(value.text)) return null;
+  return {
+    schema: asText(value.schema, 'fenix.mestre-knowledge-context'),
+    version: Number.isFinite(Number(value.version)) ? Number(value.version) : 1,
+    adventureId: asText(value.adventureId),
+    language: asText(value.language),
+    chunks,
+    text: asText(value.text)
+  };
+}
+
 export class NarrationContextBuilder {
   constructor({ logger = console } = {}) { this.logger = logger; }
 
@@ -62,12 +90,14 @@ export class NarrationContextBuilder {
         flags: journalSource.flags && typeof journalSource.flags === 'object' ? journalSource.flags : {}
       } : null;
 
+      const adventureKnowledge = normalizeAdventureKnowledge(raw.adventureKnowledge);
       const context = {
         scene,
         campaign: raw.campaign && typeof raw.campaign === 'object' ? raw.campaign : null,
         visibleActors: actors,
         sceneJournal,
         scenePage: selectedPage,
+        adventureKnowledge,
         messages: asArray(raw.messages).map((message) => ({
           id: asId(message),
           userId: asText(message?.userId ?? message?.user?.id),
@@ -86,6 +116,7 @@ export class NarrationContextBuilder {
         sceneId: context.scene.id,
         actors: context.visibleActors.length,
         hasJournal: Boolean(context.sceneJournal),
+        hasAdventureKnowledge: Boolean(context.adventureKnowledge),
         source: context.metadata.source
       });
       return context;

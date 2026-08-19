@@ -25,6 +25,13 @@ function isReadAloudExtraction(page) {
   return ['STRUCTURED_READ_ALOUD', 'DIRECT_JOURNAL_READ_ALOUD'].includes(text(page?.extractionMode));
 }
 
+function importedReadAloud(context) {
+  const knowledge = context?.adventureKnowledge;
+  if (!knowledge || knowledge.schema !== 'fenix.mestre-knowledge-context') return null;
+  const chunks = Array.isArray(knowledge.chunks) ? knowledge.chunks : [];
+  return chunks.find((chunk) => chunk?.type === 'read-aloud' && Boolean(text(chunk.text))) ?? null;
+}
+
 export class SceneOpeningContextBuilder {
   constructor({ logger = console, maxSourceCharacters = 5000 } = {}) {
     this.logger = logger;
@@ -35,6 +42,7 @@ export class SceneOpeningContextBuilder {
     const scene = context.scene ?? {};
     const journal = context.sceneJournal ?? null;
     const page = context.scenePage ?? journal?.selectedPage ?? null;
+    const adventureReadAloud = importedReadAloud(context);
 
     const sceneDescription = text(scene.description);
     const explicitLink = Boolean(journal?.explicitLink);
@@ -46,11 +54,29 @@ export class SceneOpeningContextBuilder {
     let sourceType = 'SCENE_ONLY';
     let sourceName = scene.name || 'Cena ativa';
     let sourceText = '';
+    let extractionMode = '';
+    let areaName = '';
+    let sceneSectionName = '';
+    let provenance = null;
+    let canonicalAnchor = false;
 
     if (safeReadAloud) {
       sourceType = explicitLink ? 'SCENE_CONFIGURED_PAGE' : 'LINKED_PAGE';
       sourceName = page.name || journal?.name || sourceName;
       sourceText = text(page.content);
+      extractionMode = text(page?.extractionMode);
+      areaName = text(page?.areaName);
+      sceneSectionName = text(page?.sceneSectionName);
+      canonicalAnchor = true;
+    } else if (adventureReadAloud) {
+      sourceType = 'ADVENTURE_KNOWLEDGE';
+      sourceName = text(adventureReadAloud.sectionTitle) || sourceName;
+      sourceText = text(adventureReadAloud.text);
+      extractionMode = 'SEMANTIC_ADVENTURE_READ_ALOUD';
+      areaName = text(adventureReadAloud.sectionTitle);
+      sceneSectionName = areaName;
+      provenance = adventureReadAloud.source ?? null;
+      canonicalAnchor = true;
     }
 
     sourceText = sourceText.slice(0, this.maxSourceCharacters);
@@ -74,10 +100,11 @@ export class SceneOpeningContextBuilder {
         explicitLink,
         linkSource: journal?.linkSource ?? null,
         sectionMatchedScene: Boolean(page?.sectionMatchedScene),
-        sceneSectionName: text(page?.sceneSectionName),
-        areaName: text(page?.areaName),
-        extractionMode: text(page?.extractionMode),
-        canonicalAnchor: safeReadAloud
+        sceneSectionName,
+        areaName,
+        extractionMode,
+        provenance,
+        canonicalAnchor
       },
       visibleActors,
       constraints: {
