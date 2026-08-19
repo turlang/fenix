@@ -66,6 +66,41 @@ O primeiro marco executável deverá demonstrar, com material de teste autorizad
 8. narração em português usando apenas conteúdo elegível ao jogador;
 9. bloqueio de segredo antes da condição apropriada de revelação.
 
+### Status — PDF Semantic Adventure Compiler v1
+
+**Implementado neste marco executável.**
+
+Entregas:
+
+- extractor próprio para PDF digital com streams de texto, `FlateDecode`, `ObjStm` simples e `/ToUnicode` quando disponível;
+- provenance por documento/página/seção;
+- detecção inicial de `pt`, `en`, `es` e `fr`;
+- `fenix.adventure-model` v1;
+- classificação conservadora de Chapter, Area/Room, read-aloud, GM Note, Secret, Check/DC e Treasure;
+- localização derivada via `AiInferenceGateway`, com prioridade de produto para `pt-BR`;
+- guard que rejeita localização que altere valores numéricos protegidos;
+- chunks `player`, `conditional` e `gm`;
+- recuperação por seção/query e política explícita de revelação;
+- `fenix.mestre-knowledge-context`;
+- integração com `NarrationContextBuilder` e fallback seguro no `SceneOpeningContextBuilder`;
+- CLI `npm run import:adventure -- <arquivo.pdf>`;
+- testes que comprovam o fluxo PDF → Adventure Model → localização → Knowledge → âncora do Mestre Fênix.
+
+Documento operacional: [`FENIX_PDF_SEMANTIC_ADVENTURE_COMPILER_V1.md`](./FENIX_PDF_SEMANTIC_ADVENTURE_COMPILER_V1.md).
+
+Limitações mantidas como próximas evoluções: OCR, PDF criptografado, layout multi-coluna complexo, classificação visual sem rótulo, tabelas avançadas, mapas/assets e revisão por confidence score.
+
+## Próximo marco do importador
+
+**Content Importer v1.1 — Layout Semantics & Review Queue**
+
+- preservar coordenadas e blocos de layout;
+- detectar caixas de read-aloud por tipografia/posição, não apenas por rótulo;
+- confidence score por entidade extraída;
+- fila de revisão do Mestre para baixa confiança;
+- persistência/indexação do Adventure Model por campanha;
+- vínculo revisável entre áreas importadas e Scene/regions do Fênix.
+
 ## Observação histórica
 
 A antiga classificação da importação semântica de PDF/DOCX como “fora de escopo” fica superada por esta decisão arquitetural. O desenvolvimento deve seguir os marcos e guardrails atuais do projeto e a especificação normativa acima.
