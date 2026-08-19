@@ -1,11 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { retrieveAdventureKnowledge } from '../packages/content-ingestion/src/index.js';
-import {
-  applyAdventureReviewDecisions,
-  extractPdfLayoutSemantics,
-  importDigitalPdfAdventureV11
-} from '../packages/content-ingestion/src/layout-review.js';
+import { extractPdfLayoutSemantics } from '../packages/content-ingestion/src/layout-semantics.js';
+import { applyAdventureReviewDecisions } from '../packages/content-ingestion/src/review-queue.js';
+import { importDigitalPdfAdventureV11 } from '../packages/content-ingestion/src/importer-v11.js';
 
 function pdfLiteral(value) {
   return String(value).replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
