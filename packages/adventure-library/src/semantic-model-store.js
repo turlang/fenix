@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
-import { applyAdventureReviewDecisions } from '../../content-ingestion/src/layout-review.js';
+import { applyAdventureReviewDecisions } from '../../content-ingestion/src/review-queue.js';
 import { retrieveAdventureKnowledge } from '../../content-ingestion/src/index.js';
 
 const STORE_VERSION = 1;
