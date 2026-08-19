@@ -7,21 +7,21 @@ import {
   AiRoutingPolicy,
   createOpenAICompatibleTextProvider
 } from '../packages/ai-inference-gateway/src/index.js';
-import {
-  createAiGatewayTranslator,
-  importDigitalPdfAdventure
-} from '../packages/content-ingestion/src/index.js';
+import { createAiGatewayTranslator } from '../packages/content-ingestion/src/index.js';
+import { importDigitalPdfAdventureV11 } from '../packages/content-ingestion/src/layout-review.js';
 
 function usage() {
   console.log(`Uso:
   npm run import:adventure -- <arquivo.pdf> [opções]
 
 Opções:
-  --out <arquivo.json>       destino do Adventure Model
-  --title <título>           título da aventura
-  --document-id <id>         ID estável da fonte
-  --target <idioma>          idioma da mesa (padrão: pt-BR)
-  --no-localize              compila sem traduzir
+  --out <arquivo.json>              destino do Adventure Model
+  --title <título>                  título da aventura
+  --document-id <id>                ID estável da fonte
+  --target <idioma>                 idioma da mesa (padrão: pt-BR)
+  --review-threshold <0..1>          confiança mínima para criar item de revisão (padrão: 0.65)
+  --auto-accept-confidence <0..1>    confiança mínima para autoaceite seguro (padrão: 0.97)
+  --no-localize                     compila sem traduzir
 
 Localização por IA usa os providers já adotados pelo Fênix:
   FENIX_LOCAL_LLM_BASE_URL + FENIX_LOCAL_LLM_MODEL
@@ -29,10 +29,22 @@ Localização por IA usa os providers já adotados pelo Fênix:
 `);
 }
 
+function parseNumberFlag(flag, value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0 || parsed > 1) throw new Error(`${flag} deve estar entre 0 e 1.`);
+  return parsed;
+}
+
 function parseArgs(argv) {
   const args = [...argv];
   const input = args.shift();
-  const options = { input, targetLanguage: 'pt-BR', localize: true };
+  const options = {
+    input,
+    targetLanguage: 'pt-BR',
+    localize: true,
+    reviewThreshold: 0.65,
+    autoAcceptConfidence: 0.97
+  };
   while (args.length) {
     const flag = args.shift();
     if (flag === '--no-localize') { options.localize = false; continue; }
@@ -42,6 +54,8 @@ function parseArgs(argv) {
     else if (flag === '--title') options.title = value;
     else if (flag === '--document-id') options.documentId = value;
     else if (flag === '--target') options.targetLanguage = value;
+    else if (flag === '--review-threshold') options.reviewThreshold = parseNumberFlag(flag, value);
+    else if (flag === '--auto-accept-confidence') options.autoAcceptConfidence = parseNumberFlag(flag, value);
     else throw new Error(`Opção desconhecida: ${flag}`);
   }
   return options;
@@ -106,15 +120,17 @@ async function main() {
   const translator = gateway ? createAiGatewayTranslator({ gateway }) : null;
 
   try {
-    const model = await importDigitalPdfAdventure(pdf, {
+    const model = await importDigitalPdfAdventureV11(pdf, {
       documentId: options.documentId,
       title: options.title || path.basename(inputPath, path.extname(inputPath)),
       targetLanguage: options.targetLanguage,
       localize: options.localize,
-      translator
+      translator,
+      reviewThreshold: options.reviewThreshold,
+      autoAcceptConfidence: options.autoAcceptConfidence
     });
     await fs.writeFile(outputPath, `${JSON.stringify(model, null, 2)}\n`, 'utf8');
-    console.log('[Fênix][Content Import] Adventure Model criado.');
+    console.log('[Fênix][Content Import] Adventure Model v1.1 criado.');
     console.log(`Fonte: ${inputPath}`);
     console.log(`Saída: ${outputPath}`);
     console.log(`Idioma: ${model.language.source} -> ${model.language.target ?? '(sem localização)'}`);
@@ -124,6 +140,11 @@ async function main() {
     console.log(`Segredos: ${model.stats.secrets}`);
     console.log(`Checks/DCs: ${model.stats.checks}`);
     console.log(`Tesouros: ${model.stats.treasures}`);
+    console.log(`Candidatos de layout: ${model.stats.layoutCandidates ?? 0}`);
+    console.log(`Revisões pendentes: ${model.review?.summary?.pending ?? 0}`);
+    if (model.review?.summary?.pending) {
+      console.log('Itens inferidos por layout permanecem bloqueados para jogadores até revisão do Mestre.');
+    }
   } catch (error) {
     if (error?.code === 'FENIX_LOCALIZER_REQUIRED') {
       throw new Error('O PDF está em outro idioma e nenhum provider de localização foi configurado. Configure FENIX_LOCAL_LLM_* ou GROQ_API_KEY/GROQ_MODEL, ou use --no-localize.');
