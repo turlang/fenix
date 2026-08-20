@@ -193,7 +193,7 @@ Documento operacional: [`FENIX_CONTENT_IMPORTER_V14_ENTITY_GRAPH_BINDINGS.md`](.
 
 ### Status — Content Importer v1.5: Foundry Bridge Sync & Native Entity Promotion
 
-**Implementado neste marco.**
+**Implementado.**
 
 Entregas:
 
@@ -217,28 +217,49 @@ Entregas:
 
 Documento operacional: [`FENIX_CONTENT_IMPORTER_V15_FOUNDRY_SYNC_NATIVE_PROMOTION.md`](./FENIX_CONTENT_IMPORTER_V15_FOUNDRY_SYNC_NATIVE_PROMOTION.md).
 
-Limites declarados do v1.5:
+### Status — Content Importer v1.6: Sync Review UX & System-Native Mapping
 
-- o CI hospedado valida código/contratos do Bridge, mas não executa uma instância Foundry VTT real; a prova física de `fromUuid()` fica separada;
-- a experiência visual completa de Conflict Review/Promotion no Review Workspace ainda não foi implementada; o v1.5 expõe Bridge e APIs autenticadas;
-- mapeamento de Sheet/Item é conservador e universal; conversões específicas de D&D 5e ou outros sistemas exigem mapeadores próprios do RPG System;
-- `RollTable` entra no Entity Graph/Knowledge, mas ainda não possui promoção para um catálogo nativo próprio;
-- não existe sincronização automática de volta do Fênix para o Foundry;
+**Implementado neste marco.**
+
+Entregas:
+
+- Review Workspace passa a exibir diferenças do `fenix.foundry-sync-state` dentro da experiência do Mestre;
+- comparação lado a lado `Foundry · fonte` ↔ `Fênix · nativo`;
+- conflitos expõem `Manter Fênix`, `Aceitar Foundry` e `Desvincular` usando as APIs autenticadas do v1.5;
+- fonte removida continua impedida de apagar ou substituir silenciosamente entidade nativa;
+- mudança unilateral da fonte pode ser aplicada explicitamente pelo Mestre através do pipeline de promoção existente;
+- Actor/NPC/Item/Spell ainda não promovido aparece em fila própria de promoção nativa;
+- cliente de sync escapa UUIDs antes de compor rotas e não recebe autoridade extra do browser;
+- `fenix.system-native-mapping` v1 introduz adapters de transformação separados do RPG Rules Contract;
+- mapper `fenix-dnd5e-import-v1` transporta somente fatos normalizados presentes, como PV/CA/CR/tipo, velocidades, sentidos e dados básicos de Spell;
+- fallback `fenix-generic-import-v1` preserva dados e registra warning sem inventar mecânicas desconhecidas;
+- `fenix.native-entity-promotions` v2 registra mapping/provenance e declara `systemMappingIsNotRulesAuthority: true`;
+- layout responsivo do Review Workspace evita sobreposição e mantém filas semântica, sync, promoção e mapas visualmente separadas;
+- testes de mapper, guardrails, UI de comparação, client de resolução e independência do RPG Rules Contract.
+
+Documento operacional: [`FENIX_CONTENT_IMPORTER_V16_SYNC_REVIEW_SYSTEM_MAPPING.md`](./FENIX_CONTENT_IMPORTER_V16_SYNC_REVIEW_SYSTEM_MAPPING.md).
+
+Limites declarados do v1.6:
+
+- a instância Foundry real ainda não faz parte do CI hospedado; a validação física do Bridge permanece pendente;
+- RollTable permanece no Entity Graph/Knowledge, sem catálogo nativo dedicado;
+- mapeamento dnd5e é deliberadamente parcial e não replica regras do sistema;
+- Compendium externo continua referenciado, não baixado/adivinhado;
+- não existe sync automático em background nem sincronização reversa Fênix → Foundry;
 - Scene/Core/RPG System continuam autoridades para física e regras.
 
 ## Próximo marco do importador
 
-**Content Importer v1.6 — Sync Review UX & System-Native Mapping**
+**Content Importer v1.7 — Live Foundry Validation & Entity Coverage**
 
 Objetivos planejados:
 
-- levar `changed`, `removed` e `conflict` para uma tela completa do Review Workspace;
-- permitir promoção Actor/NPC/Item/Spell pelo workspace, com preview de origem e destino;
-- adicionar comparação lado a lado Foundry ↔ Fênix antes de `keep-local`, `accept-source` ou `detach`;
-- criar mapeadores por RPG System, começando pelo sistema prioritário, sem mover regras para o importador;
-- mapear Sheet/Item com perda controlada e provenance dos campos convertidos;
-- preparar suporte de promoção/revisão para RollTable sem torná-la autoridade de regras;
-- manter o Bridge opcional e o Fênix totalmente funcional sem Foundry.
+- validar UUID → `fromUuid()` → Bridge → Fênix em uma instância Foundry real;
+- registrar evidência operacional do ciclo sync → review → promoção;
+- ampliar cobertura clean-room de Item/Spell e preparar RollTable nativo;
+- validar Foundry v13 / dnd5e 5.x sem copiar código ou corpus de terceiros;
+- revisar comportamento de Compendium e referências ausentes com política explícita;
+- manter o Fênix totalmente funcional sem Foundry.
 
 ## Observação histórica
 
