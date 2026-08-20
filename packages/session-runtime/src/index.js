@@ -39,15 +39,13 @@ export function createSessionRuntime({
   qualityGuard,
   audioNarrationService,
   audioOptions,
+  campaignId = null,
+  adventureKnowledgeResolver = null,
   logger = console
 } = {}) {
   const snapshotPort = !vttContextPort && !foundryApi ? createSnapshotContextPort() : null;
-  const contextPort = vttContextPort
-    ?? (foundryApi ? new FoundryAdapter(foundryApi) : snapshotPort);
-  const narrationOutput = narrationOutputPort
-    ?? (publishChat
-      ? new FoundryPublisher({ publishChat, logger })
-      : new NarrationOutput({ logger }));
+  const contextPort = vttContextPort ?? (foundryApi ? new FoundryAdapter(foundryApi) : snapshotPort);
+  const narrationOutput = narrationOutputPort ?? (publishChat ? new FoundryPublisher({ publishChat, logger }) : new NarrationOutput({ logger }));
 
   const director = new SessionDirector({
     contextPort,
@@ -68,6 +66,36 @@ export function createSessionRuntime({
     logger
   });
 
+  async function actionKnowledge(event) {
+    if (!campaignId || !adventureKnowledgeResolver?.resolveAction) return null;
+    const sceneId = director.getStatus().sceneId;
+    if (!sceneId) return null;
+    try {
+      return await adventureKnowledgeResolver.resolveAction({ campaignId, sceneId, query: event.content });
+    } catch (error) {
+      logger.warn?.('[Fênix][Knowledge] falha ao resolver contexto de ação', { campaignId, sceneId, code: error?.code, message: error?.message });
+      return null;
+    }
+  }
+
+  async function roomKnowledge(input) {
+    if (!campaignId || !adventureKnowledgeResolver?.resolveRoomEntry) return null;
+    const sceneId = String(input?.scene?.id ?? director.getStatus().sceneId ?? '').trim();
+    const regionId = String(input?.regionId ?? input?.room?.regionId ?? input?.room?.id ?? '').trim() || null;
+    if (!sceneId) return null;
+    try {
+      return await adventureKnowledgeResolver.resolveRoomEntry({
+        campaignId,
+        sceneId,
+        regionId,
+        query: input?.room?.name ?? ''
+      });
+    } catch (error) {
+      logger.warn?.('[Fênix][Knowledge] falha ao resolver room-entry', { campaignId, sceneId, regionId, code: error?.code, message: error?.message });
+      return null;
+    }
+  }
+
   return {
     getStatus: () => director.getStatus(),
     async start(input = {}) {
@@ -78,11 +106,16 @@ export function createSessionRuntime({
       await applySnapshot(contextPort, { snapshot });
       return director.restore({ sessionId, startedAt });
     },
-    processAction(input) {
-      return director.processAction(normalizePlayerActionEvent(input));
+    async processAction(input) {
+      const event = normalizePlayerActionEvent(input);
+      const adventureKnowledge = await actionKnowledge(event);
+      return director.processAction({ ...event, adventureKnowledge });
     },
-    describeRoom(roomContext) {
-      return director.describeRoom(normalizeRoomEnteredEvent(roomContext));
+    async describeRoom(input = {}) {
+      const resolved = await roomKnowledge(input);
+      const source = resolved?.source ?? input.source;
+      const event = normalizeRoomEnteredEvent({ ...input, source });
+      return director.describeRoom({ ...event, adventureKnowledge: resolved?.gmContext ?? null });
     },
     end: () => director.end()
   };
