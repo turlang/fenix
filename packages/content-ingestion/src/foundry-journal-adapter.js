@@ -62,7 +62,7 @@ function semanticTextFromHtml(html) {
   source = source.replace(/<h([1-6])\b[^>]*>([\s\S]*?)<\/h\1>/gi, (_all, level, inner) => {
     const title = stripTags(inner);
     if (!title) return '\n';
-    return Number(level) <= 2 ? `\nChapter: ${title}\n` : `\nArea: ${title}\n`;
+    return Number(level) <= 2 ? `\nChapter 1. ${title}\n` : `\nArea ${title}\n`;
   });
   source = source.replace(/@UUID\[([^\]]+)\](?:\{([^}]+)\})?/g, (_all, uuid, label) => label || uuid);
   source = source.replace(/<(?:br|hr)\s*\/?\s*>/gi, '\n');
@@ -73,12 +73,8 @@ function semanticTextFromHtml(html) {
 }
 
 function rootJournalUuid(input, journalId) {
-  const candidates = [
-    input?.uuid,
-    input?._stats?.uuid,
-    input?.flags?.core?.sourceId,
-    input?._stats?.compendiumSource
-  ].map((value) => clean(value, 500)).filter(Boolean);
+  const candidates = [input?.uuid, input?._stats?.uuid, input?.flags?.core?.sourceId, input?._stats?.compendiumSource]
+    .map((value) => clean(value, 500)).filter(Boolean);
   const journal = candidates.find((value) => value.startsWith('JournalEntry.'));
   return journal || `JournalEntry.${journalId}`;
 }
@@ -152,22 +148,13 @@ export async function importFoundryJournalJson(input, options = {}) {
     pageCount: journal.pages.length,
     pages: Object.freeze(journal.pages.map((page) => Object.freeze({ pageNumber: page.pageNumber, objectId: page.pageId, text: page.text })))
   });
-  let base = compileAdventureDocument(document, {
-    title: options.title || journal.name,
-    sourceLanguage: options.sourceLanguage ?? null
-  });
+  let base = compileAdventureDocument(document, { title: options.title || journal.name, sourceLanguage: options.sourceLanguage ?? null });
   const pageMap = new Map(journal.pages.map((page) => [page.pageNumber, page]));
   base = Object.freeze({
     ...base,
     source: Object.freeze({
-      type: 'foundry-journal',
-      documentId: journal.journalUuid,
-      journalId: journal.journalId,
-      journalUuid: journal.journalUuid,
-      pageCount: journal.pages.length,
-      systemId: journal.systemId,
-      systemVersion: journal.systemVersion,
-      coreVersion: journal.coreVersion
+      type: 'foundry-journal', documentId: journal.journalUuid, journalId: journal.journalId, journalUuid: journal.journalUuid,
+      pageCount: journal.pages.length, systemId: journal.systemId, systemVersion: journal.systemVersion, coreVersion: journal.coreVersion
     }),
     chapters: remapList(base.chapters, pageMap, journal),
     sections: remapList(base.sections, pageMap, journal),
@@ -185,13 +172,8 @@ export async function importFoundryJournalJson(input, options = {}) {
       journalId: journal.journalId,
       journalUuid: journal.journalUuid,
       pages: Object.freeze(journal.pages.map((page) => Object.freeze({
-        pageId: page.pageId,
-        pageUuid: page.pageUuid,
-        name: page.name,
-        type: page.type,
-        sort: page.sort,
-        originalHtml: page.html,
-        references: page.references
+        pageId: page.pageId, pageUuid: page.pageUuid, name: page.name, type: page.type, sort: page.sort,
+        originalHtml: page.html, references: page.references
       }))),
       references: Object.freeze(journal.pages.flatMap((page) => page.references.map((reference) => Object.freeze({ ...reference, pageUuid: page.pageUuid }))))
     }),
