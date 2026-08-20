@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { createContentSyncEnvelopeV2 } from '../packages/vtt-bridge-sdk/src/index.js';
-import { buildFoundrySyncState, markFoundrySyncResolutions } from '../packages/content-ingestion/src/foundry-sync.js';
+import { buildFoundrySyncState, hashNativeSnapshot, markFoundrySyncResolutions } from '../packages/content-ingestion/src/foundry-sync.js';
 import { CampaignContentImportService } from '../packages/content-ingestion/src/content-import-service.js';
 import { CampaignItemService } from '../packages/campaign-item-service/src/index.js';
 import { InMemorySemanticAdventureStore } from '../packages/adventure-library/src/semantic-model-store.js';
@@ -87,10 +87,7 @@ test('v1.5 detects source + native divergence as conflict instead of overwriting
   const promotion = {
     sourceUuid: 'Actor.goblin01', nativeType: 'actor', nativeId: 'actor-native', baselineNativeHash: null
   };
-  const initial = buildFoundrySyncState(graphModel({ sourceHash: 'source-a' }), graphModel({ sourceHash: 'source-a' }), {
-    nativeSnapshots: { 'Actor.goblin01': nativeBefore }
-  });
-  const baselineHash = initial.items[0].nativeHash;
+  const baselineHash = hashNativeSnapshot(nativeBefore);
   const previous = graphModel({ sourceHash: 'source-a', nativePromotion: { ...promotion, baselineNativeHash: baselineHash } });
   const next = graphModel({ sourceHash: 'source-b', nativePromotion: { ...promotion, baselineNativeHash: baselineHash } });
   const sync = buildFoundrySyncState(previous, next, {
@@ -103,8 +100,8 @@ test('v1.5 detects source + native divergence as conflict instead of overwriting
 
 test('v1.5 never treats removed source as permission to delete a promoted native entity', () => {
   const native = { id: 'actor-native', name: 'Snikk' };
-  const first = buildFoundrySyncState(graphModel(), graphModel(), { nativeSnapshots: { 'Actor.goblin01': native } });
-  const previous = graphModel({ nativePromotion: { sourceUuid: 'Actor.goblin01', nativeType: 'actor', nativeId: 'actor-native', baselineNativeHash: first.items[0].nativeHash } });
+  const baselineHash = hashNativeSnapshot(native);
+  const previous = graphModel({ nativePromotion: { sourceUuid: 'Actor.goblin01', nativeType: 'actor', nativeId: 'actor-native', baselineNativeHash: baselineHash } });
   const next = { entityGraph: { nodes: [] }, nativePromotions: previous.nativePromotions };
   const sync = buildFoundrySyncState(previous, next, { nativeSnapshots: { 'Actor.goblin01': native } });
   assert.equal(sync.items[0].state, 'conflict');
