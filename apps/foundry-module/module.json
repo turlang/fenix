@@ -8,6 +8,7 @@
     "verified": "13"
   },
   "esmodules": [
+    "scripts/content-sync.js",
     "scripts/main.js"
   ],
   "styles": [

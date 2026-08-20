@@ -54,6 +54,19 @@ function clean(value, max = 300) {
   return String(value ?? '').trim().replace(/\s+/g, ' ').slice(0, max);
 }
 
+function cleanUuidList(values, max = 256) {
+  const result = [];
+  const seen = new Set();
+  for (const value of Array.isArray(values) ? values : []) {
+    const uuid = clean(value, 500);
+    if (!uuid || seen.has(uuid)) continue;
+    seen.add(uuid);
+    result.push(uuid);
+    if (result.length >= max) break;
+  }
+  return Object.freeze(result);
+}
+
 export function createContentSyncEnvelope({
   source = 'foundry',
   worldId = null,
@@ -80,5 +93,56 @@ export function createContentSyncEnvelope({
     journal,
     entities: Object.freeze([...entities]),
     policy: Object.freeze({ sourceUuidIsIdentity: true, differentialSyncReady: true, executableContentAllowed: false })
+  });
+}
+
+export function createContentSyncEnvelopeV2({
+  source = 'foundry',
+  worldId = null,
+  systemId = null,
+  systemVersion = null,
+  coreVersion = null,
+  rootUuid = null,
+  journal,
+  entities = [],
+  resolvedUuids = [],
+  missingUuids = [],
+  removedSourceUuids = [],
+  syncId = null,
+  generatedAt = new Date().toISOString()
+} = {}) {
+  if (!journal || typeof journal !== 'object' || Array.isArray(journal)) throw bridgeError('Content Sync exige JournalEntry raiz.', 'FENIX_BRIDGE_CONTENT_JOURNAL_REQUIRED');
+  if (!Array.isArray(entities)) throw bridgeError('entities deve ser uma lista.', 'FENIX_BRIDGE_CONTENT_ENTITIES_INVALID');
+  if (entities.length > 256) throw bridgeError('Content Sync excedeu o limite de entidades.', 'FENIX_BRIDGE_CONTENT_ENTITY_LIMIT');
+  return Object.freeze({
+    schema: 'fenix.bridge-content-sync',
+    version: 2,
+    syncId: clean(syncId, 200) || null,
+    rootUuid: clean(rootUuid, 500) || clean(journal.uuid, 500) || null,
+    source: Object.freeze({
+      adapter: clean(source, 100) || 'foundry',
+      worldId: clean(worldId, 200) || null,
+      systemId: clean(systemId, 200) || null,
+      systemVersion: clean(systemVersion, 100) || null,
+      coreVersion: clean(coreVersion, 100) || null,
+      generatedAt: clean(generatedAt, 100)
+    }),
+    journal,
+    entities: Object.freeze([...entities]),
+    resolution: Object.freeze({
+      resolvedUuids: cleanUuidList(resolvedUuids),
+      missingUuids: cleanUuidList(missingUuids),
+      removedSourceUuids: cleanUuidList(removedSourceUuids),
+      bounded: true,
+      maximumEntities: 256
+    }),
+    policy: Object.freeze({
+      gmOnly: true,
+      sourceUuidIsIdentity: true,
+      differentialSyncReady: true,
+      executableContentAllowed: false,
+      localOverwriteAllowedWithoutReview: false,
+      sourceRemovalDeletesNative: false
+    })
   });
 }

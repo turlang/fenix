@@ -11,6 +11,7 @@ import { AuthService } from '../../../packages/auth-service/src/index.js';
 import { CampaignService, createAuthenticatedPeerAuthorizer } from '../../../packages/campaign-service/src/index.js';
 import { CampaignSceneService } from '../../../packages/campaign-scene-service/src/index.js';
 import { CampaignActorService } from '../../../packages/campaign-actor-service/src/index.js';
+import { CampaignItemService } from '../../../packages/campaign-item-service/src/index.js';
 import { CampaignTokenService } from '../../../packages/campaign-token-service/src/index.js';
 import { CampaignExplorationService } from '../../../packages/campaign-exploration-service/src/index.js';
 import { CampaignRuntimeRegistry } from '../../../packages/campaign-runtime-registry/src/index.js';
@@ -84,6 +85,7 @@ await authService.initialize();
 const campaignService = new CampaignService({ repository, authService, logger });
 await campaignService.initialize();
 const actorService = new CampaignActorService({ campaignService, repository });
+const itemService = new CampaignItemService({ campaignService, repository });
 const tokenService = new CampaignTokenService({ campaignService, repository });
 const explorationService = new CampaignExplorationService({ campaignService, actorService, repository });
 const assetStorage = createAssetStorageFromEnv();
@@ -140,6 +142,8 @@ const contentImportService = new CampaignContentImportService({
   translator: contentTranslator,
   ocrProvider,
   sceneService,
+  actorService,
+  itemService,
   logger
 });
 const adventureKnowledgeResolver = new CampaignAdventureKnowledgeResolver({ store: semanticAdventureStore, logger });
@@ -309,6 +313,7 @@ const app = await createApiApp({
   campaignService,
   sceneService,
   actorService,
+  itemService,
   contentImportService,
   renderBrokerService,
   runtimeRouter,

@@ -165,7 +165,7 @@ Documento operacional: [`FENIX_CONTENT_IMPORTER_V13_ASSETS_FOUNDRY.md`](./FENIX_
 
 ### Status — Content Importer v1.4: Foundry Entity Graph & Knowledge Bindings
 
-**Implementado neste marco.**
+**Implementado.**
 
 Entregas:
 
@@ -191,27 +191,54 @@ Entregas:
 
 Documento operacional: [`FENIX_CONTENT_IMPORTER_V14_ENTITY_GRAPH_BINDINGS.md`](./FENIX_CONTENT_IMPORTER_V14_ENTITY_GRAPH_BINDINGS.md).
 
-Limites declarados do v1.4:
+### Status — Content Importer v1.5: Foundry Bridge Sync & Native Entity Promotion
 
-- ainda não existe sincronização live por `fromUuid()`;
-- entidades importadas alimentam Knowledge, mas não viram Actor/Item nativo automaticamente;
-- UUID de Compendium externo é preservado, não baixado ou adivinhado;
-- mudanças/removals são detectadas, mas a UI completa de conflitos fica para o próximo marco;
+**Implementado neste marco.**
+
+Entregas:
+
+- Bridge Foundry v2 carregado no módulo e disponível somente ao GM;
+- resolução live-capable de `JournalEntry` / `JournalEntryPage` via `fromUuid()` dentro do runtime do Foundry;
+- crawl apenas de referências UUID explícitas, limitado por quantidade e profundidade, sem descoberta irrestrita;
+- envelope `fenix.bridge-content-sync` v2 com evidência de UUIDs resolvidos e ausentes;
+- sincronização diferencial por `sourceUuid` + `sourceHash` sem tornar o Core dependente do Foundry;
+- estado `fenix.foundry-sync-state` com `new`, `unchanged`, `changed`, `removed` e `conflict`;
+- conflitos explícitos quando fonte e entidade nativa mudam simultaneamente;
+- remoção no Foundry nunca exclui Actor/Item nativo do Fênix;
+- resolução GM-only `keep-local`, `accept-source` ou `detach`;
+- promoção explícita de Actor/NPC importado para `CampaignActorService` com IDs nativos determinísticos e proveniência no Sheet;
+- catálogo nativo `CampaignItemService` para Item/Spell, persistido por campanha e GM-only;
+- edição local de Item/Spell marca divergência local sem perder `sourceUuid`/`sourceHash`;
+- promoção de Item/Spell importado para o catálogo nativo do Fênix;
+- rotas autenticadas para sync Foundry, resolução de conflito, promoção de entidade e catálogo Item/Spell;
+- re-sync preserva bindings de Area → Scene/Region e promoções já existentes;
+- nenhum overwrite silencioso de entidade promovida;
+- testes sintéticos de envelope, conflito, remoção segura, promoção e proteção de edição local.
+
+Documento operacional: [`FENIX_CONTENT_IMPORTER_V15_FOUNDRY_SYNC_NATIVE_PROMOTION.md`](./FENIX_CONTENT_IMPORTER_V15_FOUNDRY_SYNC_NATIVE_PROMOTION.md).
+
+Limites declarados do v1.5:
+
+- o CI hospedado valida código/contratos do Bridge, mas não executa uma instância Foundry VTT real; a prova física de `fromUuid()` fica separada;
+- a experiência visual completa de Conflict Review/Promotion no Review Workspace ainda não foi implementada; o v1.5 expõe Bridge e APIs autenticadas;
+- mapeamento de Sheet/Item é conservador e universal; conversões específicas de D&D 5e ou outros sistemas exigem mapeadores próprios do RPG System;
+- `RollTable` entra no Entity Graph/Knowledge, mas ainda não possui promoção para um catálogo nativo próprio;
+- não existe sincronização automática de volta do Fênix para o Foundry;
 - Scene/Core/RPG System continuam autoridades para física e regras.
 
 ## Próximo marco do importador
 
-**Content Importer v1.5 — Foundry Bridge Sync & Native Entity Promotion**
+**Content Importer v1.6 — Sync Review UX & System-Native Mapping**
 
 Objetivos planejados:
 
-- Bridge Foundry resolver documentos autorizados por UUID no mundo ativo;
-- sincronização diferencial usando `sourceUuid` + `sourceHash`;
-- Conflict Review para entidades `changed` e `removed`;
-- promoção GM-reviewed de Actor/Item importado para entidades nativas do Fênix;
-- Rules Adapter controlar conversão para Sheet nativa conforme o sistema RPG ativo;
-- preservar mudanças locais e nunca sobrescrever silenciosamente uma entidade promovida;
-- sincronização incremental sem tornar o Core dependente do Foundry.
+- levar `changed`, `removed` e `conflict` para uma tela completa do Review Workspace;
+- permitir promoção Actor/NPC/Item/Spell pelo workspace, com preview de origem e destino;
+- adicionar comparação lado a lado Foundry ↔ Fênix antes de `keep-local`, `accept-source` ou `detach`;
+- criar mapeadores por RPG System, começando pelo sistema prioritário, sem mover regras para o importador;
+- mapear Sheet/Item com perda controlada e provenance dos campos convertidos;
+- preparar suporte de promoção/revisão para RollTable sem torná-la autoridade de regras;
+- manter o Bridge opcional e o Fênix totalmente funcional sem Foundry.
 
 ## Observação histórica
 

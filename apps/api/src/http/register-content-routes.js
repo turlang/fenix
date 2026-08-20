@@ -17,10 +17,7 @@ export function registerContentRoutes(app, { authService, contentImportService, 
   app.get('/v1/campaigns/:campaignId/content', async (request, reply) => {
     try {
       const authenticated = requireAuthenticatedRequest(authService, request);
-      return await contentImportService.list({
-        campaignId: request.params.campaignId,
-        userId: authenticated.user.id
-      });
+      return await contentImportService.list({ campaignId: request.params.campaignId, userId: authenticated.user.id });
     } catch (error) {
       return sendError(reply, error);
     }
@@ -75,6 +72,51 @@ export function registerContentRoutes(app, { authService, contentImportService, 
       });
     } catch (error) {
       return sendError(reply, error, 'CONTENT_FOUNDRY_IMPORT_FAILED');
+    }
+  });
+
+  app.post('/v1/campaigns/:campaignId/content/:adventureId/sync-foundry', { bodyLimit: CONTENT_IMPORT_BODY_LIMIT }, async (request, reply) => {
+    try {
+      const authenticated = requireAuthenticatedRequest(authService, request);
+      return await contentImportService.syncFoundry({
+        campaignId: request.params.campaignId,
+        userId: authenticated.user.id,
+        adventureId: request.params.adventureId,
+        envelope: request.body?.envelope ?? request.body,
+        targetLanguage: request.body?.targetLanguage,
+        localize: request.body?.localize
+      });
+    } catch (error) {
+      return sendError(reply, error, 'CONTENT_FOUNDRY_SYNC_FAILED');
+    }
+  });
+
+  app.post('/v1/campaigns/:campaignId/content/:adventureId/sync-foundry/resolve', async (request, reply) => {
+    try {
+      const authenticated = requireAuthenticatedRequest(authService, request);
+      return await contentImportService.resolveFoundrySync({
+        campaignId: request.params.campaignId,
+        userId: authenticated.user.id,
+        adventureId: request.params.adventureId,
+        decisions: request.body?.decisions ?? request.body?.decision
+      });
+    } catch (error) {
+      return sendError(reply, error, 'CONTENT_FOUNDRY_SYNC_RESOLVE_FAILED');
+    }
+  });
+
+  app.post('/v1/campaigns/:campaignId/content/:adventureId/entities/:sourceUuid/promote', async (request, reply) => {
+    try {
+      const authenticated = requireAuthenticatedRequest(authService, request);
+      return await contentImportService.promoteEntity({
+        campaignId: request.params.campaignId,
+        userId: authenticated.user.id,
+        adventureId: request.params.adventureId,
+        sourceUuid: request.params.sourceUuid,
+        actorType: request.body?.actorType
+      });
+    } catch (error) {
+      return sendError(reply, error, 'CONTENT_ENTITY_PROMOTION_FAILED');
     }
   });
 
