@@ -1,5 +1,8 @@
 import { localizeAdventureModel } from './index.js';
-import { importPdfAdventureV13, importFoundryAdventureV13 } from './importer-v13.js';
+import { importPdfAdventureV13 } from './importer-v13.js';
+import { importFoundryPackageJson } from './importer-v14.js';
+import { reconcileFoundryEntityGraph } from './foundry-entity-graph.js';
+import { applyAdventureSceneBindingDecisions, proposeAdventureSceneBindings } from './scene-binding.js';
 import { extractPdfImageAssets } from './pdf-image-extraction.js';
 
 function fail(message, code, statusCode = 400) {
@@ -64,6 +67,17 @@ export class CampaignContentImportService {
     const model = await this.store.getModel(campaignId, adventureId);
     if (!model) throw fail('Adventure Model não encontrado.', 'FENIX_ADVENTURE_MODEL_NOT_FOUND', 404);
     return { model };
+  }
+
+  async #attachBindingReview({ campaignId, userId, model, preserveBindings = null } = {}) {
+    if (!this.sceneService) return model;
+    const sceneState = this.sceneService.list({ campaignId, userId });
+    const queue = proposeAdventureSceneBindings(model, sceneState.scenes ?? []);
+    return Object.freeze({
+      ...model,
+      bindings: preserveBindings ?? model.bindings ?? Object.freeze({ sceneRegions: Object.freeze([]) }),
+      bindingReview: queue
+    });
   }
 
   async #storeExtractedPdfAssets({ campaignId, userId, buffer, model, minimumImagePixels = 80_000 } = {}) {
@@ -153,14 +167,16 @@ export class CampaignContentImportService {
       ocrMinimumReviewConfidence,
       minimumImagePixels
     });
+    const previous = await this.store.getModel(campaignId, model.id);
     model = await this.#storeExtractedPdfAssets({ campaignId, userId, buffer, model, minimumImagePixels });
+    model = await this.#attachBindingReview({ campaignId, userId, model, preserveBindings: previous?.bindings ?? null });
     const saved = await this.store.saveModel(campaignId, model);
     this.logger.info?.('[Fênix][Content] aventura PDF importada', {
       campaignId,
       adventureId: model.id,
       extractionMode: model.ingestion?.extractionMode,
       reviewPending: model.review?.summary?.pending ?? 0,
-      ocrReviewPending: model.ocr?.review?.summary?.pending ?? 0,
+      bindingReviewPending: model.bindingReview?.summary?.pending ?? 0,
       storedMapCandidates: model.stats?.storedMapCandidates ?? 0
     });
     return { model, saved };
@@ -169,7 +185,7 @@ export class CampaignContentImportService {
   async importFoundry({
     campaignId,
     userId,
-    fileName = 'foundry-journal.json',
+    fileName = 'foundry-package.json',
     journal,
     title = null,
     targetLanguage = 'pt-BR',
@@ -178,31 +194,55 @@ export class CampaignContentImportService {
     this.authorize(campaignId, userId, 'gm');
     const normalizedFileName = clean(fileName, 300);
     if (normalizedFileName && !/\.json$/i.test(normalizedFileName)) throw fail('O importador Foundry aceita arquivo JSON.', 'FENIX_FOUNDRY_JSON_REQUIRED');
-    const model = await importFoundryAdventureV13(journal, {
+    const shouldLocalize = localize !== false;
+    let model = await importFoundryPackageJson(journal, {
       title: clean(title, 300) || null,
       targetLanguage: clean(targetLanguage, 30) || 'pt-BR',
-      localize: localize !== false,
+      localize: false,
       translator: this.translator
     });
+    const previous = await this.store.getModel(campaignId, model.id);
+    if (model.entityGraph) {
+      model = Object.freeze({ ...model, entityGraph: reconcileFoundryEntityGraph(model.entityGraph, previous?.entityGraph ?? null) });
+    }
+    if (shouldLocalize) {
+      model = await localizeAdventureModel(model, {
+        targetLanguage: clean(targetLanguage, 30) || 'pt-BR',
+        translator: this.translator
+      });
+    }
+    model = await this.#attachBindingReview({ campaignId, userId, model, preserveBindings: previous?.bindings ?? null });
     const saved = await this.store.saveModel(campaignId, model);
-    this.logger.info?.('[Fênix][Content] Journal Foundry importado', {
+    this.logger.info?.('[Fênix][Content] pacote Foundry importado', {
       campaignId,
       adventureId: model.id,
       journalUuid: model.foundry?.journalUuid,
       pages: model.foundry?.pages?.length ?? 0,
-      references: model.foundry?.references?.length ?? 0
+      references: model.foundry?.references?.length ?? 0,
+      entityNodes: model.entityGraph?.stats?.nodes ?? 0,
+      changedEntities: model.entityGraph?.nodes?.filter((node) => node.revision?.state === 'changed').length ?? 0
     });
     return { model, saved };
   }
 
   async review({ campaignId, userId, adventureId, queue = 'layout', decisions } = {}) {
     this.authorize(campaignId, userId, 'gm');
-    if (!['layout', 'ocr'].includes(queue)) throw fail('Fila de revisão inválida.', 'FENIX_CONTENT_REVIEW_QUEUE_INVALID');
+    if (!['layout', 'ocr', 'scene-binding'].includes(queue)) throw fail('Fila de revisão inválida.', 'FENIX_CONTENT_REVIEW_QUEUE_INVALID');
     const list = Array.isArray(decisions) ? decisions : [decisions];
     if (!list.length || !list[0]) throw fail('Decisão de revisão obrigatória.', 'FENIX_CONTENT_REVIEW_DECISION_REQUIRED');
+
+    if (queue === 'scene-binding') {
+      const model = await this.store.getModel(campaignId, adventureId);
+      if (!model) throw fail('Adventure Model não encontrado.', 'FENIX_ADVENTURE_MODEL_NOT_FOUND', 404);
+      if (model.bindingReview?.schema !== 'fenix.scene-binding-review') throw fail('Não existe fila Scene/Region para esta aventura.', 'FENIX_SCENE_BINDING_REVIEW_REQUIRED', 409);
+      const result = applyAdventureSceneBindingDecisions(model, model.bindingReview, list);
+      const updated = Object.freeze({ ...result.model, bindingReview: result.queue });
+      const saved = await this.store.saveModel(campaignId, updated);
+      return { model: updated, saved };
+    }
+
     let saved = await this.store.applyReview(campaignId, adventureId, list, { queue });
     let model = await this.store.getModel(campaignId, adventureId);
-
     if (queue === 'ocr' && this.translator && model?.language?.target) {
       model = await localizeAdventureModel(model, {
         targetLanguage: model.language.target,
@@ -210,7 +250,6 @@ export class CampaignContentImportService {
       });
       saved = await this.store.saveModel(campaignId, model);
     }
-
     return { model, saved };
   }
 
@@ -236,13 +275,14 @@ export class CampaignContentImportService {
       gridSize
     });
     items[index] = Object.freeze({ ...image, status: 'promoted', promotedSceneId: result.scene.id });
-    const updated = Object.freeze({
+    let updated = Object.freeze({
       ...model,
       assets: Object.freeze({
         ...(model.assets ?? {}),
         extractedImages: extractedAssetCollection(model, items)
       })
     });
+    updated = await this.#attachBindingReview({ campaignId, userId, model: updated, preserveBindings: model.bindings ?? null });
     const saved = await this.store.saveModel(campaignId, updated);
     return { scene: result.scene, activeSceneId: result.activeSceneId, model: updated, saved };
   }
