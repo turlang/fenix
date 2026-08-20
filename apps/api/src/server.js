@@ -32,6 +32,11 @@ import {
 import { RenderNodeGateway, createHttpRenderNode } from '../../../packages/render-node-gateway/src/index.js';
 import { RemoteRenderBrokerService } from '../../../packages/remote-render-broker/src/index.js';
 import { createAuthoritativeRuntimeInputHandler } from '../../../packages/render-runtime-control/src/index.js';
+import { createAiGatewayTranslator } from '../../../packages/content-ingestion/src/index.js';
+import { createOcrVisionProviderFromEnv } from '../../../packages/content-ingestion/src/ocr-vision.js';
+import { CampaignContentImportService } from '../../../packages/content-ingestion/src/content-import-service.js';
+import { FileSemanticAdventureStore } from '../../../packages/adventure-library/src/semantic-model-store.js';
+import { PostgresSemanticAdventureStore } from '../../../packages/adventure-library/src/postgres-semantic-model-store.js';
 import { createApiApp } from './app.js';
 import { createOwnerAwareWebSocketProxy } from './realtime/owner-aware-websocket-proxy.js';
 
@@ -136,6 +141,20 @@ const realtimeProxy = runtimeRouter?.enabled
 const narrator = createNarrativeProviderFromEnv({ logger });
 const narrationMemory = createNarrationMemoryFromEnv({ logger });
 const audioNarrationService = createAudioNarrationServiceFromEnv({ logger });
+const semanticAdventureStore = repository.driver === 'postgres'
+  ? new PostgresSemanticAdventureStore({ pool: repository.pool, logger })
+  : new FileSemanticAdventureStore({ logger });
+await semanticAdventureStore.initialize();
+const contentTranslator = narrator?.gateway ? createAiGatewayTranslator({ gateway: narrator.gateway }) : null;
+const ocrProvider = createOcrVisionProviderFromEnv();
+const contentImportService = new CampaignContentImportService({
+  campaignService,
+  store: semanticAdventureStore,
+  translator: contentTranslator,
+  ocrProvider,
+  logger
+});
+
 const realtimeHub = new AuthoritativeRealtimeSessionHub({
   logger,
   persistSnapshot: (sessionId, snapshot) => campaignService.saveRealtimeSnapshot(sessionId, snapshot),
@@ -317,6 +336,7 @@ const app = await createApiApp({
   campaignService,
   sceneService,
   actorService,
+  contentImportService,
   renderBrokerService,
   runtimeRouter,
   realtimeProxy,

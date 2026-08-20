@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { applyAdventureReviewDecisions } from '../../content-ingestion/src/review-queue.js';
+import { applyOcrReviewDecisions } from '../../content-ingestion/src/ocr-vision.js';
 import { retrieveAdventureKnowledge } from '../../content-ingestion/src/index.js';
 
 const STORE_VERSION = 1;
@@ -52,8 +53,10 @@ function modelSummary(record) {
     title: model.title,
     language: model.language,
     source: model.source,
+    ingestion: model.ingestion ?? null,
     stats: model.stats,
     review: model.review?.summary ?? null,
+    ocrReview: model.ocr?.review?.summary ?? null,
     index: { chunkCount: record.index.chunkCount, tokenCount: record.index.tokenCount },
     updatedAt: record.updatedAt
   };
@@ -63,8 +66,10 @@ export class InMemorySemanticAdventureStore {
   constructor({ logger = console } = {}) {
     this.logger = logger;
     this.store = emptyStore();
+    this.driver = 'memory';
   }
 
+  async initialize() { return true; }
   async loadStore() { return this.store; }
   async saveStore(store) { this.store = store; }
 
@@ -108,13 +113,15 @@ export class InMemorySemanticAdventureStore {
     return modelSummary(existing);
   }
 
-  async applyReview(campaignId, adventureId, decisions) {
+  async applyReview(campaignId, adventureId, decisions, { queue = 'layout' } = {}) {
     const id = normalizeId(campaignId);
     const store = await this.loadStore();
     const campaign = store.campaigns[id] ?? emptyCampaign(id);
     const record = campaign.models[adventureId];
     if (!record) throw new Error('Adventure Model não encontrado.');
-    const model = applyAdventureReviewDecisions(record.model, decisions);
+    const model = queue === 'ocr'
+      ? applyOcrReviewDecisions(record.model, decisions)
+      : applyAdventureReviewDecisions(record.model, decisions);
     const now = new Date().toISOString();
     const updated = { model, index: buildSemanticAdventureIndex(model), updatedAt: now };
     campaign.models[adventureId] = updated;
@@ -144,6 +151,7 @@ export class FileSemanticAdventureStore extends InMemorySemanticAdventureStore {
   constructor({ filePath = DEFAULT_FILE, logger = console } = {}) {
     super({ logger });
     this.filePath = resolve(filePath);
+    this.driver = 'file';
   }
 
   async loadStore() {

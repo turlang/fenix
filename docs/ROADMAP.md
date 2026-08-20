@@ -90,7 +90,7 @@ Documento operacional: [`FENIX_PDF_SEMANTIC_ADVENTURE_COMPILER_V1.md`](./FENIX_P
 
 ### Status — Content Importer v1.1: Layout Semantics & Review Queue
 
-**Implementado neste marco.**
+**Implementado.**
 
 Entregas:
 
@@ -112,21 +112,55 @@ Entregas:
 
 Documento operacional: [`FENIX_CONTENT_IMPORTER_V11_LAYOUT_REVIEW.md`](./FENIX_CONTENT_IMPORTER_V11_LAYOUT_REVIEW.md).
 
+### Status — Content Importer v1.2: OCR/Vision & Review Workspace
+
+**Implementado neste marco.**
+
+Entregas:
+
+- pipeline `importPdfAdventureV12()` digital-first e OCR-on-demand;
+- fallback para OCR/Vision somente quando o PDF não possui camada textual utilizável;
+- provider OCR HTTP desacoplado e configurável por `FENIX_OCR_VISION_*`;
+- `fenix.ocr-vision-document` com provenance, bounds, confidence, tipo proposto e preview opcional por página/bloco;
+- política fail-closed para scans: sem provider, a importação falha explicitamente em vez de inventar conteúdo;
+- `fenix.ocr-review-queue` para blocos com confiança intermediária;
+- OCR pendente permanece GM-only; aceite de read-aloud promove somente o bloco confirmado para player-safe;
+- edição de texto OCR no review e relocalização posterior quando a Adventure possui idioma alvo;
+- Review Workspace integrado ao Fênix VTT e acessível somente ao GM pelo botão `Importador`;
+- workspace com importação PDF, catálogo por campanha, confidence, página/bounds, preview opcional e decisões accept/reject;
+- rotas autenticadas de content import/list/get/review/delete;
+- persistência automática via `PostgresSemanticAdventureStore` quando o Engine usa PostgreSQL;
+- fallback local por `FileSemanticAdventureStore`;
+- tabela `fenix_semantic_adventures` com `model_json` e `index_json` em JSONB;
+- descoberta inicial de objetos PDF `/Subtype /Image`, dimensões e candidatos revisáveis a mapa;
+- política explícita `authoritativeSceneMutation: false` para imagens/mapas descobertos;
+- CLI promovida para v1.2, incluindo OCR/Vision e estatísticas de imagens;
+- testes de scan → OCR → review → player-safe, falha sem provider, PostgreSQL, autorização GM e map candidate.
+
+Documento operacional: [`FENIX_CONTENT_IMPORTER_V12_OCR_REVIEW_WORKSPACE.md`](./FENIX_CONTENT_IMPORTER_V12_OCR_REVIEW_WORKSPACE.md).
+
+Limites declarados do v1.2:
+
+- OCR real depende de um provider configurado; o Fênix não embute um engine OCR neste marco;
+- preview rasterizado depende do provider enviar `preview.dataUrl` ou referência equivalente;
+- image discovery ainda é metadata, sem promoção automática para AssetStorage/Scene;
+- tabelas e colunas complexas dependem da qualidade do provider;
+- nenhuma inferência cria walls/doors/regions automaticamente.
+
 ## Próximo marco do importador
 
-**Content Importer v1.2 — OCR/Vision & Review Workspace**
+**Content Importer v1.3 — Asset Extraction & Foundry JSON Adapter**
 
 Objetivos planejados:
 
-- PDF escaneado por OCR/visão com provenance por página;
-- confidence por bloco OCR e revisão obrigatória abaixo do limite seguro;
-- identificação visual mais robusta de caixas, colunas e tabelas;
-- interface de Review Queue dentro do Fênix VTT;
-- preview da página/recorte junto do item a revisar;
-- confirmação assistida de headings/areas/read-aloud/checks/tesouros;
-- persistência PostgreSQL do Adventure Model e decisões de review;
-- promoção dos bindings aceitos para triggers de Knowledge/room-entry sem alterar geometria de Scene;
-- início do pipeline de imagens/mapas extraídos do PDF.
+- extrair imagens PDF suportadas para `AssetStorage`, preservando provenance e hash;
+- mostrar preview real dos assets descobertos no Review Workspace;
+- permitir ao GM promover um map candidate aprovado para background de uma Scene sem gerar geometria automaticamente;
+- implementar adapter próprio para Foundry `JournalEntry` / `JournalEntryPage` JSON, preservando `_id`, UUID, páginas, permissões, links e HTML estruturado;
+- suportar referências `@UUID[...]` e vínculos entre páginas/documentos;
+- normalizar PDF e Foundry JSON para o mesmo `fenix.adventure-model`;
+- começar extração estruturada de referências a NPCs, criaturas, itens e magias sem copiar código de módulos terceiros;
+- conectar bindings revisados a triggers de Knowledge/room-entry, mantendo Scene/Core como autoridade física.
 
 ## Observação histórica
 

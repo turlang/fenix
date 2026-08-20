@@ -122,6 +122,45 @@ export class FenixApiClient {
     return this.request(`/v1/campaigns/${encodeURIComponent(campaignId)}/scenes`);
   }
 
+  listContent(campaignId) {
+    return this.request(`/v1/campaigns/${encodeURIComponent(campaignId)}/content`);
+  }
+
+  getContent(campaignId, adventureId) {
+    return this.request(`/v1/campaigns/${encodeURIComponent(campaignId)}/content/${encodeURIComponent(adventureId)}`);
+  }
+
+  async importAdventurePdf(campaignId, file, options = {}) {
+    if (!file?.arrayBuffer || !/\.pdf$/i.test(file.name || '')) throw new TypeError('Selecione um arquivo PDF válido.');
+    const buffer = await file.arrayBuffer();
+    return this.request(`/v1/campaigns/${encodeURIComponent(campaignId)}/content/import-pdf`, {
+      method: 'POST',
+      timeoutMs: Math.max(this.timeoutMs, 180000),
+      body: {
+        fileName: file.name,
+        dataBase64: arrayBufferToBase64(buffer),
+        title: options.title || null,
+        targetLanguage: options.targetLanguage || 'pt-BR',
+        localize: options.localize !== false,
+        reviewThreshold: options.reviewThreshold ?? 0.65,
+        autoAcceptConfidence: options.autoAcceptConfidence ?? 0.97,
+        ocrTrustedConfidence: options.ocrTrustedConfidence ?? 0.92,
+        ocrMinimumReviewConfidence: options.ocrMinimumReviewConfidence ?? 0.35
+      }
+    });
+  }
+
+  reviewContent(campaignId, adventureId, queue, decisions) {
+    return this.request(`/v1/campaigns/${encodeURIComponent(campaignId)}/content/${encodeURIComponent(adventureId)}/review`, {
+      method: 'POST',
+      body: { queue, decisions }
+    });
+  }
+
+  removeContent(campaignId, adventureId) {
+    return this.request(`/v1/campaigns/${encodeURIComponent(campaignId)}/content/${encodeURIComponent(adventureId)}`, { method: 'DELETE' });
+  }
+
   async uploadMapAsset(campaignId, file) {
     if (!file?.arrayBuffer) throw new TypeError('Selecione um arquivo de mapa válido.');
     const buffer = await file.arrayBuffer();

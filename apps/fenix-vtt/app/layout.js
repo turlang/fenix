@@ -13,6 +13,7 @@ import './contextual-tools.css';
 import './actor-sheet-inspector.css';
 import './actor-catalog.css';
 import './first-person.css';
+import './content-review-workspace.css';
 
 export const metadata = {
   title: 'Fênix VTT',
