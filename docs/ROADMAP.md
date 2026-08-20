@@ -114,7 +114,7 @@ Documento operacional: [`FENIX_CONTENT_IMPORTER_V11_LAYOUT_REVIEW.md`](./FENIX_C
 
 ### Status — Content Importer v1.2: OCR/Vision & Review Workspace
 
-**Implementado neste marco.**
+**Implementado.**
 
 Entregas:
 
@@ -139,28 +139,51 @@ Entregas:
 
 Documento operacional: [`FENIX_CONTENT_IMPORTER_V12_OCR_REVIEW_WORKSPACE.md`](./FENIX_CONTENT_IMPORTER_V12_OCR_REVIEW_WORKSPACE.md).
 
-Limites declarados do v1.2:
+### Status — Content Importer v1.3: Asset Extraction & Foundry JSON Adapter
 
-- OCR real depende de um provider configurado; o Fênix não embute um engine OCR neste marco;
-- preview rasterizado depende do provider enviar `preview.dataUrl` ou referência equivalente;
-- image discovery ainda é metadata, sem promoção automática para AssetStorage/Scene;
-- tabelas e colunas complexas dependem da qualidade do provider;
-- nenhuma inferência cria walls/doors/regions automaticamente.
+**Implementado neste marco.**
+
+Entregas:
+
+- extractor real de imagens PDF `/DCTDecode` (JPEG passthrough) e `/FlateDecode` simples 8-bit (`DeviceGray`/`DeviceRGB`) para PNG;
+- provenance do objeto PDF, dimensions, mime type e método de extração;
+- candidatos de mapa extraíveis são persistidos no `AssetStorage` da campanha, mantendo status de revisão;
+- nenhuma Scene é criada automaticamente durante a importação;
+- ação GM-only para promover explicitamente um map candidate persistido para background de uma `Scene`;
+- promoção cria Scene/background/dimensões/grid inicial, sem inventar Walls, Doors ou Regions;
+- adapter próprio `JournalEntry` / `JournalEntryPage` para JSON exportado do Foundry;
+- preservação de journal id/UUID, page id/UUID, HTML original, nome/type/sort e versões do Foundry/sistema quando disponíveis;
+- suporte a referências `@UUID[...]`, `data-uuid` e `data-entity-uuid` como referências estruturadas;
+- classes HTML de read-aloud reconhecidas sem executar HTML/script;
+- PDF e Foundry JSON convergem para o mesmo `fenix.adventure-model` v1;
+- localização do material Foundry reutiliza a mesma política `pt-BR`/guards mecânicos do PDF;
+- Review Workspace passa a escolher PDF ou Foundry JSON, exibir UUID da fonte e promover candidatos de mapa;
+- novas rotas autenticadas `import-foundry` e `promote-scene`;
+- testes de Foundry UUID/HTML/reference/read-aloud e PDF image extraction/promoção manual.
+
+Documento operacional: [`FENIX_CONTENT_IMPORTER_V13_ASSETS_FOUNDRY.md`](./FENIX_CONTENT_IMPORTER_V13_ASSETS_FOUNDRY.md).
+
+Limites declarados do v1.3:
+
+- image extraction ainda não cobre JPX/JBIG2/CCITT nem predictors Flate complexos;
+- Foundry adapter v1.3 cobre JournalEntry/JournalEntryPage, não Actor/Item/Scene completos;
+- UUIDs são preservados, mas resolução/sincronização live ainda depende do Bridge;
+- mapa promovido continua exigindo configuração/revisão de geometria pelo Mestre.
 
 ## Próximo marco do importador
 
-**Content Importer v1.3 — Asset Extraction & Foundry JSON Adapter**
+**Content Importer v1.4 — Foundry Entity Graph & Knowledge Bindings**
 
 Objetivos planejados:
 
-- extrair imagens PDF suportadas para `AssetStorage`, preservando provenance e hash;
-- mostrar preview real dos assets descobertos no Review Workspace;
-- permitir ao GM promover um map candidate aprovado para background de uma Scene sem gerar geometria automaticamente;
-- implementar adapter próprio para Foundry `JournalEntry` / `JournalEntryPage` JSON, preservando `_id`, UUID, páginas, permissões, links e HTML estruturado;
-- suportar referências `@UUID[...]` e vínculos entre páginas/documentos;
-- normalizar PDF e Foundry JSON para o mesmo `fenix.adventure-model`;
-- começar extração estruturada de referências a NPCs, criaturas, itens e magias sem copiar código de módulos terceiros;
-- conectar bindings revisados a triggers de Knowledge/room-entry, mantendo Scene/Core como autoridade física.
+- importar entidades referenciadas de Actor, Item, spell, creature/NPC e RollTable em formato normalizado;
+- resolver referências internas de um pacote/export sem depender de internet;
+- construir grafo Adventure → Chapter/Area → NPC/Creature/Item/Spell → source UUID;
+- conectar bindings revisados Area ↔ Scene/Region a triggers reais de Knowledge/room-entry;
+- permitir ao Mestre Fênix recuperar somente entidades relevantes para a área/situação atual;
+- manter segredos e permissões fail-closed;
+- adicionar deduplicação por source UUID/hash para reimportação incremental;
+- preparar Foundry Bridge sync sem tornar o Fênix dependente do Foundry.
 
 ## Observação histórica
 

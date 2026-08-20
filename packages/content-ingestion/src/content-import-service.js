@@ -1,5 +1,6 @@
 import { localizeAdventureModel } from './index.js';
-import { importPdfAdventureV12 } from './importer-v12.js';
+import { importPdfAdventureV13, importFoundryAdventureV13 } from './importer-v13.js';
+import { extractPdfImageAssets } from './pdf-image-extraction.js';
 
 function fail(message, code, statusCode = 400) {
   const error = new Error(message);
@@ -24,14 +25,24 @@ function decodeBase64(value) {
   return buffer;
 }
 
+function extractedAssetCollection(model, items) {
+  return Object.freeze({
+    schema: 'fenix.extracted-content-assets',
+    version: 1,
+    policy: Object.freeze({ gmReviewRequiredForScenePromotion: true, authoritativeGeometryMutation: false }),
+    items: Object.freeze(items.map((item) => Object.freeze(item)))
+  });
+}
+
 export class CampaignContentImportService {
-  constructor({ campaignService, store, translator = null, ocrProvider = null, logger = console } = {}) {
+  constructor({ campaignService, store, translator = null, ocrProvider = null, sceneService = null, logger = console } = {}) {
     if (!campaignService) throw new TypeError('campaignService é obrigatório.');
     if (!store) throw new TypeError('store semântico é obrigatório.');
     this.campaignService = campaignService;
     this.store = store;
     this.translator = translator;
     this.ocrProvider = ocrProvider;
+    this.sceneService = sceneService;
     this.logger = logger;
   }
 
@@ -55,6 +66,62 @@ export class CampaignContentImportService {
     return { model };
   }
 
+  async #storeExtractedPdfAssets({ campaignId, userId, buffer, model, minimumImagePixels = 80_000 } = {}) {
+    const extracted = extractPdfImageAssets(buffer, {
+      documentId: model.source?.documentId,
+      minimumPixels: minimumImagePixels
+    });
+    const discovery = new Map((model.assets?.pdfImages?.images ?? []).map((image) => [Number(image.objectId), image]));
+    const items = [];
+    for (const image of extracted.assets) {
+      const candidate = discovery.get(Number(image.objectId)) ?? null;
+      const mapCandidate = candidate?.mapCandidate === true;
+      let campaignAsset = null;
+      let storageError = null;
+      if (mapCandidate && this.sceneService) {
+        try {
+          campaignAsset = await this.sceneService.uploadMap({
+            campaignId,
+            userId,
+            fileName: image.fileName,
+            mimeType: image.mimeType,
+            dataBase64: image.buffer.toString('base64')
+          });
+        } catch (error) {
+          storageError = { code: error?.code || 'FENIX_ASSET_STORE_FAILED', message: error?.message || 'Falha ao armazenar asset.' };
+        }
+      }
+      items.push({
+        id: image.id,
+        objectId: image.objectId,
+        width: image.width,
+        height: image.height,
+        pixels: image.pixels,
+        mimeType: image.mimeType,
+        extraction: image.extraction,
+        mapCandidate,
+        mapConfidence: Number(candidate?.mapConfidence) || 0,
+        status: campaignAsset ? 'review' : mapCandidate ? 'storage-pending' : 'reference',
+        campaignAssetId: campaignAsset?.id ?? null,
+        storageError,
+        promotedSceneId: null,
+        source: image.source
+      });
+    }
+    return Object.freeze({
+      ...model,
+      assets: Object.freeze({
+        ...(model.assets ?? {}),
+        extractedImages: extractedAssetCollection(model, items)
+      }),
+      stats: Object.freeze({
+        ...(model.stats ?? {}),
+        extractedImages: items.length,
+        storedMapCandidates: items.filter((item) => item.campaignAssetId).length
+      })
+    });
+  }
+
   async importPdf({
     campaignId,
     userId,
@@ -66,14 +133,15 @@ export class CampaignContentImportService {
     reviewThreshold = 0.65,
     autoAcceptConfidence = 0.97,
     ocrTrustedConfidence = 0.92,
-    ocrMinimumReviewConfidence = 0.35
+    ocrMinimumReviewConfidence = 0.35,
+    minimumImagePixels = 80_000
   } = {}) {
     this.authorize(campaignId, userId, 'gm');
     const normalizedFileName = clean(fileName, 300);
     if (!/\.pdf$/i.test(normalizedFileName)) throw fail('Este endpoint aceita somente PDF.', 'FENIX_CONTENT_PDF_REQUIRED');
     const buffer = decodeBase64(dataBase64);
     const shouldLocalize = localize !== false;
-    const model = await importPdfAdventureV12(buffer, {
+    let model = await importPdfAdventureV13(buffer, {
       title: clean(title, 300) || normalizedFileName.replace(/\.pdf$/i, ''),
       targetLanguage: clean(targetLanguage, 30) || 'pt-BR',
       localize: shouldLocalize,
@@ -82,15 +150,47 @@ export class CampaignContentImportService {
       reviewThreshold,
       autoAcceptConfidence,
       ocrTrustedConfidence,
-      ocrMinimumReviewConfidence
+      ocrMinimumReviewConfidence,
+      minimumImagePixels
     });
+    model = await this.#storeExtractedPdfAssets({ campaignId, userId, buffer, model, minimumImagePixels });
     const saved = await this.store.saveModel(campaignId, model);
-    this.logger.info?.('[Fênix][Content] aventura importada', {
+    this.logger.info?.('[Fênix][Content] aventura PDF importada', {
       campaignId,
       adventureId: model.id,
       extractionMode: model.ingestion?.extractionMode,
       reviewPending: model.review?.summary?.pending ?? 0,
-      ocrReviewPending: model.ocr?.review?.summary?.pending ?? 0
+      ocrReviewPending: model.ocr?.review?.summary?.pending ?? 0,
+      storedMapCandidates: model.stats?.storedMapCandidates ?? 0
+    });
+    return { model, saved };
+  }
+
+  async importFoundry({
+    campaignId,
+    userId,
+    fileName = 'foundry-journal.json',
+    journal,
+    title = null,
+    targetLanguage = 'pt-BR',
+    localize = true
+  } = {}) {
+    this.authorize(campaignId, userId, 'gm');
+    const normalizedFileName = clean(fileName, 300);
+    if (normalizedFileName && !/\.json$/i.test(normalizedFileName)) throw fail('O importador Foundry aceita arquivo JSON.', 'FENIX_FOUNDRY_JSON_REQUIRED');
+    const model = await importFoundryAdventureV13(journal, {
+      title: clean(title, 300) || null,
+      targetLanguage: clean(targetLanguage, 30) || 'pt-BR',
+      localize: localize !== false,
+      translator: this.translator
+    });
+    const saved = await this.store.saveModel(campaignId, model);
+    this.logger.info?.('[Fênix][Content] Journal Foundry importado', {
+      campaignId,
+      adventureId: model.id,
+      journalUuid: model.foundry?.journalUuid,
+      pages: model.foundry?.pages?.length ?? 0,
+      references: model.foundry?.references?.length ?? 0
     });
     return { model, saved };
   }
@@ -112,6 +212,39 @@ export class CampaignContentImportService {
     }
 
     return { model, saved };
+  }
+
+  async promoteMapToScene({ campaignId, userId, adventureId, imageId, name = null, description = '', gridSize = 70 } = {}) {
+    this.authorize(campaignId, userId, 'gm');
+    if (!this.sceneService) throw fail('Scene Service indisponível para promoção do mapa.', 'FENIX_CONTENT_SCENE_SERVICE_REQUIRED', 503);
+    const model = await this.store.getModel(campaignId, adventureId);
+    if (!model) throw fail('Adventure Model não encontrado.', 'FENIX_ADVENTURE_MODEL_NOT_FOUND', 404);
+    const items = [...(model.assets?.extractedImages?.items ?? [])];
+    const index = items.findIndex((item) => item.id === String(imageId));
+    if (index < 0) throw fail('Imagem extraída não encontrada.', 'FENIX_CONTENT_IMAGE_NOT_FOUND', 404);
+    const image = items[index];
+    if (!image.mapCandidate || !image.campaignAssetId) throw fail('Imagem ainda não está disponível como candidato de mapa.', 'FENIX_CONTENT_MAP_NOT_READY', 409);
+    if (image.promotedSceneId) throw fail('Este mapa já foi promovido para uma Scene.', 'FENIX_CONTENT_MAP_ALREADY_PROMOTED', 409);
+    const result = await this.sceneService.createScene({
+      campaignId,
+      userId,
+      name: clean(name, 160) || model.title,
+      description: clean(description, 4000),
+      assetId: image.campaignAssetId,
+      width: image.width,
+      height: image.height,
+      gridSize
+    });
+    items[index] = Object.freeze({ ...image, status: 'promoted', promotedSceneId: result.scene.id });
+    const updated = Object.freeze({
+      ...model,
+      assets: Object.freeze({
+        ...(model.assets ?? {}),
+        extractedImages: extractedAssetCollection(model, items)
+      })
+    });
+    const saved = await this.store.saveModel(campaignId, updated);
+    return { scene: result.scene, activeSceneId: result.activeSceneId, model: updated, saved };
   }
 
   async remove({ campaignId, userId, adventureId } = {}) {

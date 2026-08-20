@@ -117,7 +117,7 @@ export async function createApiApp({
     registerCampaignRoutes(app, { authService, campaignService, config });
     if (sceneService) registerSceneRoutes(app, { authService, sceneService });
     if (actorService) registerActorRoutes(app, { authService, actorService });
-    if (contentImportService) registerContentRoutes(app, { authService, contentImportService });
+    if (contentImportService) registerContentRoutes(app, { authService, contentImportService, sceneService });
     if (renderBrokerService) registerRenderRoutes(app, { authService, renderBrokerService });
   }
 

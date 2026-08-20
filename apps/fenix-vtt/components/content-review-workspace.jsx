@@ -30,6 +30,12 @@ function Preview({ item }) {
   );
 }
 
+function sourceLabel(entry) {
+  if (entry?.source?.type === 'foundry-journal') return 'Foundry Journal';
+  if (entry?.ingestion?.extractionMode === 'ocr-vision') return 'PDF · OCR/Vision';
+  return 'PDF digital';
+}
+
 export function ContentReviewWorkspace({ campaignId, onClose }) {
   const client = useMemo(() => createFenixApiClient(), []);
   const [catalog, setCatalog] = useState({ models: [], storeDriver: null });
@@ -39,8 +45,13 @@ export function ContentReviewWorkspace({ campaignId, onClose }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [importMessage, setImportMessage] = useState(null);
+  const [importKind, setImportKind] = useState('pdf');
 
   const items = useMemo(() => reviewItems(model), [model]);
+  const mapAssets = useMemo(
+    () => (model?.assets?.extractedImages?.items ?? []).filter((item) => item.mapCandidate),
+    [model]
+  );
   const selectedItem = useMemo(
     () => items.find((item) => item.id === selectedReviewId) ?? items.find((item) => item.status === 'pending') ?? items[0] ?? null,
     [items, selectedReviewId]
@@ -86,22 +97,27 @@ export function ContentReviewWorkspace({ campaignId, onClose }) {
   async function handleImport(event) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    const file = form.get('pdf');
+    const file = form.get('sourceFile');
     if (!(file instanceof File) || !file.size) return;
     setBusy(true);
     setError(null);
-    setImportMessage('Compilando PDF…');
+    setImportMessage(importKind === 'foundry' ? 'Compilando Journal do Foundry…' : 'Compilando PDF…');
     try {
-      const result = await client.importAdventurePdf(campaignId, file, {
+      const options = {
         targetLanguage: String(form.get('targetLanguage') || 'pt-BR'),
         localize: form.get('localize') === 'on'
-      });
+      };
+      const result = importKind === 'foundry'
+        ? await client.importFoundryJournal(campaignId, file, options)
+        : await client.importAdventurePdf(campaignId, file, options);
       setModel(result.model);
       const first = reviewItems(result.model).find((item) => item.status === 'pending') ?? null;
       setSelectedReviewId(first?.id ?? null);
-      setImportMessage(result.model.ingestion?.extractionMode === 'ocr-vision'
-        ? 'PDF escaneado compilado via OCR/Vision.'
-        : 'PDF digital compilado com layout semântico.');
+      setImportMessage(result.model.source?.type === 'foundry-journal'
+        ? `Journal importado · ${result.model.foundry?.pages?.length ?? 0} páginas · UUID preservado.`
+        : result.model.ingestion?.extractionMode === 'ocr-vision'
+          ? 'PDF escaneado compilado via OCR/Vision.'
+          : 'PDF digital compilado com assets e layout semântico.');
       await refreshCatalog({ keepSelection: false });
       event.currentTarget.reset();
     } catch (err) {
@@ -125,6 +141,25 @@ export function ContentReviewWorkspace({ campaignId, onClose }) {
       setModel(result.model);
       const next = reviewItems(result.model).find((item) => item.status === 'pending') ?? null;
       setSelectedReviewId(next?.id ?? selectedItem.id);
+      await refreshCatalog();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function promoteMap(image) {
+    if (!model || image.status === 'promoted' || !image.campaignAssetId) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await client.promoteContentMap(campaignId, model.id, image.id, {
+        name: `${model.title} · mapa ${image.objectId}`,
+        gridSize: 70
+      });
+      setModel(result.model);
+      setImportMessage(`Mapa promovido para a cena “${result.scene.name}”. Revise grid e geometria antes da sessão.`);
       await refreshCatalog();
     } catch (err) {
       setError(err.message);
@@ -166,11 +201,15 @@ export function ContentReviewWorkspace({ campaignId, onClose }) {
           <aside className="content-import-column">
             <form className="content-import-form" onSubmit={handleImport}>
               <span className="eyebrow">Importar</span>
-              <label>PDF da aventura<input name="pdf" type="file" accept="application/pdf,.pdf" required /></label>
+              <div className="scene-source-tabs" role="tablist" aria-label="Origem da aventura">
+                <button type="button" className={importKind === 'pdf' ? 'active' : ''} onClick={() => setImportKind('pdf')}>PDF</button>
+                <button type="button" className={importKind === 'foundry' ? 'active' : ''} onClick={() => setImportKind('foundry')}>Foundry JSON</button>
+              </div>
+              <label>{importKind === 'foundry' ? 'Journal exportado' : 'PDF da aventura'}<input name="sourceFile" type="file" accept={importKind === 'foundry' ? 'application/json,.json' : 'application/pdf,.pdf'} required /></label>
               <label>Idioma da mesa<select name="targetLanguage" defaultValue="pt-BR"><option value="pt-BR">Português (Brasil)</option><option value="en">English</option><option value="es">Español</option></select></label>
               <label className="content-checkbox"><input name="localize" type="checkbox" defaultChecked /> Localizar para o idioma da mesa</label>
-              <button className="primary-button" disabled={busy}>{busy ? 'Processando…' : 'Compilar PDF'}</button>
-              <small>PDF digital usa a camada de texto. PDF escaneado usa OCR/Vision somente se um provider estiver configurado no Engine.</small>
+              <button className="primary-button" disabled={busy}>{busy ? 'Processando…' : 'Compilar conteúdo'}</button>
+              <small>{importKind === 'foundry' ? 'Preserva JournalEntry, páginas, HTML original e UUIDs do Foundry.' : 'PDF digital usa texto/layout; scan usa OCR/Vision quando configurado; mapas extraíveis exigem promoção manual.'}</small>
             </form>
 
             {importMessage ? <div className="content-import-message">{importMessage}</div> : null}
@@ -181,7 +220,7 @@ export function ContentReviewWorkspace({ campaignId, onClose }) {
               {(catalog.models ?? []).map((entry) => (
                 <button key={entry.id} type="button" className={`content-model-row ${model?.id === entry.id ? 'active' : ''}`} onClick={() => openModel(entry.id)} disabled={busy}>
                   <strong>{entry.title}</strong>
-                  <small>{entry.ingestion?.extractionMode === 'ocr-vision' ? 'OCR/Vision' : 'PDF digital'} · {(entry.review?.pending ?? 0) + (entry.ocrReview?.pending ?? 0)} pendências</small>
+                  <small>{sourceLabel(entry)} · {(entry.review?.pending ?? 0) + (entry.ocrReview?.pending ?? 0)} pendências</small>
                 </button>
               ))}
               {!catalog.models?.length ? <div className="content-empty">Nenhuma aventura compilada nesta campanha.</div> : null}
@@ -192,9 +231,32 @@ export function ContentReviewWorkspace({ campaignId, onClose }) {
             {model ? (
               <>
                 <div className="content-model-summary">
-                  <div><span className="eyebrow">Adventure Model</span><h3>{model.title}</h3><small>{model.language?.source || 'und'} → {model.language?.target || model.language?.source || 'und'} · {model.stats?.pages ?? 0} páginas</small></div>
+                  <div>
+                    <span className="eyebrow">Adventure Model · {sourceLabel(model)}</span>
+                    <h3>{model.title}</h3>
+                    <small>{model.language?.source || 'und'} → {model.language?.target || model.language?.source || 'und'} · {model.stats?.pages ?? model.foundry?.pages?.length ?? 0} páginas</small>
+                    {model.foundry?.journalUuid ? <small className="invite-link-preview">{model.foundry.journalUuid}</small> : null}
+                  </div>
                   <div className="content-summary-actions"><span>{items.filter((item) => item.status === 'pending').length} pendentes</span><button type="button" className="danger-button" onClick={removeCurrent} disabled={busy}>Remover</button></div>
                 </div>
+
+                {mapAssets.length ? (
+                  <section className="panel-section">
+                    <span className="eyebrow">Mapas extraídos do PDF</span>
+                    <div className="content-model-list">
+                      {mapAssets.map((image) => (
+                        <div className="identity-card" key={image.id}>
+                          <strong>Imagem {image.objectId} · {image.width}×{image.height}</strong>
+                          <small>Confiança de mapa {percentage(image.mapConfidence)} · {image.extraction}</small>
+                          <button type="button" className="ghost-button" disabled={busy || !image.campaignAssetId || image.status === 'promoted'} onClick={() => promoteMap(image)}>
+                            {image.status === 'promoted' ? 'Scene criada' : image.campaignAssetId ? 'Promover para Scene' : 'Asset indisponível'}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                    <small className="content-review-safety">A promoção cria apenas background + Scene. Grid, Walls, Doors e Regions continuam sob revisão do Mestre.</small>
+                  </section>
+                ) : null}
 
                 <div className="content-review-body">
                   <nav className="content-review-queue" aria-label="Fila de revisão">
@@ -223,11 +285,11 @@ export function ContentReviewWorkspace({ campaignId, onClose }) {
                         </div>
                         <small className="content-review-safety">Fail-closed: enquanto pendente, este bloco permanece GM-only e não entra na narração do jogador.</small>
                       </>
-                    ) : <div className="content-empty large">Selecione uma aventura ou importe um PDF para revisar.</div>}
+                    ) : <div className="content-empty large">Sem itens pendentes. Use os dados importados ou promova um mapa revisado.</div>}
                   </section>
                 </div>
               </>
-            ) : <div className="content-empty large">Importe um PDF ou escolha uma aventura já compilada.</div>}
+            ) : <div className="content-empty large">Importe um PDF/Foundry JSON ou escolha uma aventura já compilada.</div>}
           </main>
         </div>
       </div>
