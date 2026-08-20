@@ -1,3 +1,5 @@
+const MODULE_ID = 'mestre-orc';
+const DEFAULT_API_URL = 'http://localhost:3001';
 const SUPPORTED_ENTITY_TYPES = new Set(['Actor', 'Item', 'RollTable']);
 const UUID_PATTERN = /(?:@UUID\[([^\]]+)\]|data-(?:entity-)?uuid=["']([^"']+)["'])/gi;
 
@@ -34,6 +36,11 @@ function documentType(document) {
   return clean(document?.documentName ?? document?.constructor?.metadata?.name ?? document?.constructor?.name, 100);
 }
 
+async function safeResolve(resolveUuid, uuid) {
+  try { return await resolveUuid(uuid); }
+  catch { return null; }
+}
+
 export async function resolveFoundryContentPackage({
   rootUuid,
   maxEntities = 64,
@@ -41,14 +48,12 @@ export async function resolveFoundryContentPackage({
   fromUuidImpl = null
 } = {}) {
   if (!globalThis.game?.user?.isGM) throw new Error('Somente o Mestre pode sincronizar conteúdo do Foundry.');
-  const resolveUuid = fromUuidImpl
-    ?? globalThis.foundry?.utils?.fromUuid
-    ?? globalThis.fromUuid;
+  const resolveUuid = fromUuidImpl ?? globalThis.foundry?.utils?.fromUuid ?? globalThis.fromUuid;
   if (typeof resolveUuid !== 'function') throw new Error('fromUuid() não está disponível nesta versão do Foundry.');
   const root = clean(rootUuid, 500);
   if (!root) throw new Error('UUID raiz é obrigatório para sincronização.');
 
-  const rootDocument = await resolveUuid(root);
+  const rootDocument = await safeResolve(resolveUuid, root);
   if (!rootDocument) throw new Error(`Documento Foundry não encontrado: ${root}`);
   const rootType = documentType(rootDocument);
   const journalDocument = rootType === 'JournalEntryPage' ? rootDocument.parent : rootDocument;
@@ -56,17 +61,19 @@ export async function resolveFoundryContentPackage({
   const journal = serializeDocument(journalDocument);
   if (!journal) throw new Error('Não foi possível serializar o JournalEntry raiz.');
 
+  const entityLimit = Math.max(1, Math.min(256, Number(maxEntities) || 64));
+  const depthLimit = Math.max(0, Math.min(4, Number(maxDepth) || 2));
   const entities = [];
   const resolvedUuids = [];
   const missingUuids = [];
   const visited = new Set([clean(journalDocument.uuid, 500)]);
   const queue = referencesFrom(journal).map((uuid) => ({ uuid, depth: 1 }));
 
-  while (queue.length && entities.length < Math.max(1, Math.min(256, Number(maxEntities) || 64))) {
+  while (queue.length && entities.length < entityLimit) {
     const { uuid, depth } = queue.shift();
-    if (!uuid || visited.has(uuid) || depth > Math.max(0, Math.min(4, Number(maxDepth) || 2))) continue;
+    if (!uuid || visited.has(uuid) || depth > depthLimit) continue;
     visited.add(uuid);
-    const document = await resolveUuid(uuid).catch?.(() => null) ?? await resolveUuid(uuid);
+    const document = await safeResolve(resolveUuid, uuid);
     if (!document) {
       missingUuids.push(uuid);
       continue;
@@ -77,7 +84,7 @@ export async function resolveFoundryContentPackage({
     if (!serialized) continue;
     if (SUPPORTED_ENTITY_TYPES.has(type)) {
       entities.push(serialized);
-      if (depth < maxDepth) {
+      if (depth < depthLimit) {
         for (const nestedUuid of referencesFrom(serialized)) queue.push({ uuid: nestedUuid, depth: depth + 1 });
       }
     }
@@ -101,14 +108,55 @@ export async function resolveFoundryContentPackage({
       resolvedUuids: Object.freeze(resolvedUuids),
       missingUuids: Object.freeze(missingUuids),
       bounded: true,
-      maxEntities: Math.max(1, Math.min(256, Number(maxEntities) || 64)),
-      maxDepth: Math.max(0, Math.min(4, Number(maxDepth) || 2))
+      maxEntities: entityLimit,
+      maxDepth: depthLimit
     }),
     policy: Object.freeze({
       gmOnly: true,
       sourceUuidIsIdentity: true,
       executableContentAllowed: false,
-      recursiveUnboundedCrawlAllowed: false
+      recursiveUnboundedCrawlAllowed: false,
+      localOverwriteAllowedWithoutReview: false
     })
   });
 }
+
+export async function syncFoundryContentToFenix({
+  campaignId,
+  adventureId,
+  rootUuid,
+  apiUrl = DEFAULT_API_URL,
+  maxEntities = 64,
+  maxDepth = 2,
+  fetchImpl = globalThis.fetch
+} = {}) {
+  if (!globalThis.game?.user?.isGM) throw new Error('Somente o Mestre pode sincronizar conteúdo do Foundry.');
+  const campaign = clean(campaignId, 200);
+  const adventure = clean(adventureId, 200);
+  if (!campaign || !adventure) throw new Error('campaignId e adventureId do Fênix são obrigatórios.');
+  if (typeof fetchImpl !== 'function') throw new Error('fetch() não está disponível para sincronização.');
+  const envelope = await resolveFoundryContentPackage({ rootUuid, maxEntities, maxDepth });
+  const response = await fetchImpl(`${String(apiUrl || DEFAULT_API_URL).replace(/\/+$/, '')}/v1/campaigns/${encodeURIComponent(campaign)}/content/${encodeURIComponent(adventure)}/sync-foundry`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ envelope })
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload?.message || `Fênix respondeu HTTP ${response.status}.`);
+  return payload;
+}
+
+function exposeBridgeApi() {
+  if (!globalThis.game?.user?.isGM) return;
+  const module = globalThis.game?.modules?.get?.(MODULE_ID);
+  if (!module) return;
+  module.api = {
+    ...(module.api ?? {}),
+    resolveContentPackage: resolveFoundryContentPackage,
+    syncContent: syncFoundryContentToFenix
+  };
+  console.log('[Mestre Orc][Content Sync] Bridge v2 disponível em game.modules.get("mestre-orc").api.syncContent().');
+}
+
+if (globalThis.Hooks?.once) globalThis.Hooks.once('ready', exposeBridgeApi);
