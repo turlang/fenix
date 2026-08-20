@@ -20,6 +20,8 @@ function summary(row) {
     stats: model.stats,
     review: model.review?.summary ?? null,
     ocrReview: model.ocr?.review?.summary ?? null,
+    bindingReview: model.bindingReview?.summary ?? null,
+    entityGraph: model.entityGraph ? { schema: model.entityGraph.schema, version: model.entityGraph.version, stats: model.entityGraph.stats } : null,
     index: { chunkCount: index.chunkCount ?? 0, tokenCount: index.tokenCount ?? 0 },
     updatedAt: row.updated_at instanceof Date ? row.updated_at.toISOString() : String(row.updated_at ?? '')
   };
@@ -67,27 +69,21 @@ export class PostgresSemanticAdventureStore {
   }
 
   async getModel(campaignId, adventureId) {
-    const result = await this.pool.query(`
-      SELECT model_json FROM fenix_semantic_adventures
-      WHERE campaign_id = $1 AND adventure_id = $2
-    `, [normalizeId(campaignId), normalizeId(adventureId)]);
+    const result = await this.pool.query(`SELECT model_json FROM fenix_semantic_adventures WHERE campaign_id = $1 AND adventure_id = $2`, [normalizeId(campaignId), normalizeId(adventureId)]);
     return result.rows[0]?.model_json ?? null;
   }
 
   async listModels(campaignId) {
     const result = await this.pool.query(`
-      SELECT model_json, index_json, updated_at
-      FROM fenix_semantic_adventures
-      WHERE campaign_id = $1
-      ORDER BY updated_at DESC
+      SELECT model_json, index_json, updated_at FROM fenix_semantic_adventures
+      WHERE campaign_id = $1 ORDER BY updated_at DESC
     `, [normalizeId(campaignId)]);
     return result.rows.map(summary);
   }
 
   async removeModel(campaignId, adventureId) {
     const result = await this.pool.query(`
-      DELETE FROM fenix_semantic_adventures
-      WHERE campaign_id = $1 AND adventure_id = $2
+      DELETE FROM fenix_semantic_adventures WHERE campaign_id = $1 AND adventure_id = $2
       RETURNING model_json, index_json, updated_at
     `, [normalizeId(campaignId), normalizeId(adventureId)]);
     return result.rows[0] ? summary(result.rows[0]) : null;
@@ -96,24 +92,19 @@ export class PostgresSemanticAdventureStore {
   async applyReview(campaignId, adventureId, decisions, { queue = 'layout' } = {}) {
     const current = await this.getModel(campaignId, adventureId);
     if (!current) throw new Error('Adventure Model não encontrado.');
-    const model = queue === 'ocr'
-      ? applyOcrReviewDecisions(current, decisions)
-      : applyAdventureReviewDecisions(current, decisions);
+    const model = queue === 'ocr' ? applyOcrReviewDecisions(current, decisions) : applyAdventureReviewDecisions(current, decisions);
     return this.saveModel(campaignId, model);
   }
 
   async search(campaignId, adventureId, options = {}) {
     const result = await this.pool.query(`
-      SELECT model_json, index_json
-      FROM fenix_semantic_adventures
+      SELECT model_json, index_json FROM fenix_semantic_adventures
       WHERE campaign_id = $1 AND adventure_id = $2
     `, [normalizeId(campaignId), normalizeId(adventureId)]);
     const row = result.rows[0];
     if (!row) return [];
     let model = row.model_json;
-    const queryTokens = String(options.query ?? '')
-      .normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
-      .replace(/[^a-z0-9]+/g, ' ').trim().split(/\s+/).filter((token) => token.length > 1);
+    const queryTokens = String(options.query ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(/\s+/).filter((token) => token.length > 1);
     if (queryTokens.length) {
       const candidateIds = new Set();
       for (const token of queryTokens) for (const chunkId of row.index_json?.byToken?.[token] ?? []) candidateIds.add(chunkId);
