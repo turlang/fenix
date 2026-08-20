@@ -145,7 +145,26 @@ export class FenixApiClient {
         reviewThreshold: options.reviewThreshold ?? 0.65,
         autoAcceptConfidence: options.autoAcceptConfidence ?? 0.97,
         ocrTrustedConfidence: options.ocrTrustedConfidence ?? 0.92,
-        ocrMinimumReviewConfidence: options.ocrMinimumReviewConfidence ?? 0.35
+        ocrMinimumReviewConfidence: options.ocrMinimumReviewConfidence ?? 0.35,
+        minimumImagePixels: options.minimumImagePixels ?? 80000
+      }
+    });
+  }
+
+  async importFoundryJournal(campaignId, file, options = {}) {
+    if (!file?.text || !/\.json$/i.test(file.name || '')) throw new TypeError('Selecione um JSON exportado do Foundry.');
+    let journal;
+    try { journal = JSON.parse(await file.text()); }
+    catch { throw new TypeError('O arquivo JSON do Foundry é inválido.'); }
+    return this.request(`/v1/campaigns/${encodeURIComponent(campaignId)}/content/import-foundry`, {
+      method: 'POST',
+      timeoutMs: Math.max(this.timeoutMs, 120000),
+      body: {
+        fileName: file.name,
+        journal,
+        title: options.title || null,
+        targetLanguage: options.targetLanguage || 'pt-BR',
+        localize: options.localize !== false
       }
     });
   }
@@ -154,6 +173,13 @@ export class FenixApiClient {
     return this.request(`/v1/campaigns/${encodeURIComponent(campaignId)}/content/${encodeURIComponent(adventureId)}/review`, {
       method: 'POST',
       body: { queue, decisions }
+    });
+  }
+
+  promoteContentMap(campaignId, adventureId, imageId, input = {}) {
+    return this.request(`/v1/campaigns/${encodeURIComponent(campaignId)}/content/${encodeURIComponent(adventureId)}/assets/${encodeURIComponent(imageId)}/promote-scene`, {
+      method: 'POST',
+      body: input
     });
   }
 
