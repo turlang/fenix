@@ -29,17 +29,38 @@ function normalizeAdventureKnowledge(value) {
       type: asText(chunk.source.type),
       documentId: asText(chunk.source.documentId),
       page: Number.isFinite(Number(chunk.source.page)) ? Number(chunk.source.page) : null,
-      section: asText(chunk.source.section)
+      section: asText(chunk.source.section),
+      pageUuid: asText(chunk.source.pageUuid),
+      journalUuid: asText(chunk.source.journalUuid)
     } : null
   })).filter((chunk) => chunk.text);
+  const entities = asArray(value.entities).slice(0, 16).map((entity) => ({
+    id: asId(entity),
+    sourceUuid: asText(entity?.sourceUuid),
+    kind: asText(entity?.kind),
+    name: asText(entity?.name),
+    text: asText(entity?.text),
+    facts: entity?.facts && typeof entity.facts === 'object' ? structuredClone(entity.facts) : {},
+    score: Number.isFinite(Number(entity?.score)) ? Number(entity.score) : 0
+  })).filter((entity) => entity.name || entity.text);
+  const binding = value.binding && typeof value.binding === 'object' ? {
+    id: asId(value.binding),
+    sectionId: asText(value.binding.sectionId),
+    sectionTitle: asText(value.binding.sectionTitle),
+    sceneId: asText(value.binding.sceneId),
+    regionId: asText(value.binding.regionId),
+    reviewed: Boolean(value.binding.reviewed)
+  } : null;
 
-  if (!chunks.length && !asText(value.text)) return null;
+  if (!chunks.length && !entities.length && !asText(value.text)) return null;
   return {
     schema: asText(value.schema, 'fenix.mestre-knowledge-context'),
     version: Number.isFinite(Number(value.version)) ? Number(value.version) : 1,
     adventureId: asText(value.adventureId),
     language: asText(value.language),
+    binding,
     chunks,
+    entities,
     text: asText(value.text)
   };
 }
@@ -117,6 +138,7 @@ export class NarrationContextBuilder {
         actors: context.visibleActors.length,
         hasJournal: Boolean(context.sceneJournal),
         hasAdventureKnowledge: Boolean(context.adventureKnowledge),
+        knowledgeEntities: context.adventureKnowledge?.entities?.length ?? 0,
         source: context.metadata.source
       });
       return context;
