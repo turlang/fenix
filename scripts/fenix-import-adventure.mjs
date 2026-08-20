@@ -8,24 +8,31 @@ import {
   createOpenAICompatibleTextProvider
 } from '../packages/ai-inference-gateway/src/index.js';
 import { createAiGatewayTranslator } from '../packages/content-ingestion/src/index.js';
-import { importDigitalPdfAdventureV11 } from '../packages/content-ingestion/src/importer-v11.js';
+import { createOcrVisionProviderFromEnv } from '../packages/content-ingestion/src/ocr-vision.js';
+import { importPdfAdventureV12 } from '../packages/content-ingestion/src/importer-v12.js';
 
 function usage() {
   console.log(`Uso:
   npm run import:adventure -- <arquivo.pdf> [opções]
 
 Opções:
-  --out <arquivo.json>              destino do Adventure Model
-  --title <título>                  título da aventura
-  --document-id <id>                ID estável da fonte
-  --target <idioma>                 idioma da mesa (padrão: pt-BR)
-  --review-threshold <0..1>          confiança mínima para criar item de revisão (padrão: 0.65)
-  --auto-accept-confidence <0..1>    confiança mínima para autoaceite seguro (padrão: 0.97)
-  --no-localize                     compila sem traduzir
+  --out <arquivo.json>               destino do Adventure Model
+  --title <título>                   título da aventura
+  --document-id <id>                 ID estável da fonte
+  --target <idioma>                  idioma da mesa (padrão: pt-BR)
+  --review-threshold <0..1>           confiança mínima de layout (padrão: 0.65)
+  --auto-accept-confidence <0..1>     autoaceite de layout (padrão: 0.97)
+  --ocr-trusted-confidence <0..1>     OCR confiável sem revisão (padrão: 0.92)
+  --ocr-min-review-confidence <0..1>  OCR mínimo para fila de revisão (padrão: 0.35)
+  --no-localize                      compila sem traduzir
 
-Localização por IA usa os providers já adotados pelo Fênix:
+Localização por IA:
   FENIX_LOCAL_LLM_BASE_URL + FENIX_LOCAL_LLM_MODEL
   GROQ_API_KEY + GROQ_MODEL
+
+OCR/Vision para PDFs escaneados:
+  FENIX_OCR_VISION_BASE_URL
+  FENIX_OCR_VISION_API_KEY (opcional)
 `);
 }
 
@@ -43,7 +50,9 @@ function parseArgs(argv) {
     targetLanguage: 'pt-BR',
     localize: true,
     reviewThreshold: 0.65,
-    autoAcceptConfidence: 0.97
+    autoAcceptConfidence: 0.97,
+    ocrTrustedConfidence: 0.92,
+    ocrMinimumReviewConfidence: 0.35
   };
   while (args.length) {
     const flag = args.shift();
@@ -56,6 +65,8 @@ function parseArgs(argv) {
     else if (flag === '--target') options.targetLanguage = value;
     else if (flag === '--review-threshold') options.reviewThreshold = parseNumberFlag(flag, value);
     else if (flag === '--auto-accept-confidence') options.autoAcceptConfidence = parseNumberFlag(flag, value);
+    else if (flag === '--ocr-trusted-confidence') options.ocrTrustedConfidence = parseNumberFlag(flag, value);
+    else if (flag === '--ocr-min-review-confidence') options.ocrMinimumReviewConfidence = parseNumberFlag(flag, value);
     else throw new Error(`Opção desconhecida: ${flag}`);
   }
   return options;
@@ -118,21 +129,26 @@ async function main() {
   const pdf = await fs.readFile(inputPath);
   const gateway = options.localize ? createLocalizationGateway() : null;
   const translator = gateway ? createAiGatewayTranslator({ gateway }) : null;
+  const ocrProvider = createOcrVisionProviderFromEnv();
 
   try {
-    const model = await importDigitalPdfAdventureV11(pdf, {
+    const model = await importPdfAdventureV12(pdf, {
       documentId: options.documentId,
       title: options.title || path.basename(inputPath, path.extname(inputPath)),
       targetLanguage: options.targetLanguage,
       localize: options.localize,
       translator,
+      ocrProvider,
       reviewThreshold: options.reviewThreshold,
-      autoAcceptConfidence: options.autoAcceptConfidence
+      autoAcceptConfidence: options.autoAcceptConfidence,
+      ocrTrustedConfidence: options.ocrTrustedConfidence,
+      ocrMinimumReviewConfidence: options.ocrMinimumReviewConfidence
     });
     await fs.writeFile(outputPath, `${JSON.stringify(model, null, 2)}\n`, 'utf8');
-    console.log('[Fênix][Content Import] Adventure Model v1.1 criado.');
+    console.log('[Fênix][Content Import] Adventure Model v1.2 criado.');
     console.log(`Fonte: ${inputPath}`);
     console.log(`Saída: ${outputPath}`);
+    console.log(`Extração: ${model.ingestion?.extractionMode}`);
     console.log(`Idioma: ${model.language.source} -> ${model.language.target ?? '(sem localização)'}`);
     console.log(`Páginas: ${model.stats.pages}`);
     console.log(`Chunks: ${model.stats.chunks}`);
@@ -140,14 +156,15 @@ async function main() {
     console.log(`Segredos: ${model.stats.secrets}`);
     console.log(`Checks/DCs: ${model.stats.checks}`);
     console.log(`Tesouros: ${model.stats.treasures}`);
-    console.log(`Candidatos de layout: ${model.stats.layoutCandidates ?? 0}`);
-    console.log(`Revisões pendentes: ${model.review?.summary?.pending ?? 0}`);
-    if (model.review?.summary?.pending) {
-      console.log('Itens inferidos por layout permanecem bloqueados para jogadores até revisão do Mestre.');
-    }
+    console.log(`Revisões layout: ${model.review?.summary?.pending ?? 0}`);
+    console.log(`Revisões OCR: ${model.ocr?.review?.summary?.pending ?? 0}`);
+    console.log(`Imagens PDF: ${model.assets?.pdfImages?.imageCount ?? 0}; candidatos a mapa: ${model.assets?.pdfImages?.mapCandidateCount ?? 0}`);
   } catch (error) {
     if (error?.code === 'FENIX_LOCALIZER_REQUIRED') {
       throw new Error('O PDF está em outro idioma e nenhum provider de localização foi configurado. Configure FENIX_LOCAL_LLM_* ou GROQ_API_KEY/GROQ_MODEL, ou use --no-localize.');
+    }
+    if (error?.code === 'FENIX_OCR_PROVIDER_REQUIRED') {
+      throw new Error('O PDF parece escaneado. Configure FENIX_OCR_VISION_BASE_URL para OCR/Vision, ou forneça um PDF com camada de texto.');
     }
     throw error;
   }
