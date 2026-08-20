@@ -10,17 +10,31 @@ function percentage(value) {
 function reviewItems(model) {
   const layout = (model?.review?.items ?? []).map((item) => ({ ...item, queue: 'layout', origin: 'Layout' }));
   const ocr = (model?.ocr?.review?.items ?? []).map((item) => ({ ...item, queue: 'ocr', origin: 'OCR/Vision' }));
-  return [...ocr, ...layout].sort((a, b) => {
+  const bindings = (model?.bindingReview?.items ?? []).map((item) => ({
+    ...item,
+    queue: 'scene-binding',
+    origin: 'Area → Scene',
+    proposedType: 'knowledge-binding',
+    originalText: `${item.sectionTitle} → ${item.target?.regionName || item.target?.sceneName || item.target?.label || item.target?.sceneId}`
+  }));
+  return [...bindings, ...ocr, ...layout].sort((a, b) => {
     const pending = Number(b.status === 'pending') - Number(a.status === 'pending');
     return pending || (a.source?.page ?? 0) - (b.source?.page ?? 0);
   });
 }
 
 function Preview({ item }) {
-  const preview = item?.source?.preview;
-  if (preview?.dataUrl) {
-    return <img className="content-review-preview-image" src={preview.dataUrl} alt={`Prévia da página ${item.source?.page ?? ''}`} />;
+  if (item?.queue === 'scene-binding') {
+    return (
+      <div className="content-review-preview-placeholder">
+        <strong>{item.sectionTitle}</strong>
+        <span>Scene: {item.target?.sceneName || item.target?.sceneId}</span>
+        <small>Region: {item.target?.regionName || item.target?.regionId || 'Scene inteira'} · vínculo não altera geometria.</small>
+      </div>
+    );
   }
+  const preview = item?.source?.preview;
+  if (preview?.dataUrl) return <img className="content-review-preview-image" src={preview.dataUrl} alt={`Prévia da página ${item.source?.page ?? ''}`} />;
   return (
     <div className="content-review-preview-placeholder">
       <strong>Página {item?.source?.page ?? '—'}</strong>
@@ -31,7 +45,7 @@ function Preview({ item }) {
 }
 
 function sourceLabel(entry) {
-  if (entry?.source?.type === 'foundry-journal') return 'Foundry Journal';
+  if (entry?.source?.type === 'foundry-journal') return entry?.entityGraph ? 'Foundry Package' : 'Foundry Journal';
   if (entry?.ingestion?.extractionMode === 'ocr-vision') return 'PDF · OCR/Vision';
   return 'PDF digital';
 }
@@ -48,10 +62,7 @@ export function ContentReviewWorkspace({ campaignId, onClose }) {
   const [importKind, setImportKind] = useState('pdf');
 
   const items = useMemo(() => reviewItems(model), [model]);
-  const mapAssets = useMemo(
-    () => (model?.assets?.extractedImages?.items ?? []).filter((item) => item.mapCandidate),
-    [model]
-  );
+  const mapAssets = useMemo(() => (model?.assets?.extractedImages?.items ?? []).filter((item) => item.mapCandidate), [model]);
   const selectedItem = useMemo(
     () => items.find((item) => item.id === selectedReviewId) ?? items.find((item) => item.status === 'pending') ?? items[0] ?? null,
     [items, selectedReviewId]
@@ -61,8 +72,7 @@ export function ContentReviewWorkspace({ campaignId, onClose }) {
     const result = await client.listContent(campaignId);
     setCatalog(result);
     if (!keepSelection || !model) return result;
-    const exists = result.models?.some((entry) => entry.id === model.id);
-    if (!exists) setModel(null);
+    if (!result.models?.some((entry) => entry.id === model.id)) setModel(null);
     return result;
   }, [campaignId, client, model]);
 
@@ -82,15 +92,9 @@ export function ContentReviewWorkspace({ campaignId, onClose }) {
     }
   }, [campaignId, client]);
 
+  useEffect(() => { void refreshCatalog({ keepSelection: false }).catch((err) => setError(err.message)); }, [refreshCatalog]);
   useEffect(() => {
-    void refreshCatalog({ keepSelection: false }).catch((err) => setError(err.message));
-  }, [refreshCatalog]);
-
-  useEffect(() => {
-    if (!selectedItem) {
-      setEditedText('');
-      return;
-    }
+    if (!selectedItem) { setEditedText(''); return; }
     setEditedText(selectedItem.editedText || selectedItem.originalText || '');
   }, [selectedItem?.id]);
 
@@ -101,12 +105,9 @@ export function ContentReviewWorkspace({ campaignId, onClose }) {
     if (!(file instanceof File) || !file.size) return;
     setBusy(true);
     setError(null);
-    setImportMessage(importKind === 'foundry' ? 'Compilando Journal do Foundry…' : 'Compilando PDF…');
+    setImportMessage(importKind === 'foundry' ? 'Compilando pacote do Foundry…' : 'Compilando PDF…');
     try {
-      const options = {
-        targetLanguage: String(form.get('targetLanguage') || 'pt-BR'),
-        localize: form.get('localize') === 'on'
-      };
+      const options = { targetLanguage: String(form.get('targetLanguage') || 'pt-BR'), localize: form.get('localize') === 'on' };
       const result = importKind === 'foundry'
         ? await client.importFoundryJournal(campaignId, file, options)
         : await client.importAdventurePdf(campaignId, file, options);
@@ -114,7 +115,7 @@ export function ContentReviewWorkspace({ campaignId, onClose }) {
       const first = reviewItems(result.model).find((item) => item.status === 'pending') ?? null;
       setSelectedReviewId(first?.id ?? null);
       setImportMessage(result.model.source?.type === 'foundry-journal'
-        ? `Journal importado · ${result.model.foundry?.pages?.length ?? 0} páginas · UUID preservado.`
+        ? `Foundry importado · ${result.model.foundry?.pages?.length ?? 0} páginas · ${result.model.entityGraph?.stats?.nodes ?? 0} entidades · UUIDs preservados.`
         : result.model.ingestion?.extractionMode === 'ocr-vision'
           ? 'PDF escaneado compilado via OCR/Vision.'
           : 'PDF digital compilado com assets e layout semântico.');
@@ -136,7 +137,7 @@ export function ContentReviewWorkspace({ campaignId, onClose }) {
       const result = await client.reviewContent(campaignId, model.id, selectedItem.queue, [{
         reviewId: selectedItem.id,
         action,
-        text: action === 'accept' ? editedText : undefined
+        text: selectedItem.queue !== 'scene-binding' && action === 'accept' ? editedText : undefined
       }]);
       setModel(result.model);
       const next = reviewItems(result.model).find((item) => item.status === 'pending') ?? null;
@@ -154,12 +155,9 @@ export function ContentReviewWorkspace({ campaignId, onClose }) {
     setBusy(true);
     setError(null);
     try {
-      const result = await client.promoteContentMap(campaignId, model.id, image.id, {
-        name: `${model.title} · mapa ${image.objectId}`,
-        gridSize: 70
-      });
+      const result = await client.promoteContentMap(campaignId, model.id, image.id, { name: `${model.title} · mapa ${image.objectId}`, gridSize: 70 });
       setModel(result.model);
-      setImportMessage(`Mapa promovido para a cena “${result.scene.name}”. Revise grid e geometria antes da sessão.`);
+      setImportMessage(`Mapa promovido para a cena “${result.scene.name}”. Revise grid e aceite o vínculo Area → Scene/Region antes da sessão.`);
       await refreshCatalog();
     } catch (err) {
       setError(err.message);
@@ -183,14 +181,13 @@ export function ContentReviewWorkspace({ campaignId, onClose }) {
     }
   }
 
+  const entityStats = model?.entityGraph?.stats ?? null;
+
   return (
     <section className="content-review-backdrop" role="dialog" aria-modal="true" aria-label="Importador de aventuras">
       <div className="content-review-workspace">
         <header className="content-review-header">
-          <div>
-            <span className="eyebrow">Universal Content Importer</span>
-            <h2>Revisão de conteúdo</h2>
-          </div>
+          <div><span className="eyebrow">Universal Content Importer</span><h2>Revisão de conteúdo</h2></div>
           <div className="content-review-header-actions">
             <span className="content-store-pill">{catalog.storeDriver === 'postgres' ? 'PostgreSQL' : 'Local'}</span>
             <button type="button" className="ghost-button" onClick={onClose}>Fechar</button>
@@ -205,11 +202,11 @@ export function ContentReviewWorkspace({ campaignId, onClose }) {
                 <button type="button" className={importKind === 'pdf' ? 'active' : ''} onClick={() => setImportKind('pdf')}>PDF</button>
                 <button type="button" className={importKind === 'foundry' ? 'active' : ''} onClick={() => setImportKind('foundry')}>Foundry JSON</button>
               </div>
-              <label>{importKind === 'foundry' ? 'Journal exportado' : 'PDF da aventura'}<input name="sourceFile" type="file" accept={importKind === 'foundry' ? 'application/json,.json' : 'application/pdf,.pdf'} required /></label>
+              <label>{importKind === 'foundry' ? 'Journal/pacote exportado' : 'PDF da aventura'}<input name="sourceFile" type="file" accept={importKind === 'foundry' ? 'application/json,.json' : 'application/pdf,.pdf'} required /></label>
               <label>Idioma da mesa<select name="targetLanguage" defaultValue="pt-BR"><option value="pt-BR">Português (Brasil)</option><option value="en">English</option><option value="es">Español</option></select></label>
               <label className="content-checkbox"><input name="localize" type="checkbox" defaultChecked /> Localizar para o idioma da mesa</label>
               <button className="primary-button" disabled={busy}>{busy ? 'Processando…' : 'Compilar conteúdo'}</button>
-              <small>{importKind === 'foundry' ? 'Preserva JournalEntry, páginas, HTML original e UUIDs do Foundry.' : 'PDF digital usa texto/layout; scan usa OCR/Vision quando configurado; mapas extraíveis exigem promoção manual.'}</small>
+              <small>{importKind === 'foundry' ? 'Aceita JournalEntry puro ou pacote com Actor/Item/RollTable; preserva UUIDs e mantém detalhes das entidades GM-only.' : 'PDF digital usa texto/layout; scan usa OCR/Vision quando configurado; mapas extraíveis exigem promoção manual.'}</small>
             </form>
 
             {importMessage ? <div className="content-import-message">{importMessage}</div> : null}
@@ -236,6 +233,7 @@ export function ContentReviewWorkspace({ campaignId, onClose }) {
                     <h3>{model.title}</h3>
                     <small>{model.language?.source || 'und'} → {model.language?.target || model.language?.source || 'und'} · {model.stats?.pages ?? model.foundry?.pages?.length ?? 0} páginas</small>
                     {model.foundry?.journalUuid ? <small className="invite-link-preview">{model.foundry.journalUuid}</small> : null}
+                    {entityStats ? <small>{entityStats.actors} atores/NPCs · {entityStats.items} itens · {entityStats.spells} magias · {entityStats.rollTables} tabelas</small> : null}
                   </div>
                   <div className="content-summary-actions"><span>{items.filter((item) => item.status === 'pending').length} pendentes</span><button type="button" className="danger-button" onClick={removeCurrent} disabled={busy}>Remover</button></div>
                 </div>
@@ -278,12 +276,14 @@ export function ContentReviewWorkspace({ campaignId, onClose }) {
                           <span className={`review-status ${selectedItem.status}`}>{selectedItem.status}</span>
                         </div>
                         <Preview item={selectedItem} />
-                        <label>Texto reconhecido<textarea rows="8" value={editedText} onChange={(event) => setEditedText(event.target.value)} disabled={selectedItem.status !== 'pending' || busy} /></label>
+                        {selectedItem.queue !== 'scene-binding' ? (
+                          <label>Texto reconhecido<textarea rows="8" value={editedText} onChange={(event) => setEditedText(event.target.value)} disabled={selectedItem.status !== 'pending' || busy} /></label>
+                        ) : <small className="content-review-safety">Aceitar este vínculo habilita o Knowledge Engine/room-entry para esta Area. Não move tokens nem cria geometria.</small>}
                         <div className="content-review-decision-row">
                           <button type="button" className="ghost-button" onClick={() => decide('reject')} disabled={selectedItem.status !== 'pending' || busy}>Rejeitar</button>
-                          <button type="button" className="primary-button" onClick={() => decide('accept')} disabled={selectedItem.status !== 'pending' || busy || !editedText.trim()}>Aceitar conteúdo</button>
+                          <button type="button" className="primary-button" onClick={() => decide('accept')} disabled={selectedItem.status !== 'pending' || busy || (selectedItem.queue !== 'scene-binding' && !editedText.trim())}>Aceitar</button>
                         </div>
-                        <small className="content-review-safety">Fail-closed: enquanto pendente, este bloco permanece GM-only e não entra na narração do jogador.</small>
+                        <small className="content-review-safety">Fail-closed: conteúdo ou vínculo pendente nunca é usado automaticamente para jogadores.</small>
                       </>
                     ) : <div className="content-empty large">Sem itens pendentes. Use os dados importados ou promova um mapa revisado.</div>}
                   </section>
