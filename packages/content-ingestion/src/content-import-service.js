@@ -70,7 +70,7 @@ export class CampaignContentImportService {
   }
 
   async #attachBindingReview({ campaignId, userId, model, preserveBindings = null } = {}) {
-    if (!this.sceneService) return model;
+    if (!this.sceneService || typeof this.sceneService.list !== 'function') return model;
     const sceneState = this.sceneService.list({ campaignId, userId });
     const queue = proposeAdventureSceneBindings(model, sceneState.scenes ?? []);
     return Object.freeze({
