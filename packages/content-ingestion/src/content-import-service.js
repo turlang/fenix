@@ -1,3 +1,4 @@
+import { localizeAdventureModel } from './index.js';
 import { importPdfAdventureV12 } from './importer-v12.js';
 
 function fail(message, code, statusCode = 400) {
@@ -99,8 +100,17 @@ export class CampaignContentImportService {
     if (!['layout', 'ocr'].includes(queue)) throw fail('Fila de revisão inválida.', 'FENIX_CONTENT_REVIEW_QUEUE_INVALID');
     const list = Array.isArray(decisions) ? decisions : [decisions];
     if (!list.length || !list[0]) throw fail('Decisão de revisão obrigatória.', 'FENIX_CONTENT_REVIEW_DECISION_REQUIRED');
-    const saved = await this.store.applyReview(campaignId, adventureId, list, { queue });
-    const model = await this.store.getModel(campaignId, adventureId);
+    let saved = await this.store.applyReview(campaignId, adventureId, list, { queue });
+    let model = await this.store.getModel(campaignId, adventureId);
+
+    if (queue === 'ocr' && this.translator && model?.language?.target) {
+      model = await localizeAdventureModel(model, {
+        targetLanguage: model.language.target,
+        translator: this.translator
+      });
+      saved = await this.store.saveModel(campaignId, model);
+    }
+
     return { model, saved };
   }
 
