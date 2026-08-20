@@ -4,9 +4,11 @@ import { useMemo, useState } from 'react';
 import { useFenixSession } from './session-provider.jsx';
 import { VttShell } from './vtt-shell.jsx';
 import { FirstPersonStage } from './first-person-stage.jsx';
+import { ContentReviewWorkspace } from './content-review-workspace.jsx';
 
 export function DualViewVttShell({ onExitCampaign = null, onLogout = null }) {
   const [viewMode, setViewMode] = useState('top');
+  const [contentOpen, setContentOpen] = useState(false);
   const { state, campaign, membership, actors, activeScene } = useFenixSession();
 
   const actorId = membership?.role === 'gm' ? state.selectedActorId : membership?.actorId;
@@ -19,6 +21,7 @@ export function DualViewVttShell({ onExitCampaign = null, onLogout = null }) {
     [actorId, state.tokens]
   );
   const firstPersonReady = Boolean(activeScene && actor && token);
+  const isGm = membership?.role === 'gm';
 
   if (viewMode === 'first-person' && firstPersonReady) {
     return (
@@ -36,7 +39,7 @@ export function DualViewVttShell({ onExitCampaign = null, onLogout = null }) {
   return (
     <div className="dual-view-shell">
       <VttShell onExitCampaign={onExitCampaign} onLogout={onLogout} />
-      <div className="view-mode-switch" role="group" aria-label="Modo de visão">
+      <div className="view-mode-switch" role="group" aria-label="Modo de visão e ferramentas do Mestre">
         <span>Visão</span>
         <button type="button" className="active" aria-pressed="true">Top View</button>
         <button
@@ -48,7 +51,13 @@ export function DualViewVttShell({ onExitCampaign = null, onLogout = null }) {
         >
           1ª Pessoa
         </button>
+        {isGm ? (
+          <button type="button" aria-pressed={contentOpen} onClick={() => setContentOpen(true)} disabled={state.busy}>
+            Importador
+          </button>
+        ) : null}
       </div>
+      {isGm && contentOpen ? <ContentReviewWorkspace campaignId={campaign.id} onClose={() => setContentOpen(false)} /> : null}
     </div>
   );
 }
