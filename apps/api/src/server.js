@@ -8,33 +8,25 @@ import { createFenixRepositoryFromEnv } from '../../../packages/persistence-repo
 import { createAssetStorageFromEnv } from '../../../packages/asset-storage/src/index.js';
 import { RemoteMapImporter } from '../../../packages/remote-map-importer/src/index.js';
 import { AuthService } from '../../../packages/auth-service/src/index.js';
-import {
-  CampaignService,
-  createAuthenticatedPeerAuthorizer
-} from '../../../packages/campaign-service/src/index.js';
+import { CampaignService, createAuthenticatedPeerAuthorizer } from '../../../packages/campaign-service/src/index.js';
 import { CampaignSceneService } from '../../../packages/campaign-scene-service/src/index.js';
 import { CampaignActorService } from '../../../packages/campaign-actor-service/src/index.js';
 import { CampaignTokenService } from '../../../packages/campaign-token-service/src/index.js';
 import { CampaignExplorationService } from '../../../packages/campaign-exploration-service/src/index.js';
 import { CampaignRuntimeRegistry } from '../../../packages/campaign-runtime-registry/src/index.js';
-import {
-  PostgresRuntimeLeaseManager,
-  PostgresStateBus
-} from '../../../packages/distributed-runtime-coordination/src/index.js';
+import { PostgresRuntimeLeaseManager, PostgresStateBus } from '../../../packages/distributed-runtime-coordination/src/index.js';
 import { createCommandLedger } from '../../../packages/distributed-command-ledger/src/index.js';
 import { RuntimeObservability } from '../../../packages/runtime-observability/src/index.js';
 import { OwnerAwareRuntimeRouter } from '../../../packages/owner-aware-runtime-router/src/index.js';
 import { parseRealtimeMessage } from '../../../packages/realtime-session-gateway/src/index.js';
-import {
-  AuthoritativeRealtimeSessionGateway,
-  AuthoritativeRealtimeSessionHub
-} from '../../../packages/authoritative-token-runtime/src/index.js';
+import { AuthoritativeRealtimeSessionGateway, AuthoritativeRealtimeSessionHub } from '../../../packages/authoritative-token-runtime/src/index.js';
 import { RenderNodeGateway, createHttpRenderNode } from '../../../packages/render-node-gateway/src/index.js';
 import { RemoteRenderBrokerService } from '../../../packages/remote-render-broker/src/index.js';
 import { createAuthoritativeRuntimeInputHandler } from '../../../packages/render-runtime-control/src/index.js';
 import { createAiGatewayTranslator } from '../../../packages/content-ingestion/src/index.js';
 import { createOcrVisionProviderFromEnv } from '../../../packages/content-ingestion/src/ocr-vision.js';
 import { CampaignContentImportService } from '../../../packages/content-ingestion/src/content-import-service.js';
+import { CampaignAdventureKnowledgeResolver } from '../../../packages/content-ingestion/src/knowledge-bindings.js';
 import { FileSemanticAdventureStore } from '../../../packages/adventure-library/src/semantic-model-store.js';
 import { PostgresSemanticAdventureStore } from '../../../packages/adventure-library/src/postgres-semantic-model-store.js';
 import { createApiApp } from './app.js';
@@ -130,12 +122,7 @@ const runtimeRouter = leaseManager && config.internalRoutingSecret
     })
   : null;
 const realtimeProxy = runtimeRouter?.enabled
-  ? createOwnerAwareWebSocketProxy({
-      ownerRouter: runtimeRouter,
-      maxRouteRetries: config.runtimeRoutingMaxRetries,
-      observability: runtimeObservability,
-      logger
-    })
+  ? createOwnerAwareWebSocketProxy({ ownerRouter: runtimeRouter, maxRouteRetries: config.runtimeRoutingMaxRetries, observability: runtimeObservability, logger })
   : null;
 
 const narrator = createNarrativeProviderFromEnv({ logger });
@@ -152,8 +139,10 @@ const contentImportService = new CampaignContentImportService({
   store: semanticAdventureStore,
   translator: contentTranslator,
   ocrProvider,
+  sceneService,
   logger
 });
+const adventureKnowledgeResolver = new CampaignAdventureKnowledgeResolver({ store: semanticAdventureStore, logger });
 
 const realtimeHub = new AuthoritativeRealtimeSessionHub({
   logger,
@@ -161,12 +150,7 @@ const realtimeHub = new AuthoritativeRealtimeSessionHub({
   resolveActorRuntime: ({ sessionId, actorId }) => {
     const actor = actorService.resolveBySession({ sessionId, actorId });
     if (!actor) return null;
-    return {
-      sheetId: actor.sheetId,
-      systemId: actor.systemId,
-      height: actor.sheet?.height,
-      vision: actor.resolved?.vision ?? null
-    };
+    return { sheetId: actor.sheetId, systemId: actor.systemId, height: actor.sheet?.height, vision: actor.resolved?.vision ?? null };
   },
   resolveSceneTokens: ({ sessionId, sceneId }) => {
     const campaign = campaignService.findCampaignBySessionId(sessionId);
@@ -181,11 +165,13 @@ const sessionService = new CampaignRuntimeRegistry({
   leaseManager,
   reconcileIntervalMs: config.runtimeReconcileMs,
   logger,
-  runtimeFactory: () => createSessionRuntime({
+  runtimeFactory: ({ campaignId }) => createSessionRuntime({
     narrator,
     narrationMemory,
     audioNarrationService,
     narrationOutputPort: realtimeHub,
+    campaignId,
+    adventureKnowledgeResolver,
     logger
   })
 });
@@ -199,9 +185,7 @@ const runtimeInputHandler = createAuthoritativeRuntimeInputHandler({
   explorationService,
   logger
 });
-const runtimeControlBaseUrl = process.env.FENIX_RENDER_CONTROL_BASE_URL?.trim()
-  || config.instancePublicUrl
-  || null;
+const runtimeControlBaseUrl = process.env.FENIX_RENDER_CONTROL_BASE_URL?.trim() || config.instancePublicUrl || null;
 const renderBrokerService = new RemoteRenderBrokerService({
   campaignService,
   actorService,
@@ -226,10 +210,7 @@ const unsubscribeCoordination = coordinationBus?.subscribe((event) => {
     campaignService.refreshFromRepository();
     await sessionService.reconcile({ refreshRepository: false });
   }).catch((error) => {
-    logger.error?.('[Fênix][Coordination] falha ao aplicar invalidação distribuída', {
-      type: event?.type,
-      message: error.message
-    });
+    logger.error?.('[Fênix][Coordination] falha ao aplicar invalidação distribuída', { type: event?.type, message: error.message });
   });
   return coordinationRefresh;
 }) ?? (() => undefined);
@@ -276,11 +257,7 @@ const realtimeGateway = {
           ownerId: instanceId,
           generation: ownership.leaseGeneration,
           onReplay: async () => {
-            realtimeHub.sendTo(sessionId, clientId, {
-              type: 'ACK',
-              commandId: message.commandId,
-              payload: { type: message.type, replayed: true }
-            });
+            realtimeHub.sendTo(sessionId, clientId, { type: 'ACK', commandId: message.commandId, payload: { type: message.type, replayed: true } });
           },
           execute: async () => {
             const result = await peer.receive(raw);
@@ -317,11 +294,7 @@ const realtimeGateway = {
     return realtimeHub.sendTo(sessionId, clientId, {
       type: 'ERROR',
       commandId,
-      payload: {
-        code: error?.code || 'REALTIME_ERROR',
-        message: error?.message || 'Falha realtime.',
-        status: Number(error?.statusCode) || 500
-      }
+      payload: { code: error?.code || 'REALTIME_ERROR', message: error?.message || 'Falha realtime.', status: Number(error?.statusCode) || 500 }
     });
   }
 };
