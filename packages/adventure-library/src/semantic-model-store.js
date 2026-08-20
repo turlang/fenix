@@ -11,19 +11,10 @@ function normalizeId(value, fallback = 'default') {
   const normalized = String(value ?? '').trim().replace(/[^A-Za-z0-9._:-]+/g, '-').slice(0, 200);
   return normalized || fallback;
 }
-
-function emptyStore() {
-  return { schema: 'fenix.semantic-adventure-library', version: STORE_VERSION, campaigns: {} };
-}
-
-function emptyCampaign(id) {
-  return { id, models: {}, updatedAt: null };
-}
-
+function emptyStore() { return { schema: 'fenix.semantic-adventure-library', version: STORE_VERSION, campaigns: {} }; }
+function emptyCampaign(id) { return { id, models: {}, updatedAt: null }; }
 function tokens(value) {
-  return [...new Set(String(value ?? '')
-    .normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
-    .replace(/[^a-z0-9]+/g, ' ').trim().split(/\s+/).filter((token) => token.length > 1))];
+  return [...new Set(String(value ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(/\s+/).filter((token) => token.length > 1))];
 }
 
 export function buildSemanticAdventureIndex(model) {
@@ -37,11 +28,8 @@ export function buildSemanticAdventureIndex(model) {
     }
   }
   return Object.freeze({
-    schema: 'fenix.semantic-adventure-index',
-    version: 1,
-    adventureId: model.id,
-    chunkCount: model?.chunks?.length ?? 0,
-    tokenCount: Object.keys(byToken).length,
+    schema: 'fenix.semantic-adventure-index', version: 1, adventureId: model.id,
+    chunkCount: model?.chunks?.length ?? 0, tokenCount: Object.keys(byToken).length,
     byToken: Object.freeze(Object.fromEntries(Object.entries(byToken).map(([token, ids]) => [token, Object.freeze(ids)])))
   });
 }
@@ -57,18 +45,15 @@ function modelSummary(record) {
     stats: model.stats,
     review: model.review?.summary ?? null,
     ocrReview: model.ocr?.review?.summary ?? null,
+    bindingReview: model.bindingReview?.summary ?? null,
+    entityGraph: model.entityGraph ? { schema: model.entityGraph.schema, version: model.entityGraph.version, stats: model.entityGraph.stats } : null,
     index: { chunkCount: record.index.chunkCount, tokenCount: record.index.tokenCount },
     updatedAt: record.updatedAt
   };
 }
 
 export class InMemorySemanticAdventureStore {
-  constructor({ logger = console } = {}) {
-    this.logger = logger;
-    this.store = emptyStore();
-    this.driver = 'memory';
-  }
-
+  constructor({ logger = console } = {}) { this.logger = logger; this.store = emptyStore(); this.driver = 'memory'; }
   async initialize() { return true; }
   async loadStore() { return this.store; }
   async saveStore(store) { this.store = store; }
@@ -86,20 +71,16 @@ export class InMemorySemanticAdventureStore {
     await this.saveStore(store);
     return modelSummary(record);
   }
-
   async getModel(campaignId, adventureId) {
-    const id = normalizeId(campaignId);
     const store = await this.loadStore();
-    return store.campaigns[id]?.models?.[adventureId]?.model ?? null;
+    return store.campaigns[normalizeId(campaignId)]?.models?.[adventureId]?.model ?? null;
   }
-
   async listModels(campaignId) {
     const id = normalizeId(campaignId);
     const store = await this.loadStore();
     const campaign = store.campaigns[id] ?? emptyCampaign(id);
     return Object.values(campaign.models).map(modelSummary).sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
   }
-
   async removeModel(campaignId, adventureId) {
     const id = normalizeId(campaignId);
     const store = await this.loadStore();
@@ -112,16 +93,13 @@ export class InMemorySemanticAdventureStore {
     await this.saveStore(store);
     return modelSummary(existing);
   }
-
   async applyReview(campaignId, adventureId, decisions, { queue = 'layout' } = {}) {
     const id = normalizeId(campaignId);
     const store = await this.loadStore();
     const campaign = store.campaigns[id] ?? emptyCampaign(id);
     const record = campaign.models[adventureId];
     if (!record) throw new Error('Adventure Model não encontrado.');
-    const model = queue === 'ocr'
-      ? applyOcrReviewDecisions(record.model, decisions)
-      : applyAdventureReviewDecisions(record.model, decisions);
+    const model = queue === 'ocr' ? applyOcrReviewDecisions(record.model, decisions) : applyAdventureReviewDecisions(record.model, decisions);
     const now = new Date().toISOString();
     const updated = { model, index: buildSemanticAdventureIndex(model), updatedAt: now };
     campaign.models[adventureId] = updated;
@@ -130,7 +108,6 @@ export class InMemorySemanticAdventureStore {
     await this.saveStore(store);
     return modelSummary(updated);
   }
-
   async search(campaignId, adventureId, options = {}) {
     const id = normalizeId(campaignId);
     const store = await this.loadStore();
@@ -148,27 +125,19 @@ export class InMemorySemanticAdventureStore {
 }
 
 export class FileSemanticAdventureStore extends InMemorySemanticAdventureStore {
-  constructor({ filePath = DEFAULT_FILE, logger = console } = {}) {
-    super({ logger });
-    this.filePath = resolve(filePath);
-    this.driver = 'file';
-  }
-
+  constructor({ filePath = DEFAULT_FILE, logger = console } = {}) { super({ logger }); this.filePath = resolve(filePath); this.driver = 'file'; }
   async loadStore() {
     if (!existsSync(this.filePath)) return emptyStore();
     try {
       const parsed = JSON.parse(readFileSync(this.filePath, 'utf8'));
       if (!parsed || typeof parsed !== 'object') return emptyStore();
-      parsed.schema = 'fenix.semantic-adventure-library';
-      parsed.version = STORE_VERSION;
-      parsed.campaigns ??= {};
+      parsed.schema = 'fenix.semantic-adventure-library'; parsed.version = STORE_VERSION; parsed.campaigns ??= {};
       return parsed;
     } catch (error) {
       this.logger.error?.('[Fênix][SemanticAdventureStore] falha ao ler store', { message: error.message });
       throw new Error('A biblioteca semântica de aventuras está corrompida.');
     }
   }
-
   async saveStore(store) {
     mkdirSync(dirname(this.filePath), { recursive: true });
     const temporary = `${this.filePath}.${process.pid}.${Date.now()}.tmp`;
