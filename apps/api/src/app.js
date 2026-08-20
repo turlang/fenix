@@ -9,6 +9,7 @@ import { registerCampaignRoutes } from './http/register-campaign-routes.js';
 import { registerSceneRoutes } from './http/register-scene-routes.js';
 import { registerActorRoutes } from './http/register-actor-routes.js';
 import { registerRenderRoutes } from './http/register-render-routes.js';
+import { registerContentRoutes } from './http/register-content-routes.js';
 import { createSessionRequestAuthorizer } from './http/session-authorizer.js';
 import { registerRealtimeRoutes } from './realtime/register-realtime-routes.js';
 
@@ -22,6 +23,7 @@ export async function createApiApp({
   campaignService = null,
   sceneService = null,
   actorService = null,
+  contentImportService = null,
   renderBrokerService = null,
   runtimeRouter = null,
   realtimeProxy = null,
@@ -70,6 +72,7 @@ export async function createApiApp({
     realtime: realtimeGateway ? 'websocket' : 'disabled',
     sceneManager: sceneService ? 'enabled' : 'disabled',
     actorSheets: actorService ? 'enabled' : 'disabled',
+    contentImporter: contentImportService ? (contentImportService.store?.driver ?? 'enabled') : 'disabled',
     remoteRender: renderBrokerService?.enabled ? 'gpu-broker' : 'disabled',
     routing: runtimeRouter?.enabled ? 'owner-aware' : 'local-only',
     idempotency: commandLedger?.driver ?? 'disabled',
@@ -114,6 +117,7 @@ export async function createApiApp({
     registerCampaignRoutes(app, { authService, campaignService, config });
     if (sceneService) registerSceneRoutes(app, { authService, sceneService });
     if (actorService) registerActorRoutes(app, { authService, actorService });
+    if (contentImportService) registerContentRoutes(app, { authService, contentImportService });
     if (renderBrokerService) registerRenderRoutes(app, { authService, renderBrokerService });
   }
 
