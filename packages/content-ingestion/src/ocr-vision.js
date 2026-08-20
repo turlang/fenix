@@ -11,6 +11,11 @@ function clean(value) {
   return String(value ?? '').replace(/\u0000/g, '').replace(/\s+/g, ' ').trim();
 }
 
+function previewText(value, max = 4_000_000) {
+  const text = String(value ?? '').trim();
+  return text ? text.slice(0, Math.max(1, Number(max) || 4_000_000)) : '';
+}
+
 function stableId(...parts) {
   return crypto.createHash('sha256').update(parts.map((part) => String(part ?? '')).join('\u241f')).digest('hex').slice(0, 24);
 }
@@ -46,7 +51,7 @@ function normalizeBlock(raw, documentId, pageNumber, index) {
     preview: raw?.preview && typeof raw.preview === 'object'
       ? Object.freeze({
           mimeType: clean(raw.preview.mimeType) || null,
-          dataUrl: clean(raw.preview.dataUrl, 2_000_000) || null,
+          dataUrl: previewText(raw.preview.dataUrl, 2_000_000) || null,
           assetId: clean(raw.preview.assetId) || null
         })
       : null
@@ -67,7 +72,7 @@ function normalizePage(raw, documentId, index) {
     preview: raw?.preview && typeof raw.preview === 'object'
       ? Object.freeze({
           mimeType: clean(raw.preview.mimeType) || null,
-          dataUrl: clean(raw.preview.dataUrl, 4_000_000) || null,
+          dataUrl: previewText(raw.preview.dataUrl, 4_000_000) || null,
           assetId: clean(raw.preview.assetId) || null
         })
       : null
