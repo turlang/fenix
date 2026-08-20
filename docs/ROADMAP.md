@@ -141,7 +141,7 @@ Documento operacional: [`FENIX_CONTENT_IMPORTER_V12_OCR_REVIEW_WORKSPACE.md`](./
 
 ### Status — Content Importer v1.3: Asset Extraction & Foundry JSON Adapter
 
-**Implementado neste marco.**
+**Implementado.**
 
 Entregas:
 
@@ -163,27 +163,55 @@ Entregas:
 
 Documento operacional: [`FENIX_CONTENT_IMPORTER_V13_ASSETS_FOUNDRY.md`](./FENIX_CONTENT_IMPORTER_V13_ASSETS_FOUNDRY.md).
 
-Limites declarados do v1.3:
+### Status — Content Importer v1.4: Foundry Entity Graph & Knowledge Bindings
 
-- image extraction ainda não cobre JPX/JBIG2/CCITT nem predictors Flate complexos;
-- Foundry adapter v1.3 cobre JournalEntry/JournalEntryPage, não Actor/Item/Scene completos;
-- UUIDs são preservados, mas resolução/sincronização live ainda depende do Bridge;
-- mapa promovido continua exigindo configuração/revisão de geometria pelo Mestre.
+**Implementado neste marco.**
+
+Entregas:
+
+- pacote Foundry compatível com JournalEntry puro ou `journal + actors/items/rollTables/entities`;
+- normalização de `Actor`, NPC/criatura, `Item`, spell e `RollTable` em `fenix.foundry-entity-graph` v1;
+- `sourceUuid` como identidade e `sourceHash` como fingerprint de conteúdo;
+- deduplicação por UUID e classificação incremental `new`, `unchanged` e `changed`;
+- registro de UUIDs removidos na reimportação para futura revisão de conflitos;
+- relações `mentions`, `contains`, `references` e `table-result`;
+- referências do Journal ligadas às Areas da página e às entidades do pacote sem internet;
+- detalhes das entidades fail-closed/GM-only por padrão, preservando ownership somente como metadado de origem;
+- `retrieveBoundEntityKnowledge()` para recuperar apenas entidades ligadas à Area relevante;
+- Review Workspace passa a mostrar propostas `Area → Scene/Region` junto das demais filas;
+- somente binding explicitamente aceito (`reviewed=true`) habilita Knowledge/room-entry;
+- `CampaignAdventureKnowledgeResolver` produz contextos separados player-safe e GM;
+- room-entry usa como âncora apenas read-aloud elegível ao jogador, enquanto o Mestre Fênix pode receber entidades GM da Area;
+- ações de jogador podem receber conhecimento/entidades da Scene ativa já vinculada;
+- `NarrationContextBuilder` passa a normalizar chunks, binding e entidades do conhecimento;
+- runtime de campanha recebe o resolver sem transformar Knowledge em autoridade física;
+- Bridge SDK recebe `fenix.bridge-content-sync` v1 para preparar sincronização diferencial futura;
+- summaries da biblioteca semântica expõem entity graph e pendências de binding;
+- testes de grafo, UUID, embedded spell, RollTable, privacidade, reimportação e Area → Scene/Region → room-entry.
+
+Documento operacional: [`FENIX_CONTENT_IMPORTER_V14_ENTITY_GRAPH_BINDINGS.md`](./FENIX_CONTENT_IMPORTER_V14_ENTITY_GRAPH_BINDINGS.md).
+
+Limites declarados do v1.4:
+
+- ainda não existe sincronização live por `fromUuid()`;
+- entidades importadas alimentam Knowledge, mas não viram Actor/Item nativo automaticamente;
+- UUID de Compendium externo é preservado, não baixado ou adivinhado;
+- mudanças/removals são detectadas, mas a UI completa de conflitos fica para o próximo marco;
+- Scene/Core/RPG System continuam autoridades para física e regras.
 
 ## Próximo marco do importador
 
-**Content Importer v1.4 — Foundry Entity Graph & Knowledge Bindings**
+**Content Importer v1.5 — Foundry Bridge Sync & Native Entity Promotion**
 
 Objetivos planejados:
 
-- importar entidades referenciadas de Actor, Item, spell, creature/NPC e RollTable em formato normalizado;
-- resolver referências internas de um pacote/export sem depender de internet;
-- construir grafo Adventure → Chapter/Area → NPC/Creature/Item/Spell → source UUID;
-- conectar bindings revisados Area ↔ Scene/Region a triggers reais de Knowledge/room-entry;
-- permitir ao Mestre Fênix recuperar somente entidades relevantes para a área/situação atual;
-- manter segredos e permissões fail-closed;
-- adicionar deduplicação por source UUID/hash para reimportação incremental;
-- preparar Foundry Bridge sync sem tornar o Fênix dependente do Foundry.
+- Bridge Foundry resolver documentos autorizados por UUID no mundo ativo;
+- sincronização diferencial usando `sourceUuid` + `sourceHash`;
+- Conflict Review para entidades `changed` e `removed`;
+- promoção GM-reviewed de Actor/Item importado para entidades nativas do Fênix;
+- Rules Adapter controlar conversão para Sheet nativa conforme o sistema RPG ativo;
+- preservar mudanças locais e nunca sobrescrever silenciosamente uma entidade promovida;
+- sincronização incremental sem tornar o Core dependente do Foundry.
 
 ## Observação histórica
 
