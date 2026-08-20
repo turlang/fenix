@@ -71,7 +71,7 @@ export class CampaignItemService {
     const existing = items.find((entry) => entry.sourceSync?.sourceUuid === uuid)
       ?? items.find((entry) => entry.id === clean(itemId, 200))
       ?? null;
-    const id = existing?.id ?? clean(itemId, 200) || `item-${randomUUID()}`;
+    const id = existing?.id ?? (clean(itemId, 200) || `item-${randomUUID()}`);
     const now = new Date(this.now()).toISOString();
     const next = {
       id,
