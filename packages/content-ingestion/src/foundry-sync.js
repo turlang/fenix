@@ -23,12 +23,17 @@ function nodeMap(model) {
 }
 
 function syncSummary(items) {
-  const summary = { total: items.length, new: 0, unchanged: 0, changed: 0, removed: 0, conflict: 0, resolved: 0 };
+  const summary = { total: items.length, new: 0, unchanged: 0, changed: 0, removed: 0, conflict: 0, resolved: 0, reviewPending: 0 };
   for (const item of items) {
     if (Object.hasOwn(summary, item.state)) summary[item.state] += 1;
     if (item.resolution) summary.resolved += 1;
+    if (item.reviewRequired && !item.resolution) summary.reviewPending += 1;
   }
   return Object.freeze(summary);
+}
+
+function requiresReview(item) {
+  return item.state === 'conflict' || (item.state === 'changed' && item.promoted);
 }
 
 export function buildFoundrySyncState(previousModel, nextModel, {
@@ -60,10 +65,12 @@ export function buildFoundrySyncState(previousModel, nextModel, {
       } else if (state === 'changed' && localChanged) {
         state = 'conflict';
         reason = 'SOURCE_AND_NATIVE_CHANGED';
+      } else if (state === 'changed') {
+        reason = 'SOURCE_CHANGED_NATIVE_REVIEW_REQUIRED';
       }
     }
 
-    items.push(Object.freeze({
+    const item = {
       sourceUuid,
       kind: after?.kind ?? before?.kind ?? null,
       name: after?.name ?? before?.name ?? sourceUuid,
@@ -78,19 +85,22 @@ export function buildFoundrySyncState(previousModel, nextModel, {
       nativeHash,
       localChanged,
       resolution: null
-    }));
+    };
+    items.push(Object.freeze({ ...item, reviewRequired: requiresReview(item) }));
   }
 
+  const unresolved = items.some((item) => item.reviewRequired && !item.resolution);
   return Object.freeze({
     schema: 'fenix.foundry-sync-state',
-    version: 1,
+    version: 2,
     generatedAt: clean(generatedAt, 100),
     sourceGeneratedAt: clean(nextModel?.bridgeSync?.source?.generatedAt ?? nextModel?.source?.generatedAt, 100) || null,
-    status: items.some((item) => item.state === 'conflict') ? 'review-required' : 'synchronized',
+    status: unresolved ? 'review-required' : 'synchronized',
     policy: Object.freeze({
       localEditsWinByDefault: true,
       sourceRemovalNeverDeletesNative: true,
-      explicitConflictResolutionRequired: true
+      explicitConflictResolutionRequired: true,
+      promotedSourceChangesRequireReview: true
     }),
     items: Object.freeze(items),
     summary: syncSummary(items)
@@ -103,13 +113,13 @@ export function markFoundrySyncResolutions(syncState, decisions = []) {
   const items = syncState.items.map((item) => {
     const decision = byUuid.get(item.sourceUuid);
     if (!decision) return item;
-    if (item.state !== 'conflict') throw new Error(`Entidade ${item.sourceUuid} não possui conflito pendente.`);
+    if (!item.reviewRequired && item.state !== 'conflict') throw new Error(`Entidade ${item.sourceUuid} não possui revisão de sync pendente.`);
     const action = clean(decision.action, 40);
     if (!['keep-local', 'accept-source', 'detach'].includes(action)) throw new Error(`Ação de resolução inválida para ${item.sourceUuid}.`);
     if (item.reason === 'SOURCE_REMOVED_NATIVE_PRESERVED' && action === 'accept-source') throw new Error('Fonte removida não pode apagar entidade nativa automaticamente.');
     return Object.freeze({ ...item, resolution: action });
   });
-  const unresolved = items.filter((item) => item.state === 'conflict' && !item.resolution).length;
+  const unresolved = items.filter((item) => item.reviewRequired && !item.resolution).length;
   return Object.freeze({
     ...syncState,
     status: unresolved ? 'review-required' : 'resolved',
