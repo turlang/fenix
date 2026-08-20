@@ -87,27 +87,17 @@ export class CampaignAdventureKnowledgeResolver {
     return candidates[0] ?? null;
   }
 
-  async resolveRoomEntry({ campaignId, sceneId, regionId = null, query = '', language = 'pt-BR', revealedSecretIds = [], revealedEntityUuids = [] } = {}) {
+  async resolveRoomEntry({ campaignId, sceneId, regionId = null, language = 'pt-BR', revealedSecretIds = [], revealedEntityUuids = [] } = {}) {
     if (!campaignId || !sceneId) return null;
     const found = await this.#findBound(campaignId, sceneId, regionId);
     if (!found) return null;
+    // Room entry must load the whole reviewed Area. Query filtering here could hide an NPC
+    // merely because the room name does not occur in the NPC description.
     const player = buildBoundAdventureKnowledgeContext(found.model, {
-      sceneId,
-      regionId,
-      query,
-      visibility: 'player',
-      language,
-      revealedSecretIds,
-      revealedEntityUuids
+      sceneId, regionId, query: '', visibility: 'player', language, revealedSecretIds, revealedEntityUuids
     });
     const gm = buildBoundAdventureKnowledgeContext(found.model, {
-      sceneId,
-      regionId,
-      query,
-      visibility: 'gm',
-      language,
-      revealedSecretIds,
-      revealedEntityUuids
+      sceneId, regionId, query: '', visibility: 'gm', language, revealedSecretIds, revealedEntityUuids
     });
     const readAloud = player?.chunks?.find((chunk) => chunk.type === 'read-aloud' && clean(chunk.text, 5000));
     return Object.freeze({
