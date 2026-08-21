@@ -54,6 +54,7 @@ export class AiInferenceGateway {
     if (!candidates.length) throw gatewayError('Nenhum provider compatível disponível.', 'FENIX_AI_PROVIDER_UNAVAILABLE');
 
     let lastError = null;
+    let lastProviderId = null;
     for (const provider of candidates) {
       try {
         if (typeof provider.health === 'function') {
@@ -70,6 +71,7 @@ export class AiInferenceGateway {
         });
       } catch (error) {
         lastError = error;
+        lastProviderId = provider.id;
         this.logger.warn?.('[Fênix][AI Gateway] provider falhou', {
           providerId: provider.id,
           locality: provider.locality,
@@ -78,7 +80,15 @@ export class AiInferenceGateway {
       }
     }
 
-    throw gatewayError('Todos os providers de IA disponíveis falharam.', 'FENIX_AI_ALL_PROVIDERS_FAILED', lastError);
+    const detail = text(lastError?.message, 220);
+    const providerLabel = text(lastProviderId, 120);
+    const suffix = detail
+      ? ` Último erro${providerLabel ? ` (${providerLabel})` : ''}: ${detail}`
+      : '';
+    const failure = gatewayError(`Todos os providers de IA disponíveis falharam.${suffix}`, 'FENIX_AI_ALL_PROVIDERS_FAILED', lastError);
+    failure.providerId = lastProviderId;
+    failure.providerCode = lastError?.code ?? null;
+    throw failure;
   }
 
   #candidates() {
