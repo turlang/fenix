@@ -27,7 +27,6 @@ export function isEditableKeyboardTarget(target) {
     || tagName === 'input'
     || tagName === 'textarea'
     || tagName === 'select'
-    || tagName === 'button'
   );
 }
 
