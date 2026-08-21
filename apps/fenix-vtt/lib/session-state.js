@@ -114,6 +114,12 @@ export function sessionReducer(state, action) {
         presence: Array.isArray(action.payload?.presence) ? action.payload.presence : state.presence,
         tokens: Array.isArray(action.payload?.tokens) ? action.payload.tokens : state.tokens
       };
+    case 'SCENE_TOKENS':
+      return {
+        ...state,
+        sceneId: action.sceneId ?? state.sceneId,
+        tokens: Array.isArray(action.tokens) ? action.tokens : []
+      };
     case 'REALTIME_PRESENCE':
       return {
         ...state,

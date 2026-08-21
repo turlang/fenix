@@ -15,9 +15,25 @@ export function movementDirectionForKey(key) {
   return DIRECTIONS[String(key ?? '').toLowerCase()] ?? null;
 }
 
-export function keyboardMovementStep(gridSize, { fullCell = false } = {}) {
+function normalizedFootprintCells(value) {
+  const cells = Number(value);
+  if (!Number.isFinite(cells) || cells <= 0) return 1;
+  // Pequeno ou maior sempre avança uma célula por comando.
+  // Footprints abaixo de 1 (ex.: Tiny/Miúdo = 0,5) mantêm passo proporcional.
+  return Math.min(1, Math.max(0.25, cells));
+}
+
+export function tokenKeyboardFootprintCells(token = {}) {
+  const width = Number(token?.footprint?.widthCells);
+  const height = Number(token?.footprint?.heightCells);
+  const candidates = [width, height].filter((value) => Number.isFinite(value) && value > 0);
+  if (!candidates.length) return 1;
+  return normalizedFootprintCells(Math.min(...candidates));
+}
+
+export function keyboardMovementStep(gridSize, { footprintCells = 1 } = {}) {
   const size = Math.max(8, Number(gridSize) || 70);
-  return Math.max(4, size * (fullCell ? 1 : 0.2));
+  return size * normalizedFootprintCells(footprintCells);
 }
 
 export function isEditableKeyboardTarget(target) {
@@ -27,14 +43,14 @@ export function isEditableKeyboardTarget(target) {
     || tagName === 'input'
     || tagName === 'textarea'
     || tagName === 'select'
-    || tagName === 'button'
   );
 }
 
-export function requestedTokenFromKeyboard(token, key, { gridSize = 70, fullCell = false } = {}) {
+export function requestedTokenFromKeyboard(token, key, { gridSize = 70, footprintCells = null } = {}) {
   const direction = movementDirectionForKey(key);
   if (!direction || !token) return null;
-  const step = keyboardMovementStep(gridSize, { fullCell });
+  const footprint = footprintCells == null ? tokenKeyboardFootprintCells(token) : footprintCells;
+  const step = keyboardMovementStep(gridSize, { footprintCells: footprint });
   return {
     ...token,
     x: Number(token.x) + direction.x * step,

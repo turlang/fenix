@@ -88,8 +88,13 @@
   border-color: rgba(113, 199, 149, .2);
 }
 
+.actor-catalog-row.placing .actor-card {
+  border-color: var(--line-strong);
+  background: var(--accent-soft);
+}
+
 .actor-scene-action {
-  min-width: 58px;
+  min-width: 78px;
   align-self: stretch;
 }
 
@@ -99,9 +104,26 @@
   background: rgba(113, 199, 149, .06);
 }
 
+.actor-scene-action.placing {
+  color: var(--accent);
+  border-color: var(--line-strong);
+  background: var(--accent-soft);
+}
+
 .actor-scene-action:disabled {
   cursor: default;
   opacity: .62;
+}
+
+.actor-control-badge {
+  width: fit-content;
+  margin-top: 3px;
+  padding: 2px 6px;
+  border: 1px solid rgba(113, 199, 149, .28);
+  border-radius: 999px;
+  background: rgba(113, 199, 149, .08);
+  color: var(--good) !important;
+  font-weight: 650;
 }
 
 .actor-catalog-empty {

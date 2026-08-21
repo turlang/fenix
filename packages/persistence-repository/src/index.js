@@ -1,9 +1,10 @@
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 
 const SCHEMA_VERSION = 1;
 const POSTGRES_ROW_ID = 1;
 const POSTGRES_SCHEMA_LOCK = 734611901;
+const TRANSIENT_FILE_REPLACE_CODES = new Set(['EPERM', 'EACCES', 'EBUSY']);
 
 function emptyState() {
   return {
@@ -52,6 +53,63 @@ function positiveInteger(value, fallback, { min = 1, max = 100 } = {}) {
   const parsed = Number.parseInt(String(value ?? ''), 10);
   if (!Number.isInteger(parsed) || parsed < min || parsed > max) return fallback;
   return parsed;
+}
+
+function wait(ms) {
+  return new Promise((resolveWait) => setTimeout(resolveWait, ms));
+}
+
+function isTransientFileReplaceError(error) {
+  return TRANSIENT_FILE_REPLACE_CODES.has(String(error?.code ?? '').toUpperCase());
+}
+
+export async function replaceJsonStateFile({
+  tempPath,
+  targetPath,
+  payload,
+  logger = console,
+  renameFile = rename,
+  writeTarget = writeFile,
+  removeTemp = unlink,
+  sleep = wait,
+  maxAttempts = 5
+} = {}) {
+  let lastError = null;
+  const attempts = Math.max(1, Number(maxAttempts) || 5);
+
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      await renameFile(tempPath, targetPath);
+      return { mode: 'rename', attempts: attempt + 1 };
+    } catch (error) {
+      if (!isTransientFileReplaceError(error)) throw error;
+      lastError = error;
+      if (attempt < attempts - 1) {
+        await sleep(Math.min(300, 25 * (2 ** attempt)));
+      }
+    }
+  }
+
+  logger?.warn?.('[Fênix][Persistence] rename temporariamente bloqueado; usando overwrite de compatibilidade', {
+    code: lastError?.code ?? null,
+    targetPath
+  });
+
+  try {
+    await writeTarget(targetPath, payload, { encoding: 'utf8', mode: 0o600 });
+  } catch (error) {
+    error.cause ??= lastError;
+    throw error;
+  }
+
+  await removeTemp(tempPath).catch((error) => {
+    if (error?.code === 'ENOENT') return;
+    logger?.warn?.('[Fênix][Persistence] estado foi salvo, mas o arquivo temporário não pôde ser removido', {
+      code: error?.code ?? null,
+      tempPath
+    });
+  });
+  return { mode: 'overwrite', attempts };
 }
 
 export class InMemoryFenixRepository {
@@ -141,7 +199,12 @@ export class JsonFileFenixRepository extends InMemoryFenixRepository {
     const tempPath = `${this.filePath}.${process.pid}.${Date.now()}.tmp`;
     const payload = `${JSON.stringify(state, null, 2)}\n`;
     await writeFile(tempPath, payload, { encoding: 'utf8', mode: 0o600 });
-    await rename(tempPath, this.filePath);
+    await replaceJsonStateFile({
+      tempPath,
+      targetPath: this.filePath,
+      payload,
+      logger: this.logger
+    });
   }
 }
 

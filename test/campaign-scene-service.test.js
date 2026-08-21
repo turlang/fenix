@@ -72,6 +72,9 @@ test('CampaignSceneService persiste asset, cria cena e ativa cena da campanha', 
   assert.equal(created.scene.grid.offsetX, 0);
   assert.equal(created.scene.grid.offsetY, 0);
   assert.equal(created.scene.grid.visible, true);
+  assert.equal(created.scene.grid.color, '#D9DEE4');
+  assert.equal(created.scene.grid.opacity, 0.55);
+  assert.equal(created.scene.grid.lineWidth, 1);
   assert.deepEqual(created.scene.walls, []);
 
   const catalog = service.list({ campaignId: campaign.id, userId: 'gm-1' });
@@ -121,7 +124,7 @@ test('CampaignSceneService importa mapa remoto como asset local sem persistir UR
   assert.equal(scene.scene.height, 1600);
 });
 
-test('CampaignSceneService persiste tamanho, offset e visibilidade da grade calibrada', async () => {
+test('CampaignSceneService persiste geometria e aparência da grade calibrada', async () => {
   const { repository, campaign, service } = await createServiceFixture('Calibração');
   const created = await createMapScene(service, campaign.id);
   const updated = await service.updateGrid({
@@ -131,7 +134,10 @@ test('CampaignSceneService persiste tamanho, offset e visibilidade da grade cali
     size: 72,
     offsetX: -13.5,
     offsetY: 22.25,
-    visible: false
+    visible: false,
+    color: '#5DADE8',
+    opacity: 0.65,
+    lineWidth: 1.5
   });
 
   assert.deepEqual(updated.scene.grid, {
@@ -139,7 +145,10 @@ test('CampaignSceneService persiste tamanho, offset e visibilidade da grade cali
     type: 'square',
     offsetX: -13.5,
     offsetY: 22.25,
-    visible: false
+    visible: false,
+    color: '#5DADE8',
+    opacity: 0.65,
+    lineWidth: 1.5
   });
   const persisted = repository.snapshot().campaigns.find((item) => item.id === campaign.id).scenes[0];
   assert.deepEqual(persisted.grid, updated.scene.grid);

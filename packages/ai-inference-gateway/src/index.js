@@ -9,6 +9,20 @@ function text(value, max = 300) {
   return String(value ?? '').trim().slice(0, max);
 }
 
+function retryAfterMs(value) {
+  const raw = String(value ?? '').trim();
+  if (!raw) return null;
+  const seconds = Number(raw);
+  if (Number.isFinite(seconds) && seconds >= 0) return Math.ceil(seconds * 1000);
+  const date = Date.parse(raw);
+  if (!Number.isNaN(date)) return Math.max(0, date - Date.now());
+  return null;
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, Math.max(0, Number(ms) || 0)));
+}
+
 export const AiLocality = Object.freeze({
   LOCAL: 'local',
   CLOUD: 'cloud'
@@ -54,6 +68,7 @@ export class AiInferenceGateway {
     if (!candidates.length) throw gatewayError('Nenhum provider compatível disponível.', 'FENIX_AI_PROVIDER_UNAVAILABLE');
 
     let lastError = null;
+    let lastProviderId = null;
     for (const provider of candidates) {
       try {
         if (typeof provider.health === 'function') {
@@ -70,15 +85,28 @@ export class AiInferenceGateway {
         });
       } catch (error) {
         lastError = error;
+        lastProviderId = provider.id;
         this.logger.warn?.('[Fênix][AI Gateway] provider falhou', {
           providerId: provider.id,
           locality: provider.locality,
+          statusCode: error?.statusCode ?? null,
+          retryAfter: error?.retryAfter ?? null,
           message: error?.message
         });
       }
     }
 
-    throw gatewayError('Todos os providers de IA disponíveis falharam.', 'FENIX_AI_ALL_PROVIDERS_FAILED', lastError);
+    const detail = text(lastError?.message, 220);
+    const providerLabel = text(lastProviderId, 120);
+    const suffix = detail
+      ? ` Último erro${providerLabel ? ` (${providerLabel})` : ''}: ${detail}`
+      : '';
+    const failure = gatewayError(`Todos os providers de IA disponíveis falharam.${suffix}`, 'FENIX_AI_ALL_PROVIDERS_FAILED', lastError);
+    failure.providerId = lastProviderId;
+    failure.providerCode = lastError?.code ?? null;
+    failure.statusCode = Number(lastError?.statusCode) || undefined;
+    failure.retryAfter = lastError?.retryAfter ?? null;
+    throw failure;
   }
 
   #candidates() {
@@ -98,13 +126,17 @@ export function createOpenAICompatibleTextProvider({
   timeoutMs = 60_000,
   maxTokenField = 'max_tokens',
   extraBody = {},
-  fetchImpl = globalThis.fetch
+  fetchImpl = globalThis.fetch,
+  rateLimitRetries = 1,
+  maxRateLimitWaitMs = 30_000
 } = {}) {
   if (!baseUrl) throw gatewayError('baseUrl é obrigatório.', 'FENIX_AI_BASE_URL_REQUIRED');
   if (!model) throw gatewayError('model é obrigatório.', 'FENIX_AI_MODEL_REQUIRED');
   if (typeof fetchImpl !== 'function') throw gatewayError('fetch indisponível.', 'FENIX_AI_FETCH_REQUIRED');
   const endpoint = `${String(baseUrl).replace(/\/$/, '')}/chat/completions`;
   const tokenField = ['max_tokens', 'max_completion_tokens'].includes(maxTokenField) ? maxTokenField : 'max_tokens';
+  const retryLimit = Math.max(0, Math.min(3, Math.trunc(Number(rateLimitRetries) || 0)));
+  const retryWaitLimit = Math.max(0, Number(maxRateLimitWaitMs) || 0);
 
   return Object.freeze({
     id: text(id, 120),
@@ -129,20 +161,40 @@ export function createOpenAICompatibleTextProvider({
           ...extraBody,
           [tokenField]: Math.max(1, Number(request.maxTokens) || 800)
         };
-        const response = await fetchImpl(endpoint, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {})
-          },
-          body: JSON.stringify(body),
-          signal: controller.signal
-        });
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok) throw gatewayError(payload?.error?.message || `Provider respondeu HTTP ${response.status}.`, 'FENIX_AI_PROVIDER_HTTP_ERROR');
-        const content = payload?.choices?.[0]?.message?.content;
-        if (!String(content ?? '').trim()) throw gatewayError('Resposta de IA vazia.', 'FENIX_AI_EMPTY_RESPONSE');
-        return String(content).trim();
+
+        let attempt = 0;
+        while (true) {
+          const response = await fetchImpl(endpoint, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {})
+            },
+            body: JSON.stringify(body),
+            signal: controller.signal
+          });
+          const payload = await response.json().catch(() => ({}));
+          if (!response.ok) {
+            const retryAfter = response.headers?.get?.('retry-after') ?? payload?.retryAfter ?? null;
+            const failure = gatewayError(
+              payload?.error?.message || `Provider respondeu HTTP ${response.status}.`,
+              response.status === 429 ? 'FENIX_AI_RATE_LIMIT' : 'FENIX_AI_PROVIDER_HTTP_ERROR'
+            );
+            failure.statusCode = Number(response.status) || 500;
+            failure.retryAfter = retryAfter;
+
+            const waitMs = retryAfterMs(retryAfter);
+            if (response.status === 429 && attempt < retryLimit && waitMs !== null && waitMs <= retryWaitLimit) {
+              attempt += 1;
+              await sleep(waitMs + 75);
+              continue;
+            }
+            throw failure;
+          }
+          const content = payload?.choices?.[0]?.message?.content;
+          if (!String(content ?? '').trim()) throw gatewayError('Resposta de IA vazia.', 'FENIX_AI_EMPTY_RESPONSE');
+          return String(content).trim();
+        }
       } catch (error) {
         if (error?.name === 'AbortError') throw gatewayError('Provider de IA excedeu o timeout.', 'FENIX_AI_TIMEOUT', error);
         throw error;

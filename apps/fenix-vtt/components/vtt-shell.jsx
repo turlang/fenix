@@ -45,6 +45,9 @@ export function VttShell({ onExitCampaign = null, onLogout = null }) {
   const [sceneUploadBusy, setSceneUploadBusy] = useState(false);
   const [sceneSource, setSceneSource] = useState('upload');
   const [sceneInspectorId, setSceneInspectorId] = useState(null);
+  const [requestedMapTool, setRequestedMapTool] = useState(null);
+  const [placementActorId, setPlacementActorId] = useState(null);
+  const [placementBusy, setPlacementBusy] = useState(false);
   const {
     state,
     campaign,
@@ -82,9 +85,21 @@ export function VttShell({ onExitCampaign = null, onLogout = null }) {
       ?? null,
     [actors, membership?.actorId, state.selectedActorId]
   );
+  const controlledActor = useMemo(
+    () => actors.find((actor) => actor.id === membership?.actorId) ?? null,
+    [actors, membership?.actorId]
+  );
+  const placementActor = useMemo(
+    () => actors.find((actor) => actor.id === placementActorId) ?? null,
+    [actors, placementActorId]
+  );
   const inviteActors = useMemo(
     () => actors.filter((actor) => actor.kind !== 'npc'),
     [actors]
+  );
+  const invitedActor = useMemo(
+    () => inviteActors.find((actor) => actor.id === inviteActorId) ?? null,
+    [inviteActorId, inviteActors]
   );
   const inspectedScene = useMemo(
     () => scenes.find((scene) => scene.id === sceneInspectorId) ?? null,
@@ -130,6 +145,13 @@ export function VttShell({ onExitCampaign = null, onLogout = null }) {
     setInviteActorId(inviteActors[0]?.id ?? null);
   }, [inviteActorId, inviteActors, isGm]);
 
+  useEffect(() => {
+    if (!placementActorId) return;
+    if (!isGm || !activeScene || !actors.some((actor) => actor.id === placementActorId)) {
+      setPlacementActorId(null);
+    }
+  }, [activeScene, actors, isGm, placementActorId]);
+
   function currentToken(actorId) {
     if (!actorId) return null;
     return state.tokens.find((token) => (token.actorId ?? token.id) === actorId)
@@ -157,9 +179,42 @@ export function VttShell({ onExitCampaign = null, onLogout = null }) {
     return moveToken(resolved.token, safeMetadata);
   }
 
+  function beginTokenPlacement(actorId) {
+    if (!isGm || !activeScene || state.busy) return;
+    const existing = currentToken(actorId);
+    if (existing) {
+      selectActor(actorId);
+      setPlacementActorId(null);
+      return;
+    }
+    selectActor(actorId);
+    setPlacementActorId(actorId);
+  }
+
+  async function placePreparedToken(point) {
+    if (!isGm || !placementActorId || placementBusy || !point) return false;
+    setPlacementBusy(true);
+    try {
+      const result = await placeActorToken(placementActorId);
+      const token = result?.token;
+      if (!token) return false;
+      const placed = {
+        ...token,
+        x: Number(point.x),
+        y: Number(point.y),
+        visible: true
+      };
+      await handleMapTokenMoved(placed);
+      setPlacementActorId(null);
+      return true;
+    } finally {
+      setPlacementBusy(false);
+    }
+  }
+
   useEffect(() => {
     function handleKeyboardMove(event) {
-      if (state.busy || event.ctrlKey || event.metaKey || event.altKey) return;
+      if (state.busy || placementActorId || event.ctrlKey || event.metaKey || event.altKey) return;
       if (isEditableKeyboardTarget(event.target)) return;
 
       const actorId = isGm ? state.selectedActorId : membership?.actorId;
@@ -186,6 +241,7 @@ export function VttShell({ onExitCampaign = null, onLogout = null }) {
     mapScene,
     membership?.actorId,
     moveToken,
+    placementActorId,
     state.busy,
     state.selectedActorId,
     state.tokens
@@ -311,9 +367,14 @@ export function VttShell({ onExitCampaign = null, onLogout = null }) {
             <div className="panel-heading scene-panel-heading">
               <div><span className="eyebrow">Navegação</span><h2>Cenas</h2></div>
               {isGm ? (
-                <button type="button" className="scene-add-button" onClick={() => setSceneManagerOpen((value) => !value)}>
-                  {sceneManagerOpen ? 'Fechar' : '+ Mapa'}
-                </button>
+                <div className="scene-panel-actions">
+                  {activeScene ? (
+                    <button type="button" className="scene-config-button" onClick={() => { setSceneManagerOpen(false); setSceneInspectorId(activeScene.id); }}>Configurar</button>
+                  ) : null}
+                  <button type="button" className="scene-add-button" onClick={() => setSceneManagerOpen((value) => !value)}>
+                    {sceneManagerOpen ? 'Fechar' : '+ Mapa'}
+                  </button>
+                </div>
               ) : null}
             </div>
 
@@ -349,6 +410,7 @@ export function VttShell({ onExitCampaign = null, onLogout = null }) {
                     disabled={!isGm || state.busy}
                     onClick={() => {
                       setSceneInspectorId(null);
+                      setPlacementActorId(null);
                       if (!active) void activateScene(scene.id);
                     }}
                     onContextMenu={(event) => handleSceneContextMenu(event, scene)}
@@ -377,7 +439,7 @@ export function VttShell({ onExitCampaign = null, onLogout = null }) {
               <span className="eyebrow">Identidade</span>
               <div className="identity-card">
                 <strong>{currentUser.displayName}</strong>
-                <small>{membership?.role === 'gm' ? 'Mestre da campanha' : `Jogador · ${membership?.actorId}`}</small>
+                <small>{membership?.role === 'gm' ? 'Mestre da campanha' : controlledActor ? `Jogador · controla ${controlledActor.name}` : 'Jogador · sem personagem associado'}</small>
               </div>
             </div>
 
@@ -391,6 +453,7 @@ export function VttShell({ onExitCampaign = null, onLogout = null }) {
                         <option key={actor.id} value={actor.id}>{actor.name}</option>
                       ))}
                     </select>
+                    {invitedActor ? <small className="invite-control-note">O jogador que usar este convite terá controle exclusivo do token de <strong>{invitedActor.name}</strong>.</small> : null}
                     <button type="button" className="ghost-button" disabled={!inviteActorId || state.busy} onClick={handleInvite}>Gerar e copiar convite</button>
                   </>
                 ) : <small>Crie um personagem no painel “Em cena” antes de gerar convites.</small>}
@@ -404,7 +467,7 @@ export function VttShell({ onExitCampaign = null, onLogout = null }) {
           <MapStage
             key={mapScene.id}
             scene={mapScene}
-            busy={state.busy}
+            busy={state.busy || placementBusy}
             authoritativeTokens={mapTokens}
             onTokenMoved={handleMapTokenMoved}
             onSelectedActor={selectActor}
@@ -414,7 +477,13 @@ export function VttShell({ onExitCampaign = null, onLogout = null }) {
             onFogChanged={updateSceneFog}
             canMoveAny={isGm}
             movableActorId={membership?.actorId ?? null}
+            controlledActorName={controlledActor?.name ?? null}
             visionActorId={state.selectedActorId}
+            placementActor={placementActor}
+            onPlaceActor={placePreparedToken}
+            onCancelPlacement={() => setPlacementActorId(null)}
+            requestedMapTool={requestedMapTool}
+            onRequestedMapToolConsumed={() => setRequestedMapTool(null)}
           />
           {isGm && inspectedScene ? (
             <SceneSettingsInspector
@@ -424,6 +493,10 @@ export function VttShell({ onExitCampaign = null, onLogout = null }) {
               onClose={() => setSceneInspectorId(null)}
               onActivate={handleActivateInspectedScene}
               onUpdateElevation={updateSceneElevation}
+              onOpenMapTool={(tool) => {
+                setSceneInspectorId(null);
+                setRequestedMapTool({ tool, nonce: Date.now() });
+              }}
             />
           ) : null}
         </section>
@@ -451,12 +524,13 @@ export function VttShell({ onExitCampaign = null, onLogout = null }) {
               tokens={state.tokens}
               selectedActorId={state.selectedActorId}
               membershipActorId={membership?.actorId ?? null}
+              placementActorId={placementActorId}
               isGm={isGm}
-              busy={state.busy}
+              busy={state.busy || placementBusy}
               hasActiveScene={Boolean(activeScene)}
               onSelect={selectActor}
               onCreate={createActor}
-              onPlace={placeActorToken}
+              onPlace={beginTokenPlacement}
             />
 
             <div className="ai-card">

@@ -26,13 +26,27 @@ function sceneFor(campaign, sceneId) {
     .find((scene) => scene.id === String(sceneId)) ?? null;
 }
 
-function publicToken(stored) {
+function footprintValue(value, fallback = 1) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : fallback;
+}
+
+function actorFootprint(actor, stored = null) {
+  const source = actor?.sheet?.footprint ?? stored?.footprint ?? {};
+  return Object.freeze({
+    widthCells: footprintValue(source.widthCells, 1),
+    heightCells: footprintValue(source.heightCells, 1)
+  });
+}
+
+function publicToken(stored, actor = null) {
   const token = normalizeTokenRuntime(stored);
   return Object.freeze({
     ...token,
     sceneId: stored.sceneId ?? null,
     size: Number(stored.size) > 0 ? Number(stored.size) : 80,
     height: Number(stored.height) > 0 ? Number(stored.height) : undefined,
+    footprint: actorFootprint(actor, stored),
     movementMode: stored.movementMode ?? 'ground',
     createdAt: stored.createdAt ?? null,
     updatedAt: stored.updatedAt ?? null
@@ -52,7 +66,7 @@ export class CampaignTokenService {
     const { campaign, membership } = this.campaignService.requireRole(campaignId, userId);
     const scene = sceneFor(campaign, sceneId);
     if (!scene) throw tokenError('Cena não encontrada.', 'CAMPAIGN_SCENE_NOT_FOUND', 404);
-    const tokens = ensureSceneTokens(scene).map(publicToken);
+    const tokens = ensureSceneTokens(scene).map((stored) => publicToken(stored, actorFor(campaign, stored.actorId)));
     if (membership.role === 'gm') return tokens;
     return tokens.filter((token) => {
       if (token.actorId === membership.actorId) return true;
@@ -65,7 +79,7 @@ export class CampaignTokenService {
     if (!campaign) throw tokenError('Campanha não encontrada.', 'CAMPAIGN_NOT_FOUND', 404);
     const scene = sceneFor(campaign, sceneId);
     if (!scene) throw tokenError('Cena não encontrada.', 'CAMPAIGN_SCENE_NOT_FOUND', 404);
-    return ensureSceneTokens(scene).map(publicToken);
+    return ensureSceneTokens(scene).map((stored) => publicToken(stored, actorFor(campaign, stored.actorId)));
   }
 
   async upsert({ campaignId, userId, sceneId, token } = {}) {
@@ -104,6 +118,7 @@ export class CampaignTokenService {
       sceneId: scene.id,
       size: Number(token?.size) > 0 ? Number(token.size) : (Number(existing?.size) > 0 ? Number(existing.size) : 80),
       height: Number(token?.height) > 0 ? Number(token.height) : existing?.height,
+      footprint: structuredClone(actorFootprint(actor, existing)),
       movementMode: text(token?.movementMode ?? existing?.movementMode, 40) || 'ground',
       createdAt: existing?.createdAt ?? now,
       updatedAt: now
@@ -127,6 +142,6 @@ export class CampaignTokenService {
       storedCampaign.updatedAt = now;
     });
     this.campaignService.refreshFromRepository();
-    return publicToken(stored);
+    return publicToken(stored, actor);
   }
 }

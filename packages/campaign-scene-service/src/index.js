@@ -32,13 +32,27 @@ function coordinate(value, fallback = 0, { min = -20000, max = 20000 } = {}) {
   return Math.min(max, Math.max(min, Math.round(number * 100) / 100));
 }
 
+function decimal(value, fallback, { min = 0, max = 1 } = {}) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  return Math.min(max, Math.max(min, Math.round(number * 100) / 100));
+}
+
+function gridColor(value, fallback = '#D9DEE4') {
+  const candidate = String(value ?? '').trim().toUpperCase();
+  return /^#[0-9A-F]{6}$/.test(candidate) ? candidate : fallback;
+}
+
 function normalizeGrid(grid = {}) {
   return {
-    size: dimension(grid.size, 70, { min: 8, max: 500 }),
+    size: decimal(grid.size, 70, { min: 8, max: 500 }),
     type: 'square',
     offsetX: coordinate(grid.offsetX, 0),
     offsetY: coordinate(grid.offsetY, 0),
-    visible: grid.visible !== false
+    visible: grid.visible !== false,
+    color: gridColor(grid.color),
+    opacity: decimal(grid.opacity, 0.55, { min: 0.05, max: 1 }),
+    lineWidth: decimal(grid.lineWidth, 1, { min: 0.5, max: 4 })
   };
 }
 
@@ -268,7 +282,7 @@ export class CampaignSceneService {
     return { scene: publicScene(scene, campaign.assets, membership), activeSceneId: campaign.activeSceneId };
   }
 
-  async updateGrid({ campaignId, userId, sceneId, size, offsetX, offsetY, visible } = {}) {
+  async updateGrid({ campaignId, userId, sceneId, size, offsetX, offsetY, visible, color, opacity, lineWidth } = {}) {
     const { campaign, membership } = this.campaignService.requireRole(campaignId, userId, 'gm');
     ensureCollections(campaign);
     const scene = campaign.scenes.find((item) => item.id === String(sceneId));
@@ -279,7 +293,10 @@ export class CampaignSceneService {
       size: size ?? scene.grid?.size,
       offsetX: offsetX ?? scene.grid?.offsetX,
       offsetY: offsetY ?? scene.grid?.offsetY,
-      visible: visible ?? scene.grid?.visible
+      visible: visible ?? scene.grid?.visible,
+      color: color ?? scene.grid?.color,
+      opacity: opacity ?? scene.grid?.opacity,
+      lineWidth: lineWidth ?? scene.grid?.lineWidth
     });
     const gridGeometryChanged = previousGrid.size !== nextGrid.size
       || previousGrid.offsetX !== nextGrid.offsetX

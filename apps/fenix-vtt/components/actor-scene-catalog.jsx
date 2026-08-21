@@ -32,6 +32,7 @@ export function ActorSceneCatalog({
   tokens = [],
   selectedActorId = null,
   membershipActorId = null,
+  placementActorId = null,
   isGm = false,
   busy = false,
   hasActiveScene = false,
@@ -79,7 +80,7 @@ export function ActorSceneCatalog({
       await onPlace?.(actorId);
       onSelect?.(actorId);
     } catch (error) {
-      setStatus(error?.message ?? 'Não foi possível colocar o token na cena.');
+      setStatus(error?.message ?? 'Não foi possível preparar o token para a cena.');
     } finally {
       setPlacingActorId(null);
     }
@@ -109,12 +110,14 @@ export function ActorSceneCatalog({
         {visibleActors.length ? visibleActors.map((actor) => {
           const token = actorToken(tokens, actor.id);
           const selectable = isGm || actor.id === membershipActorId;
+          const controlledByMe = !isGm && actor.id === membershipActorId;
+          const placing = placementActorId === actor.id;
           const walk = actor?.resolved?.movement?.speeds?.walk ?? actor?.sheet?.movement?.speeds?.walk;
           const senseName = actor?.resolved?.vision?.preferredSense ?? actor?.sheet?.vision?.preferredSense ?? 'normal';
           const sense = actor?.resolved?.vision?.senses?.[senseName] ?? actor?.sheet?.vision?.senses?.[senseName];
           const hp = hpLabel(actor);
           return (
-            <div className={`actor-catalog-row ${token ? 'in-scene' : ''}`} key={actor.id}>
+            <div className={`actor-catalog-row ${token ? 'in-scene' : ''} ${placing ? 'placing' : ''}`} key={actor.id}>
               <button
                 type="button"
                 className={`actor-card ${selectedActorId === actor.id ? 'selected' : ''}`}
@@ -125,18 +128,19 @@ export function ActorSceneCatalog({
                 <div className="actor-copy">
                   <strong>{actor.name || actor.id}</strong>
                   <small>{roleLabel(actor)} · mov. {distanceLabel(walk)} · visão {distanceLabel(sense)}</small>
+                  {controlledByMe ? <small className="actor-control-badge">Você controla este token</small> : null}
                 </div>
-                <span className="actor-hp">{hp ?? (token ? 'Na cena' : 'Fora')}</span>
+                <span className="actor-hp">{hp ?? (placing ? 'Posicione' : token ? 'Na cena' : 'Fora')}</span>
               </button>
               {isGm ? (
                 <button
                   type="button"
-                  className={`actor-scene-action ${token ? 'present' : ''}`}
+                  className={`actor-scene-action ${token ? 'present' : ''} ${placing ? 'placing' : ''}`}
                   disabled={Boolean(token) || busy || !hasActiveScene || placingActorId === actor.id}
                   onClick={() => handlePlace(actor.id)}
-                  title={!hasActiveScene ? 'Crie ou ative um mapa antes de colocar tokens.' : token ? 'Token já associado a este ator.' : 'Criar token e associar à ficha deste ator.'}
+                  title={!hasActiveScene ? 'Crie ou ative um mapa antes de colocar tokens.' : token ? 'Token já associado a este ator.' : 'Preparar token e escolher a posição diretamente no mapa.'}
                 >
-                  {placingActorId === actor.id ? 'Colocando…' : token ? 'Na cena' : 'Colocar'}
+                  {placingActorId === actor.id ? 'Preparando…' : placing ? 'Clique no mapa' : token ? 'Na cena' : 'Colocar token'}
                 </button>
               ) : null}
             </div>

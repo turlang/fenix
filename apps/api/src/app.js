@@ -8,6 +8,7 @@ import { registerAuthRoutes } from './http/register-auth-routes.js';
 import { registerCampaignRoutes } from './http/register-campaign-routes.js';
 import { registerSceneRoutes } from './http/register-scene-routes.js';
 import { registerActorRoutes } from './http/register-actor-routes.js';
+import { registerTokenRoutes } from './http/register-token-routes.js';
 import { registerItemRoutes } from './http/register-item-routes.js';
 import { registerRollTableRoutes } from './http/register-roll-table-routes.js';
 import { registerRenderRoutes } from './http/register-render-routes.js';
@@ -25,6 +26,7 @@ export async function createApiApp({
   campaignService = null,
   sceneService = null,
   actorService = null,
+  tokenService = null,
   itemService = null,
   rollTableService = null,
   contentImportService = null,
@@ -76,6 +78,7 @@ export async function createApiApp({
     realtime: realtimeGateway ? 'websocket' : 'disabled',
     sceneManager: sceneService ? 'enabled' : 'disabled',
     actorSheets: actorService ? 'enabled' : 'disabled',
+    sceneTokens: tokenService ? 'persistent' : 'disabled',
     itemCatalog: itemService ? 'enabled' : 'disabled',
     rollTableCatalog: rollTableService ? 'enabled' : 'disabled',
     contentImporter: contentImportService ? (contentImportService.store?.driver ?? 'enabled') : 'disabled',
@@ -123,6 +126,7 @@ export async function createApiApp({
     registerCampaignRoutes(app, { authService, campaignService, config });
     if (sceneService) registerSceneRoutes(app, { authService, sceneService });
     if (actorService) registerActorRoutes(app, { authService, actorService });
+    if (tokenService) registerTokenRoutes(app, { authService, tokenService });
     if (itemService) registerItemRoutes(app, { authService, itemService });
     if (rollTableService) registerRollTableRoutes(app, { authService, rollTableService });
     if (contentImportService) registerContentRoutes(app, { authService, contentImportService, sceneService });

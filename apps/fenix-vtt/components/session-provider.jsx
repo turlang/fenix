@@ -313,6 +313,21 @@ export function FenixSessionProvider({ children, campaign, currentUser }) {
     }
   }, [actorCatalog, isGm, membership?.actorId, state.selectedActorId]);
 
+  useEffect(() => {
+    const sceneId = activeScene?.id ?? null;
+    if (!sceneId || state.realtime === 'connected') return undefined;
+    let active = true;
+    void client.listSceneTokens(campaign.id, sceneId)
+      .then((result) => {
+        if (!active) return;
+        dispatch({ type: 'SCENE_TOKENS', sceneId, tokens: Array.isArray(result?.tokens) ? result.tokens : [] });
+      })
+      .catch((error) => {
+        if (active) dispatch({ type: 'CONNECTION_ERROR', disconnected: false, error: errorMessage(error) });
+      });
+    return () => { active = false; };
+  }, [activeScene?.id, campaign.id, client, state.realtime]);
+
   const ensureSession = useCallback(async () => {
     const status = await client.status(campaign.id);
     if (status.state === 'COLLECTING_ACTIONS') {
@@ -419,8 +434,9 @@ export function FenixSessionProvider({ children, campaign, currentUser }) {
     const tokenActorId = token?.actorId ?? token?.id;
     if (!isGm && membership?.actorId && tokenActorId !== membership.actorId) return false;
     const normalizedToken = { ...token };
-    dispatch({ type: 'REALTIME_TOKEN', token: normalizedToken, revision: state.revision });
+
     if (realtimeRef.current?.connected) {
+      dispatch({ type: 'REALTIME_TOKEN', token: normalizedToken, revision: state.revision });
       if (roomEntry) dispatch({ type: 'REQUEST_BEGIN' });
       try {
         realtimeRef.current.moveToken(normalizedToken, { roomEntry, roomId });
@@ -430,9 +446,21 @@ export function FenixSessionProvider({ children, campaign, currentUser }) {
         dispatch({ type: 'REALTIME_CONNECTION', status: 'degraded', error: errorMessage(error) });
       }
     }
+
+    if (isGm && activeScene?.id) {
+      try {
+        const persisted = await client.upsertSceneToken(campaign.id, activeScene.id, normalizedToken);
+        dispatch({ type: 'REALTIME_TOKEN', token: persisted.token ?? normalizedToken, revision: state.revision });
+        return true;
+      } catch (error) {
+        dispatch({ type: 'CONNECTION_ERROR', disconnected: false, error: errorMessage(error) });
+        throw error;
+      }
+    }
+
     if (roomEntry) await enterRoom(roomEntry);
     return false;
-  }, [enterRoom, isGm, membership?.actorId, state.revision]);
+  }, [activeScene?.id, campaign.id, client, enterRoom, isGm, membership?.actorId, state.revision]);
 
   const endSession = useCallback(async () => {
     if (!isGm) return null;
@@ -500,9 +528,6 @@ export function FenixSessionProvider({ children, campaign, currentUser }) {
 
     dispatch({ type: 'REQUEST_BEGIN' });
     try {
-      await ensureSession();
-      const realtime = realtimeRef.current;
-      if (!realtime?.connected) throw new Error('Canal realtime indisponível para colocar o token.');
       const start = tokenStartForScene(activeScene, state.tokens.length);
       const token = {
         id: `token-${actor.id}`,
@@ -519,17 +544,24 @@ export function FenixSessionProvider({ children, campaign, currentUser }) {
         size: start.size,
         visible: true
       };
-      realtime.moveToken(token, { roomId: null });
-      dispatch({ type: 'REALTIME_TOKEN', token, revision: state.revision });
+
+      let storedToken = token;
+      if (realtimeRef.current?.connected) {
+        realtimeRef.current.moveToken(token, { roomId: null });
+      } else {
+        const persisted = await client.upsertSceneToken(campaign.id, activeScene.id, token);
+        storedToken = persisted.token ?? token;
+      }
+      dispatch({ type: 'REALTIME_TOKEN', token: storedToken, revision: state.revision });
       dispatch({ type: 'SELECT_ACTOR', actorId: actor.id });
-      return { actor, token, existing: false };
+      return { actor, token: storedToken, existing: false };
     } catch (error) {
       dispatch({ type: 'CONNECTION_ERROR', disconnected: error?.code === 'FENIX_API_UNREACHABLE', error: errorMessage(error) });
       throw error;
     } finally {
       dispatch({ type: 'REQUEST_END' });
     }
-  }, [activeScene, actorCatalog, ensureSession, isGm, refreshActors, state.revision, state.tokens]);
+  }, [activeScene, actorCatalog, campaign.id, client, isGm, refreshActors, state.revision, state.tokens]);
 
   const createMapScene = useCallback(async ({ file, name, description, width, height, gridSize }) => {
     if (!isGm) throw new Error('Somente o mestre pode criar cenas.');

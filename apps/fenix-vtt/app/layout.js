@@ -3,6 +3,7 @@ import './live-bridge.css';
 import './realtime.css';
 import './scene-manager.css';
 import './wall-authoring.css';
+import './grid-authoring-v2.css';
 import './fog-of-war.css';
 import './dynamic-lighting.css';
 import './vtt-workspace-layout.css';
