@@ -21,9 +21,19 @@ function ensureActors(campaign) {
   return campaign.actors;
 }
 
+function normalizeFootprint(input = {}) {
+  const widthCells = Number(input.widthCells);
+  const heightCells = Number(input.heightCells);
+  return Object.freeze({
+    widthCells: Number.isFinite(widthCells) && widthCells > 0 ? widthCells : 1,
+    heightCells: Number.isFinite(heightCells) && heightCells > 0 ? heightCells : 1
+  });
+}
+
 function normalizeSheet(input = {}) {
   return Object.freeze({
     height: Number.isFinite(Number(input.height)) && Number(input.height) > 0 ? Number(input.height) : 1.8,
+    footprint: normalizeFootprint(input.footprint ?? {}),
     movement: normalizeMovementProfile(input.movement ?? {}),
     vision: normalizeVisionProfile(input.vision ?? {}),
     attributes: Object.freeze({ ...(input.attributes ?? {}) }),
@@ -174,6 +184,7 @@ export class CampaignActorService {
       image: null,
       sheet: structuredClone(normalizeSheet({
         height: 1.8,
+        footprint: { widthCells: 1, heightCells: 1 },
         movement: { unit: 'm', speeds: { walk: 9 }, defaultMode: 'walk' },
         vision: { unit: 'm', eyeHeight: 1.6, senses: { normal: 12 } }
       })),
