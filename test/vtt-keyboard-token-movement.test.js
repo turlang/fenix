@@ -4,7 +4,8 @@ import {
   isEditableKeyboardTarget,
   keyboardMovementStep,
   movementDirectionForKey,
-  requestedTokenFromKeyboard
+  requestedTokenFromKeyboard,
+  tokenKeyboardFootprintCells
 } from '../apps/fenix-vtt/lib/token-input-movement.js';
 
 test('WASD e setas resolvem direções de movimento', () => {
@@ -22,19 +23,32 @@ test('botão não bloqueia atalhos de movimento, mas campos editáveis bloqueiam
   assert.equal(isEditableKeyboardTarget({ tagName: 'DIV', isContentEditable: true }), true);
 });
 
-test('movimento normal usa passo curto e Shift usa uma célula inteira', () => {
-  assert.equal(keyboardMovementStep(70), 14);
-  assert.equal(keyboardMovementStep(70, { fullCell: true }), 70);
+test('Pequeno ou maior move exatamente uma célula por tecla', () => {
+  assert.equal(keyboardMovementStep(70), 70);
+  assert.equal(keyboardMovementStep(70, { footprintCells: 1 }), 70);
+  assert.equal(keyboardMovementStep(70, { footprintCells: 2 }), 70);
 
-  const token = { id: 'token-a', actorId: 'actor-a', x: 100, y: 100, size: 56 };
+  const token = {
+    id: 'token-a', actorId: 'actor-a', x: 100, y: 100, size: 56,
+    footprint: { widthCells: 1, heightCells: 1 }
+  };
   assert.deepEqual(requestedTokenFromKeyboard(token, 'd', { gridSize: 70 }), {
     ...token,
-    x: 114,
+    x: 170,
     y: 100
   });
-  assert.deepEqual(requestedTokenFromKeyboard(token, 'ArrowUp', { gridSize: 70, fullCell: true }), {
-    ...token,
+});
+
+test('criatura abaixo de Pequeno usa passo proporcional ao footprint', () => {
+  const tiny = {
+    id: 'token-tiny', actorId: 'actor-tiny', x: 100, y: 100, size: 35,
+    footprint: { widthCells: 0.5, heightCells: 0.5 }
+  };
+  assert.equal(tokenKeyboardFootprintCells(tiny), 0.5);
+  assert.equal(keyboardMovementStep(70, { footprintCells: 0.5 }), 35);
+  assert.deepEqual(requestedTokenFromKeyboard(tiny, 'ArrowUp', { gridSize: 70 }), {
+    ...tiny,
     x: 100,
-    y: 30
+    y: 65
   });
 });
