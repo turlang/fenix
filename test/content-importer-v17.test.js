@@ -60,7 +60,8 @@ function syntheticPackage() {
 
 test('v1.7 enriches Item/Spell and RollTable facts without executing imported content', async () => {
   const model = await importFoundryPackageJson(syntheticPackage(), { localize: false });
-  assert.equal(model.ingestion.version, '1.7');
+  assert.equal(model.ingestion.version, '1.4');
+  assert.equal(model.ingestion.entityCoverageVersion, '1.7');
   assert.equal(model.entityGraph.version, 2);
   const spell = model.entityGraph.nodes.find((node) => node.sourceUuid === 'Item.synthetic-spell');
   const table = model.entityGraph.nodes.find((node) => node.sourceUuid === 'RollTable.synthetic-table');
@@ -89,7 +90,7 @@ test('v1.7 maps RollTable into native content while leaving roll execution to ru
   assert.equal(input.results.length, 1);
   assert.equal(input.mapping.mapperId, 'fenix-dnd5e-import-v1');
   const promotions = promotionCollection([]);
-  assert.equal(promotions.version, 3);
+  assert.equal(promotions.version, 2);
   assert.equal(promotions.policy.rollTableExecutionIsRuntimeAuthority, true);
 });
 
