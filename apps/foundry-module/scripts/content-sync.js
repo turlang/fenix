@@ -40,7 +40,7 @@ function documentCapability(type) {
   return Boolean(globalThis.CONFIG?.[type]?.documentClass || globalThis.foundry?.documents?.[type]);
 }
 
-function liveCompatibilityEvidence({ generatedAt, resolvedTypes = [] } = {}) {
+function liveCompatibilityEvidence({ generatedAt, resolvedTypes = [], journalHasPages = false } = {}) {
   const coreVersion = clean(globalThis.game?.version ?? globalThis.game?.release?.version, 100) || null;
   const systemId = clean(globalThis.game?.system?.id, 200) || null;
   const systemVersion = clean(globalThis.game?.system?.version, 100) || null;
@@ -54,8 +54,8 @@ function liveCompatibilityEvidence({ generatedAt, resolvedTypes = [] } = {}) {
     systemVersion,
     capabilities: Object.freeze({
       fromUuid: true,
-      journalEntry: documentCapability('JournalEntry') || true,
-      journalEntryPage: documentCapability('JournalEntryPage') || true,
+      journalEntry: true,
+      journalEntryPage: documentCapability('JournalEntryPage') || journalHasPages === true,
       actor: documentCapability('Actor') || resolved.has('Actor'),
       item: documentCapability('Item') || resolved.has('Item'),
       rollTable: documentCapability('RollTable') || resolved.has('RollTable')
@@ -137,7 +137,7 @@ export async function resolveFoundryContentPackage({
       coreVersion: clean(globalThis.game?.version ?? globalThis.game?.release?.version, 100) || null,
       generatedAt
     }),
-    compatibility: liveCompatibilityEvidence({ generatedAt, resolvedTypes }),
+    compatibility: liveCompatibilityEvidence({ generatedAt, resolvedTypes, journalHasPages: Array.isArray(journal.pages) }),
     rootUuid: root,
     journal,
     entities: Object.freeze(entities),
