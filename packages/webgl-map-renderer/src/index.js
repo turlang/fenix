@@ -56,6 +56,18 @@ function createProgram(gl) {
   return program;
 }
 
+function tokenMetadata(token = {}) {
+  return Object.freeze({
+    tokenId: token.tokenId ?? token.id ?? null,
+    actorId: token.actorId ?? null,
+    sheetId: token.sheetId ?? null,
+    systemId: token.systemId ?? null,
+    kind: token.kind ?? null,
+    image: token.image ?? null,
+    elevation: token.elevation ?? 0
+  });
+}
+
 export function detectBrowserRendererBackend({ navigatorLike = globalThis.navigator, canvas = null } = {}) {
   if (navigatorLike?.gpu) return MapRendererBackend.WEBGPU;
   const hasWebGl2 = Boolean(canvas?.getContext?.('webgl2'));
@@ -75,6 +87,7 @@ export class WebGlMapRenderer {
     this.scene = null;
     this.viewport = normalizeViewport();
     this.tokens = new Map();
+    this.tokenMetadata = new Map();
     this.fog = null;
     this.lighting = null;
     this.grid = null;
@@ -93,6 +106,7 @@ export class WebGlMapRenderer {
     this.#assertAlive();
     this.scene = normalizeMapScene(scene);
     this.tokens.clear();
+    this.tokenMetadata.clear();
     this.grid = this.scene.grid;
     return this.scene;
   }
@@ -107,12 +121,15 @@ export class WebGlMapRenderer {
     this.#assertAlive();
     const normalized = normalizeToken(token);
     this.tokens.set(normalized.id, normalized);
+    this.tokenMetadata.set(normalized.id, tokenMetadata(token));
     return normalized;
   }
 
   removeToken(tokenId) {
     this.#assertAlive();
-    return this.tokens.delete(String(tokenId));
+    const id = String(tokenId);
+    this.tokenMetadata.delete(id);
+    return this.tokens.delete(id);
   }
 
   setFog(fogState) {
@@ -138,11 +155,14 @@ export class WebGlMapRenderer {
     const worldX = screenX / this.viewport.zoom + this.viewport.x;
     const worldY = screenY / this.viewport.zoom + this.viewport.y;
     const tokens = [...this.tokens.values()].reverse();
-    const token = tokens.find((item) => {
+    const normalizedToken = tokens.find((item) => {
       const radius = item.size / 2;
       return item.visible && worldX >= item.x - radius && worldX <= item.x + radius
         && worldY >= item.y - radius && worldY <= item.y + radius;
     }) ?? null;
+    const token = normalizedToken
+      ? Object.freeze({ ...(this.tokenMetadata.get(normalizedToken.id) ?? {}), ...normalizedToken })
+      : null;
     return { world: { x: worldX, y: worldY }, token };
   }
 
@@ -191,6 +211,7 @@ export class WebGlMapRenderer {
     this.gl.deleteBuffer(this.buffer);
     this.gl.deleteProgram(this.program);
     this.tokens.clear();
+    this.tokenMetadata.clear();
     this.destroyed = true;
   }
 
