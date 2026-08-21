@@ -152,7 +152,16 @@ try {
   assert.equal(createdScene.statusCode, 200);
   const scene = createdScene.json().scene;
   assert.equal(scene.backgroundAssetId, asset.id);
-  assert.deepEqual(scene.grid, { size: 70, type: 'square', offsetX: 0, offsetY: 0, visible: true });
+  assert.deepEqual(scene.grid, {
+    size: 70,
+    type: 'square',
+    offsetX: 0,
+    offsetY: 0,
+    visible: true,
+    color: '#D9DEE4',
+    opacity: 0.55,
+    lineWidth: 1
+  });
   assert.deepEqual(scene.walls, []);
 
   const remoteScene = await app.inject({
@@ -174,7 +183,15 @@ try {
     method: 'POST',
     url: `/v1/campaigns/${campaign.id}/scenes/${scene.id}/grid`,
     headers: { cookie: gmCookie },
-    payload: { size: 68, offsetX: 14, offsetY: -9, visible: true }
+    payload: {
+      size: 68,
+      offsetX: 14,
+      offsetY: -9,
+      visible: true,
+      color: '#5DADE8',
+      opacity: 0.65,
+      lineWidth: 1.5
+    }
   });
   assert.equal(calibratedGrid.statusCode, 200);
   assert.deepEqual(calibratedGrid.json().scene.grid, {
@@ -182,7 +199,10 @@ try {
     type: 'square',
     offsetX: 14,
     offsetY: -9,
-    visible: true
+    visible: true,
+    color: '#5DADE8',
+    opacity: 0.65,
+    lineWidth: 1.5
   });
 
   const authoredWalls = await app.inject({
@@ -227,6 +247,9 @@ try {
   assert.equal(sceneCatalog.json().scenes.length, 2);
   assert.equal(sceneCatalog.json().scenes[0].name, 'Templo em Ruínas');
   assert.equal(sceneCatalog.json().scenes[0].grid.offsetX, 14);
+  assert.equal(sceneCatalog.json().scenes[0].grid.color, '#5DADE8');
+  assert.equal(sceneCatalog.json().scenes[0].grid.opacity, 0.65);
+  assert.equal(sceneCatalog.json().scenes[0].grid.lineWidth, 1.5);
   assert.equal(sceneCatalog.json().scenes[0].walls.length, 2);
   assert.equal(sceneCatalog.json().activeSceneId, scene.id);
 
@@ -264,6 +287,7 @@ try {
   assert.equal(playerSceneCatalog.statusCode, 200);
   assert.equal(playerSceneCatalog.json().scenes.length, 2);
   assert.equal(playerSceneCatalog.json().scenes[0].walls.length, 2);
+  assert.equal(playerSceneCatalog.json().scenes[0].grid.color, '#5DADE8');
 
   const playerMapUpload = await app.inject({
     method: 'POST',
@@ -289,7 +313,7 @@ try {
     method: 'POST',
     url: `/v1/campaigns/${campaign.id}/scenes/${scene.id}/grid`,
     headers: { cookie: playerCookie },
-    payload: { size: 10, offsetX: 999, offsetY: 999, visible: false }
+    payload: { size: 10, offsetX: 999, offsetY: 999, visible: false, color: '#FFFFFF' }
   });
   assert.equal(playerGridChange.statusCode, 403);
 
@@ -338,7 +362,7 @@ try {
   assert.equal(playerStart.statusCode, 403);
   assert.equal(sessionStartCalls, 0);
 
-  console.log('Auth + campaign + scene + grid + walls + remote map HTTP integration OK');
+  console.log('Auth + campaign + scene + Grid 2.0 + walls + remote map HTTP integration OK');
 } finally {
   await app.close();
   await rm(assetRoot, { recursive: true, force: true });
