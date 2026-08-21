@@ -63,7 +63,15 @@ function visionFromFacts(facts = {}, unit = 'ft') {
   return Object.keys(senses).length ? Object.freeze({ unit, senses: Object.freeze(senses) }) : Object.freeze({});
 }
 
-export function createSystemNativeMappingAdapter({ id, targetSystemId = 'generic', sourceSystems = ['*'], mapActor, mapItem } = {}) {
+function normalizeRollTableData(facts = {}) {
+  return Object.freeze({
+    formula: clean(facts.formula, 120) || null,
+    replacement: facts.replacement !== false,
+    results: Object.freeze((Array.isArray(facts.results) ? facts.results : []).slice(0, 1000).map((entry) => Object.freeze({ ...clone(entry, {}) })))
+  });
+}
+
+export function createSystemNativeMappingAdapter({ id, targetSystemId = 'generic', sourceSystems = ['*'], mapActor, mapItem, mapRollTable = null } = {}) {
   const mapperId = clean(id, 120);
   if (!mapperId) throw new TypeError('id do mapper é obrigatório.');
   if (typeof mapActor !== 'function' || typeof mapItem !== 'function') throw new TypeError('mapActor e mapItem são obrigatórios.');
@@ -75,7 +83,8 @@ export function createSystemNativeMappingAdapter({ id, targetSystemId = 'generic
       return acceptedSources.has('*') || acceptedSources.has(clean(sourceSystemId, 120));
     },
     mapActor(input) { return mapActor(input); },
-    mapItem(input) { return mapItem(input); }
+    mapItem(input) { return mapItem(input); },
+    mapRollTable: typeof mapRollTable === 'function' ? (input) => mapRollTable(input) : null
   });
 }
 
@@ -113,6 +122,17 @@ export const genericSystemNativeMapper = createSystemNativeMappingAdapter({
         mappedFields: ['text', 'facts']
       })
     });
+  },
+  mapRollTable({ node, targetSystemId = 'generic', sourceSystemId = 'unknown' } = {}) {
+    const data = normalizeRollTableData(node?.facts ?? {});
+    return Object.freeze({
+      data,
+      mapping: mappingEvidence({
+        mapperId: 'fenix-generic-import-v1', targetSystemId, sourceSystemId,
+        warnings: ['RollTable preservada como dados; interpretação de resultados continua fora do importador.'],
+        mappedFields: ['formula', 'replacement', 'results']
+      })
+    });
   }
 });
 
@@ -146,14 +166,26 @@ export const dnd5eSystemNativeMapper = createSystemNativeMappingAdapter({
       sourceSubtype: node?.subtype ?? null
     };
     const mappedFields = ['text', 'facts'];
-    if (node?.kind === 'spell') {
-      if (facts.level != null) { data.level = clone(facts.level); mappedFields.push('level'); }
-      if (facts.school != null) { data.school = clone(facts.school); mappedFields.push('school'); }
+    for (const key of ['level', 'school', 'activation', 'range', 'target', 'duration', 'uses', 'damage', 'save', 'components', 'materials', 'preparation', 'quantity', 'weight', 'price', 'itemType']) {
+      if (facts[key] == null) continue;
+      data[key] = clone(facts[key]);
+      mappedFields.push(key);
     }
     return Object.freeze({
       kind: clean(node?.kind, 60) || 'item',
       data: Object.freeze(data),
       mapping: mappingEvidence({ mapperId: 'fenix-dnd5e-import-v1', targetSystemId, sourceSystemId, mappedFields })
+    });
+  },
+  mapRollTable({ node, targetSystemId = 'dnd5e', sourceSystemId = 'dnd5e' } = {}) {
+    const data = normalizeRollTableData(node?.facts ?? {});
+    return Object.freeze({
+      data,
+      mapping: mappingEvidence({
+        mapperId: 'fenix-dnd5e-import-v1', targetSystemId, sourceSystemId,
+        mappedFields: ['formula', 'replacement', 'results'],
+        warnings: ['A tabela é importada como conteúdo nativo; rolagem e regras de resultado permanecem no sistema/runtime.']
+      })
     });
   }
 });
@@ -175,6 +207,13 @@ export function createSystemNativeMappingRegistry(adapters = [dnd5eSystemNativeM
       const source = sourceSystem(node, sourceSystemId);
       const mapper = this.resolve({ targetSystemId, sourceSystemId: source });
       return mapper.mapItem({ node, targetSystemId, sourceSystemId: source });
+    },
+    mapRollTable({ node, targetSystemId = 'generic', sourceSystemId = null } = {}) {
+      const source = sourceSystem(node, sourceSystemId);
+      const mapper = this.resolve({ targetSystemId, sourceSystemId: source });
+      const handler = mapper.mapRollTable ?? fallback.mapRollTable;
+      if (typeof handler !== 'function') throw new TypeError('Mapper não oferece suporte a RollTable.');
+      return handler({ node, targetSystemId, sourceSystemId: source });
     }
   });
 }
