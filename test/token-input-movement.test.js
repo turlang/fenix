@@ -21,12 +21,30 @@ test('WASD e setas usam direções gamer equivalentes', () => {
   assert.equal(movementDirectionForKey('q'), null);
 });
 
-test('movimento normal usa 20% da célula e Shift usa uma célula completa', () => {
-  assert.equal(keyboardMovementStep(70), 14);
-  assert.equal(keyboardMovementStep(70, { fullCell: true }), 70);
-  const token = { id: 'hero-ayla', x: 70, y: 70, size: 40 };
-  assert.equal(requestedTokenFromKeyboard(token, 'd', { gridSize: 70 }).x, 84);
-  assert.equal(requestedTokenFromKeyboard(token, 's', { gridSize: 70, fullCell: true }).y, 140);
+test('teclado move uma célula para Small+ e usa footprint proporcional abaixo de Small', () => {
+  assert.equal(keyboardMovementStep(70), 70);
+  assert.equal(keyboardMovementStep(70, { footprintCells: 1 }), 70);
+  assert.equal(keyboardMovementStep(70, { footprintCells: 2 }), 70);
+  assert.equal(keyboardMovementStep(70, { footprintCells: 0.5 }), 35);
+
+  const normalToken = {
+    id: 'hero-ayla',
+    x: 70,
+    y: 70,
+    size: 70,
+    footprint: { widthCells: 1, heightCells: 1 }
+  };
+  assert.equal(requestedTokenFromKeyboard(normalToken, 'd', { gridSize: 70 }).x, 140);
+  assert.equal(requestedTokenFromKeyboard(normalToken, 's', { gridSize: 70 }).y, 140);
+
+  const tinyToken = {
+    id: 'familiar-tiny',
+    x: 70,
+    y: 70,
+    size: 35,
+    footprint: { widthCells: 0.5, heightCells: 0.5 }
+  };
+  assert.equal(requestedTokenFromKeyboard(tinyToken, 'd', { gridSize: 70 }).x, 105);
 });
 
 test('atalhos não capturam digitação em controles de formulário', () => {
