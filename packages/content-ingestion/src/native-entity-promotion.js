@@ -98,7 +98,7 @@ export function createRollTablePromotionInput(node, {
 export function promotionCollection(items = []) {
   return Object.freeze({
     schema: 'fenix.native-entity-promotions',
-    version: 3,
+    version: 2,
     policy: Object.freeze({
       gmApprovalRequired: true,
       automaticOverwrite: false,
