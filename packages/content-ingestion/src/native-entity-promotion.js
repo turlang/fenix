@@ -74,11 +74,38 @@ export function createItemPromotionInput(node, {
   });
 }
 
+export function createRollTablePromotionInput(node, {
+  campaignSystemId = null,
+  sourceSystemId = null,
+  mappingRegistry = defaultSystemNativeMappingRegistry
+} = {}) {
+  if (!node || node.kind !== 'roll-table') throw promotionError('Entidade não pode ser promovida para RollTable.', 'FENIX_ENTITY_PROMOTION_ROLL_TABLE_INVALID');
+  const targetSystemId = clean(campaignSystemId, 120) || 'generic';
+  const mapped = mappingRegistry.mapRollTable({ node, targetSystemId, sourceSystemId });
+  return Object.freeze({
+    rollTableId: stableNativeId('roll-table', node.sourceUuid),
+    sourceUuid: node.sourceUuid,
+    sourceHash: node.sourceHash,
+    name: clean(node.name, 160) || 'Imported RollTable',
+    systemId: targetSystemId,
+    formula: mapped.data?.formula ?? null,
+    replacement: mapped.data?.replacement !== false,
+    results: Object.freeze([...(mapped.data?.results ?? [])]),
+    mapping: mapped.mapping
+  });
+}
+
 export function promotionCollection(items = []) {
   return Object.freeze({
     schema: 'fenix.native-entity-promotions',
     version: 2,
-    policy: Object.freeze({ gmApprovalRequired: true, automaticOverwrite: false, sourceRemovalDeletesNative: false, systemMappingIsNotRulesAuthority: true }),
+    policy: Object.freeze({
+      gmApprovalRequired: true,
+      automaticOverwrite: false,
+      sourceRemovalDeletesNative: false,
+      systemMappingIsNotRulesAuthority: true,
+      rollTableExecutionIsRuntimeAuthority: true
+    }),
     items: Object.freeze(items.map((item) => Object.freeze(item)))
   });
 }
@@ -91,6 +118,7 @@ export async function promoteFoundryEntity({
   sourceSystemId = null,
   actorService = null,
   itemService = null,
+  rollTableService = null,
   existingPromotion = null,
   actorType = 'npc',
   mappingRegistry = defaultSystemNativeMappingRegistry,
@@ -112,6 +140,12 @@ export async function promoteFoundryEntity({
     const input = createItemPromotionInput(node, { campaignSystemId, sourceSystemId, mappingRegistry });
     mapping = input.mapping;
     native = await itemService.upsertSource({ campaignId, userId, ...input, itemId: existingPromotion?.nativeId ?? input.itemId });
+  } else if (node.kind === 'roll-table') {
+    if (!rollTableService) throw promotionError('RollTable Service indisponível.', 'FENIX_ENTITY_PROMOTION_ROLL_TABLE_SERVICE_REQUIRED', 503);
+    nativeType = 'roll-table';
+    const input = createRollTablePromotionInput(node, { campaignSystemId, sourceSystemId, mappingRegistry });
+    mapping = input.mapping;
+    native = await rollTableService.upsertSource({ campaignId, userId, ...input, rollTableId: existingPromotion?.nativeId ?? input.rollTableId });
   } else {
     throw promotionError('Tipo de entidade ainda não possui promoção nativa.', 'FENIX_ENTITY_PROMOTION_KIND_UNSUPPORTED', 409);
   }

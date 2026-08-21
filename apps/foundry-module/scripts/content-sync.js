@@ -36,6 +36,39 @@ function documentType(document) {
   return clean(document?.documentName ?? document?.constructor?.metadata?.name ?? document?.constructor?.name, 100);
 }
 
+function documentCapability(type) {
+  return Boolean(globalThis.CONFIG?.[type]?.documentClass || globalThis.foundry?.documents?.[type]);
+}
+
+function liveCompatibilityEvidence({ generatedAt, resolvedTypes = [], journalHasPages = false } = {}) {
+  const coreVersion = clean(globalThis.game?.version ?? globalThis.game?.release?.version, 100) || null;
+  const systemId = clean(globalThis.game?.system?.id, 200) || null;
+  const systemVersion = clean(globalThis.game?.system?.version, 100) || null;
+  const resolved = new Set(resolvedTypes);
+  return Object.freeze({
+    schema: 'fenix.foundry-live-evidence',
+    version: 1,
+    generatedAt,
+    coreVersion,
+    systemId,
+    systemVersion,
+    capabilities: Object.freeze({
+      fromUuid: true,
+      journalEntry: true,
+      journalEntryPage: documentCapability('JournalEntryPage') || journalHasPages === true,
+      actor: documentCapability('Actor') || resolved.has('Actor'),
+      item: documentCapability('Item') || resolved.has('Item'),
+      rollTable: documentCapability('RollTable') || resolved.has('RollTable')
+    }),
+    checks: Object.freeze([
+      Object.freeze({ id: 'fromUuid', ok: true, detail: 'fromUuid() disponível no runtime.' }),
+      Object.freeze({ id: 'journalResolved', ok: true, detail: 'JournalEntry raiz resolvido por UUID.' }),
+      Object.freeze({ id: 'journalSerialized', ok: true, detail: 'JournalEntry serializado sem executar conteúdo HTML.' }),
+      Object.freeze({ id: 'entityTraversalBounded', ok: true, detail: 'Crawl limitado por profundidade e quantidade.' })
+    ])
+  });
+}
+
 async function safeResolve(resolveUuid, uuid) {
   try { return await resolveUuid(uuid); }
   catch { return null; }
@@ -66,6 +99,7 @@ export async function resolveFoundryContentPackage({
   const entities = [];
   const resolvedUuids = [];
   const missingUuids = [];
+  const resolvedTypes = [];
   const visited = new Set([clean(journalDocument.uuid, 500)]);
   const queue = referencesFrom(journal).map((uuid) => ({ uuid, depth: 1 }));
 
@@ -80,6 +114,7 @@ export async function resolveFoundryContentPackage({
     }
     resolvedUuids.push(uuid);
     const type = documentType(document);
+    resolvedTypes.push(type);
     const serialized = serializeDocument(document);
     if (!serialized) continue;
     if (SUPPORTED_ENTITY_TYPES.has(type)) {
@@ -90,23 +125,26 @@ export async function resolveFoundryContentPackage({
     }
   }
 
+  const generatedAt = new Date().toISOString();
   return Object.freeze({
     schema: 'fenix.bridge-content-sync',
-    version: 2,
+    version: 3,
     source: Object.freeze({
       adapter: 'foundry',
       worldId: clean(globalThis.game?.world?.id, 200) || null,
       systemId: clean(globalThis.game?.system?.id, 200) || null,
       systemVersion: clean(globalThis.game?.system?.version, 100) || null,
       coreVersion: clean(globalThis.game?.version ?? globalThis.game?.release?.version, 100) || null,
-      generatedAt: new Date().toISOString()
+      generatedAt
     }),
+    compatibility: liveCompatibilityEvidence({ generatedAt, resolvedTypes, journalHasPages: Array.isArray(journal.pages) }),
     rootUuid: root,
     journal,
     entities: Object.freeze(entities),
     resolution: Object.freeze({
       resolvedUuids: Object.freeze(resolvedUuids),
       missingUuids: Object.freeze(missingUuids),
+      resolvedEntityTypes: Object.freeze([...new Set(resolvedTypes)].sort()),
       bounded: true,
       maxEntities: entityLimit,
       maxDepth: depthLimit
@@ -156,7 +194,7 @@ function exposeBridgeApi() {
     resolveContentPackage: resolveFoundryContentPackage,
     syncContent: syncFoundryContentToFenix
   };
-  console.log('[Mestre Orc][Content Sync] Bridge v2 disponível em game.modules.get("mestre-orc").api.syncContent().');
+  console.log('[Mestre Orc][Content Sync] Bridge v3 disponível em game.modules.get("mestre-orc").api.syncContent().');
 }
 
 if (globalThis.Hooks?.once) globalThis.Hooks.once('ready', exposeBridgeApi);

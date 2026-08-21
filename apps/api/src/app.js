@@ -9,6 +9,7 @@ import { registerCampaignRoutes } from './http/register-campaign-routes.js';
 import { registerSceneRoutes } from './http/register-scene-routes.js';
 import { registerActorRoutes } from './http/register-actor-routes.js';
 import { registerItemRoutes } from './http/register-item-routes.js';
+import { registerRollTableRoutes } from './http/register-roll-table-routes.js';
 import { registerRenderRoutes } from './http/register-render-routes.js';
 import { registerContentRoutes } from './http/register-content-routes.js';
 import { createSessionRequestAuthorizer } from './http/session-authorizer.js';
@@ -25,6 +26,7 @@ export async function createApiApp({
   sceneService = null,
   actorService = null,
   itemService = null,
+  rollTableService = null,
   contentImportService = null,
   renderBrokerService = null,
   runtimeRouter = null,
@@ -75,6 +77,7 @@ export async function createApiApp({
     sceneManager: sceneService ? 'enabled' : 'disabled',
     actorSheets: actorService ? 'enabled' : 'disabled',
     itemCatalog: itemService ? 'enabled' : 'disabled',
+    rollTableCatalog: rollTableService ? 'enabled' : 'disabled',
     contentImporter: contentImportService ? (contentImportService.store?.driver ?? 'enabled') : 'disabled',
     remoteRender: renderBrokerService?.enabled ? 'gpu-broker' : 'disabled',
     routing: runtimeRouter?.enabled ? 'owner-aware' : 'local-only',
@@ -121,6 +124,7 @@ export async function createApiApp({
     if (sceneService) registerSceneRoutes(app, { authService, sceneService });
     if (actorService) registerActorRoutes(app, { authService, actorService });
     if (itemService) registerItemRoutes(app, { authService, itemService });
+    if (rollTableService) registerRollTableRoutes(app, { authService, rollTableService });
     if (contentImportService) registerContentRoutes(app, { authService, contentImportService, sceneService });
     if (renderBrokerService) registerRenderRoutes(app, { authService, renderBrokerService });
   }
