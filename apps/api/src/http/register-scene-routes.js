@@ -98,7 +98,10 @@ export function registerSceneRoutes(app, { authService, sceneService }) {
         size: request.body?.size,
         offsetX: request.body?.offsetX,
         offsetY: request.body?.offsetY,
-        visible: request.body?.visible
+        visible: request.body?.visible,
+        color: request.body?.color,
+        opacity: request.body?.opacity,
+        lineWidth: request.body?.lineWidth
       });
     } catch (error) {
       return sendError(reply, error, 'CAMPAIGN_SCENE_GRID_UPDATE_FAILED');
