@@ -13,9 +13,10 @@ export async function importFoundryPackageJson(input, options = {}) {
     entityGraph,
     ingestion: Object.freeze({
       ...model.ingestion,
-      version: '1.7',
+      version: '1.4',
       adapter: 'foundry-package-v2',
       entityGraph: true,
+      entityCoverageVersion: '1.7',
       entityCoverage: 'item-spell-rolltable-v1'
     }),
     stats: Object.freeze({
