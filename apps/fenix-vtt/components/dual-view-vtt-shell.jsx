@@ -1,6 +1,7 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { createFenixApiClient } from '../lib/fenix-api-client.js';
 import { useFenixSession } from './session-provider.jsx';
 import { VttShell } from './vtt-shell.jsx';
 import { FirstPersonStage } from './first-person-stage.jsx';
@@ -9,6 +10,8 @@ import { ContentReviewWorkspace } from './content-review-workspace.jsx';
 export function DualViewVttShell({ onExitCampaign = null, onLogout = null }) {
   const [viewMode, setViewMode] = useState('top');
   const [contentOpen, setContentOpen] = useState(false);
+  const [renderAvailability, setRenderAvailability] = useState('checking');
+  const client = useMemo(() => createFenixApiClient(), []);
   const { state, campaign, membership, actors, activeScene } = useFenixSession();
 
   const actorId = membership?.role === 'gm' ? state.selectedActorId : membership?.actorId;
@@ -21,9 +24,27 @@ export function DualViewVttShell({ onExitCampaign = null, onLogout = null }) {
     [actorId, state.tokens]
   );
   const firstPersonReady = Boolean(activeScene && actor && token);
+  const firstPersonEnabled = firstPersonReady && renderAvailability === 'available';
   const isGm = membership?.role === 'gm';
 
-  if (viewMode === 'first-person' && firstPersonReady) {
+  useEffect(() => {
+    let active = true;
+    client.health()
+      .then((health) => {
+        if (!active) return;
+        setRenderAvailability(health?.remoteRender === 'gpu-broker' ? 'available' : 'disabled');
+      })
+      .catch(() => {
+        if (active) setRenderAvailability('unavailable');
+      });
+    return () => { active = false; };
+  }, [client]);
+
+  useEffect(() => {
+    if (viewMode === 'first-person' && !firstPersonEnabled) setViewMode('top');
+  }, [firstPersonEnabled, viewMode]);
+
+  if (viewMode === 'first-person' && firstPersonEnabled) {
     return (
       <FirstPersonStage
         campaign={campaign}
@@ -36,6 +57,14 @@ export function DualViewVttShell({ onExitCampaign = null, onLogout = null }) {
     );
   }
 
+  const firstPersonTitle = !firstPersonReady
+    ? 'Selecione um ator com token colocado na cena'
+    : renderAvailability === 'checking'
+      ? 'Verificando disponibilidade do Render Node…'
+      : renderAvailability !== 'available'
+        ? 'Primeira pessoa indisponível: Render Node não configurado neste ambiente'
+        : `Abrir primeira pessoa de ${actor.name}`;
+
   return (
     <div className="dual-view-shell">
       <VttShell onExitCampaign={onExitCampaign} onLogout={onLogout} />
@@ -45,9 +74,9 @@ export function DualViewVttShell({ onExitCampaign = null, onLogout = null }) {
         <button
           type="button"
           aria-pressed="false"
-          disabled={!firstPersonReady || state.busy}
+          disabled={!firstPersonEnabled || state.busy}
           onClick={() => setViewMode('first-person')}
-          title={firstPersonReady ? `Abrir primeira pessoa de ${actor.name}` : 'Selecione um ator com token colocado na cena'}
+          title={firstPersonTitle}
         >
           1ª Pessoa
         </button>
