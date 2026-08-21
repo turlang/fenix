@@ -12,6 +12,7 @@ import { CampaignService, createAuthenticatedPeerAuthorizer } from '../../../pac
 import { CampaignSceneService } from '../../../packages/campaign-scene-service/src/index.js';
 import { CampaignActorService } from '../../../packages/campaign-actor-service/src/index.js';
 import { CampaignItemService } from '../../../packages/campaign-item-service/src/index.js';
+import { CampaignRollTableService } from '../../../packages/campaign-roll-table-service/src/index.js';
 import { CampaignTokenService } from '../../../packages/campaign-token-service/src/index.js';
 import { CampaignExplorationService } from '../../../packages/campaign-exploration-service/src/index.js';
 import { CampaignRuntimeRegistry } from '../../../packages/campaign-runtime-registry/src/index.js';
@@ -26,7 +27,7 @@ import { RemoteRenderBrokerService } from '../../../packages/remote-render-broke
 import { createAuthoritativeRuntimeInputHandler } from '../../../packages/render-runtime-control/src/index.js';
 import { createAiGatewayTranslator } from '../../../packages/content-ingestion/src/index.js';
 import { createOcrVisionProviderFromEnv } from '../../../packages/content-ingestion/src/ocr-vision.js';
-import { CampaignContentImportService } from '../../../packages/content-ingestion/src/content-import-service.js';
+import { CampaignContentImportServiceV17 } from '../../../packages/content-ingestion/src/content-import-service-v17.js';
 import { CampaignAdventureKnowledgeResolver } from '../../../packages/content-ingestion/src/knowledge-bindings.js';
 import { FileSemanticAdventureStore } from '../../../packages/adventure-library/src/semantic-model-store.js';
 import { PostgresSemanticAdventureStore } from '../../../packages/adventure-library/src/postgres-semantic-model-store.js';
@@ -86,6 +87,7 @@ const campaignService = new CampaignService({ repository, authService, logger })
 await campaignService.initialize();
 const actorService = new CampaignActorService({ campaignService, repository });
 const itemService = new CampaignItemService({ campaignService, repository });
+const rollTableService = new CampaignRollTableService({ campaignService, repository });
 const tokenService = new CampaignTokenService({ campaignService, repository });
 const explorationService = new CampaignExplorationService({ campaignService, actorService, repository });
 const assetStorage = createAssetStorageFromEnv();
@@ -136,7 +138,7 @@ const semanticAdventureStore = repository.driver === 'postgres'
 await semanticAdventureStore.initialize();
 const contentTranslator = narrator?.gateway ? createAiGatewayTranslator({ gateway: narrator.gateway }) : null;
 const ocrProvider = createOcrVisionProviderFromEnv();
-const contentImportService = new CampaignContentImportService({
+const contentImportService = new CampaignContentImportServiceV17({
   campaignService,
   store: semanticAdventureStore,
   translator: contentTranslator,
@@ -144,6 +146,7 @@ const contentImportService = new CampaignContentImportService({
   sceneService,
   actorService,
   itemService,
+  rollTableService,
   logger
 });
 const adventureKnowledgeResolver = new CampaignAdventureKnowledgeResolver({ store: semanticAdventureStore, logger });
@@ -314,6 +317,7 @@ const app = await createApiApp({
   sceneService,
   actorService,
   itemService,
+  rollTableService,
   contentImportService,
   renderBrokerService,
   runtimeRouter,
