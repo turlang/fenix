@@ -122,6 +122,17 @@ export class FenixApiClient {
     return this.request(`/v1/campaigns/${encodeURIComponent(campaignId)}/scenes`);
   }
 
+  listSceneTokens(campaignId, sceneId) {
+    return this.request(`/v1/campaigns/${encodeURIComponent(campaignId)}/scenes/${encodeURIComponent(sceneId)}/tokens`);
+  }
+
+  upsertSceneToken(campaignId, sceneId, token) {
+    return this.request(`/v1/campaigns/${encodeURIComponent(campaignId)}/scenes/${encodeURIComponent(sceneId)}/tokens`, {
+      method: 'POST',
+      body: { token }
+    });
+  }
+
   listContent(campaignId) {
     return this.request(`/v1/campaigns/${encodeURIComponent(campaignId)}/content`);
   }

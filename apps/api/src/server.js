@@ -316,6 +316,7 @@ const app = await createApiApp({
   campaignService,
   sceneService,
   actorService,
+  tokenService,
   itemService,
   rollTableService,
   contentImportService,
