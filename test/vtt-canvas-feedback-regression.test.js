@@ -30,3 +30,26 @@ test('paredes e portas possuem seleção e edição de vértices', async () => {
     assert.ok(stage.includes(marker), `faltou marker ${marker}`);
   }
 });
+
+test('WebGL preserva actorId do token para validar ownership no hit test', async () => {
+  const renderer = await source('packages/webgl-map-renderer/src/index.js');
+  assert.match(renderer, /this\.tokenMetadata = new Map\(\)/);
+  assert.match(renderer, /actorId: token\.actorId \?\? null/);
+  assert.match(renderer, /this\.tokenMetadata\.set\(normalized\.id, tokenMetadata\(token\)\)/);
+  assert.match(renderer, /this\.tokenMetadata\.get\(normalizedToken\.id\)/);
+});
+
+test('primeira pessoa só habilita quando o Render Node está disponível', async () => {
+  const shell = await source('apps/fenix-vtt/components/dual-view-vtt-shell.jsx');
+  assert.match(shell, /client\.health\(\)/);
+  assert.match(shell, /health\?\.remoteRender === 'gpu-broker'/);
+  assert.match(shell, /firstPersonEnabled/);
+  assert.match(shell, /Render Node não configurado neste ambiente/);
+});
+
+test('falha do gateway de IA expõe o último provider sem esconder a causa operacional', async () => {
+  const gateway = await source('packages/ai-inference-gateway/src/index.js');
+  assert.match(gateway, /Último erro/);
+  assert.match(gateway, /lastProviderId/);
+  assert.match(gateway, /FENIX_AI_ALL_PROVIDERS_FAILED/);
+});
