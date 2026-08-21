@@ -45,6 +45,7 @@ export function VttShell({ onExitCampaign = null, onLogout = null }) {
   const [sceneUploadBusy, setSceneUploadBusy] = useState(false);
   const [sceneSource, setSceneSource] = useState('upload');
   const [sceneInspectorId, setSceneInspectorId] = useState(null);
+  const [requestedMapTool, setRequestedMapTool] = useState(null);
   const [placementActorId, setPlacementActorId] = useState(null);
   const [placementBusy, setPlacementBusy] = useState(false);
   const {
@@ -366,9 +367,14 @@ export function VttShell({ onExitCampaign = null, onLogout = null }) {
             <div className="panel-heading scene-panel-heading">
               <div><span className="eyebrow">Navegação</span><h2>Cenas</h2></div>
               {isGm ? (
-                <button type="button" className="scene-add-button" onClick={() => setSceneManagerOpen((value) => !value)}>
-                  {sceneManagerOpen ? 'Fechar' : '+ Mapa'}
-                </button>
+                <div className="scene-panel-actions">
+                  {activeScene ? (
+                    <button type="button" className="scene-config-button" onClick={() => { setSceneManagerOpen(false); setSceneInspectorId(activeScene.id); }}>Configurar</button>
+                  ) : null}
+                  <button type="button" className="scene-add-button" onClick={() => setSceneManagerOpen((value) => !value)}>
+                    {sceneManagerOpen ? 'Fechar' : '+ Mapa'}
+                  </button>
+                </div>
               ) : null}
             </div>
 
@@ -476,6 +482,8 @@ export function VttShell({ onExitCampaign = null, onLogout = null }) {
             placementActor={placementActor}
             onPlaceActor={placePreparedToken}
             onCancelPlacement={() => setPlacementActorId(null)}
+            requestedMapTool={requestedMapTool}
+            onRequestedMapToolConsumed={() => setRequestedMapTool(null)}
           />
           {isGm && inspectedScene ? (
             <SceneSettingsInspector
@@ -485,6 +493,10 @@ export function VttShell({ onExitCampaign = null, onLogout = null }) {
               onClose={() => setSceneInspectorId(null)}
               onActivate={handleActivateInspectedScene}
               onUpdateElevation={updateSceneElevation}
+              onOpenMapTool={(tool) => {
+                setSceneInspectorId(null);
+                setRequestedMapTool({ tool, nonce: Date.now() });
+              }}
             />
           ) : null}
         </section>

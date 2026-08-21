@@ -45,7 +45,7 @@ function gridColor(value, fallback = '#D9DEE4') {
 
 function normalizeGrid(grid = {}) {
   return {
-    size: dimension(grid.size, 70, { min: 8, max: 500 }),
+    size: decimal(grid.size, 70, { min: 8, max: 500 }),
     type: 'square',
     offsetX: coordinate(grid.offsetX, 0),
     offsetY: coordinate(grid.offsetY, 0),

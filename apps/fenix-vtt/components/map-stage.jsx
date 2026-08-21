@@ -102,6 +102,30 @@ function numberLabel(value, fallback = 0) {
   return Number.isFinite(number) ? Math.round(number * 100) / 100 : fallback;
 }
 
+function positiveModulo(value, size) {
+  const numericSize = Math.max(0.0001, Number(size) || 1);
+  return ((Number(value) % numericSize) + numericSize) % numericSize;
+}
+
+function calibrateGridFromPoints(first, second, cells, grid) {
+  if (!first || !second) return null;
+  const cellCount = Math.max(1, Math.round(Number(cells) || 1));
+  const dx = Math.abs(Number(second.x) - Number(first.x));
+  const dy = Math.abs(Number(second.y) - Number(first.y));
+  const span = Math.max(dx, dy);
+  const cross = Math.min(dx, dy);
+  const size = span / cellCount;
+  if (!Number.isFinite(size) || size < 8 || size > 500) return null;
+  if (cross > Math.max(4, size * 0.35)) return null;
+  const roundedSize = Math.round(size * 100) / 100;
+  return {
+    ...normalizedGrid(grid),
+    size: roundedSize,
+    offsetX: Math.round(positiveModulo(first.x, roundedSize) * 100) / 100,
+    offsetY: Math.round(positiveModulo(first.y, roundedSize) * 100) / 100
+  };
+}
+
 function samePoint(a, b, tolerance = 0.01) {
   return Math.hypot(Number(a?.x) - Number(b?.x), Number(a?.y) - Number(b?.y)) <= tolerance;
 }
@@ -169,7 +193,9 @@ export function MapStage({
   visionActorId = null,
   placementActor = null,
   onPlaceActor = null,
-  onCancelPlacement = null
+  onCancelPlacement = null,
+  requestedMapTool = null,
+  onRequestedMapToolConsumed = null
 }) {
   const canvasRef = useRef(null);
   const rendererRef = useRef(null);
@@ -177,6 +203,7 @@ export function MapStage({
   const dragRef = useRef(null);
   const panRef = useRef(null);
   const gridDragRef = useRef(null);
+  const wallEditDragRef = useRef(null);
   const tokensRef = useRef(new Map(demoTokens.map((token) => [token.id, { ...token }])));
   const [backend, setBackend] = useState('detecting');
   const [selected, setSelected] = useState('Ayla');
@@ -188,8 +215,10 @@ export function MapStage({
   const [gridEditorOpen, setGridEditorOpen] = useState(false);
   const [gridDraft, setGridDraft] = useState(() => normalizedGrid(scene.grid));
   const [gridSaving, setGridSaving] = useState(false);
+  const [gridCalibration, setGridCalibration] = useState({ enabled: false, cells: 5, first: null, error: null });
   const [wallEditorOpen, setWallEditorOpen] = useState(false);
-  const [wallMode, setWallMode] = useState('wall');
+  const [wallMode, setWallMode] = useState('select');
+  const [selectedWallId, setSelectedWallId] = useState(null);
   const [doorState, setDoorState] = useState(SceneDoorState.CLOSED);
   const [snapWalls, setSnapWalls] = useState(true);
   const [snapVertices, setSnapVertices] = useState(true);
@@ -212,8 +241,11 @@ export function MapStage({
   useEffect(() => {
     setGridDraft(normalizedGrid(scene.grid));
     setGridEditorOpen(false);
+    setGridCalibration({ enabled: false, cells: 5, first: null, error: null });
     setWallDraft(cloneWalls(scene.walls));
     setWallHistory([]);
+    setSelectedWallId(null);
+    wallEditDragRef.current = null;
     setWallStart(null);
     setWallHover(null);
     setWallEditorOpen(false);
@@ -245,6 +277,13 @@ export function MapStage({
   useEffect(() => {
     if (!placementActor) setPlacementPreview(null);
   }, [placementActor]);
+
+  useEffect(() => {
+    const nextTool = requestedMapTool?.tool;
+    if (!canMoveAny || !nextTool) return;
+    openSceneTool(nextTool);
+    onRequestedMapToolConsumed?.();
+  }, [canMoveAny, onRequestedMapToolConsumed, requestedMapTool]);
 
   useEffect(() => {
     function handleKeyDown(event) {
@@ -408,6 +447,35 @@ export function MapStage({
     setWallDraft(cloneWalls(nextWalls));
   }
 
+  function selectedWall() {
+    return wallDraft.find((wall) => wall.id === selectedWallId) ?? null;
+  }
+
+  function endpointNear(point, wall) {
+    if (!wall) return null;
+    const threshold = 13 / Math.max(0.1, viewport.zoom);
+    const distanceA = Math.hypot(Number(point.x) - Number(wall.a.x), Number(point.y) - Number(wall.a.y));
+    const distanceB = Math.hypot(Number(point.x) - Number(wall.b.x), Number(point.y) - Number(wall.b.y));
+    const best = Math.min(distanceA, distanceB);
+    if (best > threshold) return null;
+    return distanceA <= distanceB ? 'a' : 'b';
+  }
+
+  function updateSelectedWallPoint(endpoint, axis, value) {
+    const wall = selectedWall();
+    const number = Number(value);
+    if (!wall || !Number.isFinite(number)) return;
+    rememberAndSetWalls(wallDraft.map((item) => item.id === wall.id
+      ? { ...item, [endpoint]: { ...item[endpoint], [axis]: number } }
+      : item));
+  }
+
+  function removeSelectedWall() {
+    if (!selectedWallId) return;
+    rememberAndSetWalls(wallDraft.filter((wall) => wall.id !== selectedWallId));
+    setSelectedWallId(null);
+  }
+
   function nearestWall(point, { doorsOnly = false, wallsOnly = false } = {}) {
     const candidates = wallDraft.filter((wall) => {
       if (doorsOnly) return wall.kind === SceneWallKind.DOOR;
@@ -464,6 +532,21 @@ export function MapStage({
     const hit = rendererRef.current?.hitTest(event);
     if (!hit?.world) return false;
     const point = boundedWallPoint(hit.world, { constrain: event.shiftKey });
+
+    if (wallMode === 'select') {
+      const nearest = nearestWall(hit.world);
+      setSelectedWallId(nearest?.id ?? null);
+      setWallStart(null);
+      if (nearest) {
+        const endpoint = endpointNear(hit.world, nearest);
+        if (endpoint) {
+          setWallHistory((history) => [...history.slice(-29), cloneWalls(wallDraft)]);
+          wallEditDragRef.current = { wallId: nearest.id, endpoint };
+          event.currentTarget.setPointerCapture?.(event.pointerId);
+        }
+      }
+      return true;
+    }
 
     if (wallMode === 'erase') {
       const nearest = nearestWall(point);
@@ -532,6 +615,22 @@ export function MapStage({
     }
 
     if (gridEditorOpen && canMoveAny && event.button === 0) {
+      if (gridCalibration.enabled) {
+        if (!hit?.world) return;
+        if (!gridCalibration.first) {
+          setGridCalibration((current) => ({ ...current, first: { ...hit.world }, error: null }));
+        } else {
+          const calibrated = calibrateGridFromPoints(gridCalibration.first, hit.world, gridCalibration.cells, gridDraft);
+          if (calibrated) {
+            setGridDraft(calibrated);
+            setGridCalibration((current) => ({ ...current, enabled: false, first: null, error: null }));
+          } else {
+            setGridCalibration((current) => ({ ...current, first: null, error: 'Use dois cruzamentos da mesma linha ou coluna e confira o número de células.' }));
+          }
+        }
+        event.preventDefault();
+        return;
+      }
       gridDragRef.current = {
         x: event.clientX,
         y: event.clientY,
@@ -624,6 +723,15 @@ export function MapStage({
     if (!renderer) return;
     const hit = renderer.hitTest(event);
 
+    if (wallEditDragRef.current && hit?.world) {
+      const { wallId, endpoint } = wallEditDragRef.current;
+      const point = boundedWallPoint(hit.world);
+      setWallDraft((walls) => walls.map((wall) => wall.id === wallId
+        ? { ...wall, [endpoint]: point }
+        : wall));
+      return;
+    }
+
     if (placementActor && hit?.world) {
       setPlacementPreview(tokenPlacementPoint(hit.world, gridDraft, event.altKey));
       return;
@@ -665,6 +773,12 @@ export function MapStage({
 
     if (gridDragRef.current) {
       gridDragRef.current = null;
+      if (event.currentTarget.hasPointerCapture?.(event.pointerId)) event.currentTarget.releasePointerCapture?.(event.pointerId);
+      return;
+    }
+
+    if (wallEditDragRef.current) {
+      wallEditDragRef.current = null;
       if (event.currentTarget.hasPointerCapture?.(event.pointerId)) event.currentTarget.releasePointerCapture?.(event.pointerId);
       return;
     }
@@ -740,6 +854,8 @@ export function MapStage({
     setWallStart(null);
     setWallHover(null);
     setWallEditorOpen(false);
+    setSelectedWallId(null);
+    wallEditDragRef.current = null;
   }
 
   function undoWallChange() {
@@ -754,7 +870,10 @@ export function MapStage({
 
   function closeSceneEditors() {
     setGridEditorOpen(false);
+    setGridCalibration((current) => ({ ...current, enabled: false, first: null, error: null }));
     setWallEditorOpen(false);
+    setSelectedWallId(null);
+    wallEditDragRef.current = null;
     setRegionEditorOpen(false);
     setFogEditorOpen(false);
     setFogPreview(false);
@@ -892,18 +1011,26 @@ export function MapStage({
       {gridEditorOpen ? (
         <div className="grid-calibration-panel">
           <div className="grid-calibration-heading"><strong>Calibrar grade</strong><small>Preview em tempo real · arraste a grade no mapa</small></div>
-          <label>Tamanho (px)<input type="number" min="8" max="500" step="1" value={gridDraft.size} onChange={(event) => setGridDraft((grid) => ({ ...grid, size: event.target.value }))} /></label>
+          <label>Tamanho (px)<input type="number" min="8" max="500" step="0.01" value={gridDraft.size} onChange={(event) => setGridDraft((grid) => ({ ...grid, size: event.target.value }))} /></label>
           <div className="grid-calibration-row">
             <label>Offset X<input type="number" step="1" value={gridDraft.offsetX} onChange={(event) => setGridDraft((grid) => ({ ...grid, offsetX: event.target.value }))} /></label>
             <label>Offset Y<input type="number" step="1" value={gridDraft.offsetY} onChange={(event) => setGridDraft((grid) => ({ ...grid, offsetY: event.target.value }))} /></label>
+          </div>
+          <div className="grid-two-point-calibration">
+            <label>Células entre os pontos<input type="number" min="1" max="50" step="1" value={gridCalibration.cells} onChange={(event) => setGridCalibration((current) => ({ ...current, cells: Math.max(1, Number(event.target.value) || 1) }))} /></label>
+            <button type="button" className={gridCalibration.enabled ? 'active' : ''} onClick={() => setGridCalibration((current) => ({ ...current, enabled: !current.enabled, first: null, error: null }))}>
+              {gridCalibration.enabled ? (gridCalibration.first ? 'Clique no 2º cruzamento…' : 'Clique no 1º cruzamento…') : 'Calibrar por 2 pontos'}
+            </button>
+            <small>Para mapas que já têm grade: escolha dois cruzamentos na mesma linha/coluna e informe quantas células existem entre eles.</small>
+            {gridCalibration.error ? <small className="grid-calibration-error">{gridCalibration.error}</small> : null}
           </div>
           <div className="grid-nudge-controls" aria-label="Ajuste fino da grade">
             <button type="button" onClick={() => nudgeGrid('offsetX', -1)}>X −1</button>
             <button type="button" onClick={() => nudgeGrid('offsetX', 1)}>X +1</button>
             <button type="button" onClick={() => nudgeGrid('offsetY', -1)}>Y −1</button>
             <button type="button" onClick={() => nudgeGrid('offsetY', 1)}>Y +1</button>
-            <button type="button" onClick={() => nudgeGrid('size', -1)}>− tamanho</button>
-            <button type="button" onClick={() => nudgeGrid('size', 1)}>+ tamanho</button>
+            <button type="button" onClick={() => nudgeGrid('size', -0.1)}>− 0,1 tamanho</button>
+            <button type="button" onClick={() => nudgeGrid('size', 0.1)}>+ 0,1 tamanho</button>
           </div>
           <div className="grid-appearance-row">
             <label>Cor da linha<input type="color" value={gridDraft.color} onChange={(event) => setGridDraft((grid) => ({ ...grid, color: event.target.value.toUpperCase() }))} /></label>
@@ -928,12 +1055,37 @@ export function MapStage({
             <span>{wallStart ? 'Desenhando · Esc encerra' : 'Pronto'}</span>
           </div>
           <div className="wall-authoring-tools">
+            <button type="button" className={wallMode === 'select' ? 'active' : ''} onClick={() => { setWallMode('select'); setWallStart(null); }}>Selecionar / editar</button>
             <button type="button" className={wallMode === 'wall' ? 'active' : ''} onClick={() => { setWallMode('wall'); setWallStart(null); }}>Parede</button>
             <button type="button" className={wallMode === 'door' ? 'active' : ''} onClick={() => { setWallMode('door'); setWallStart(null); }}>Porta na parede</button>
             <button type="button" className={wallMode === 'door-state' ? 'active' : ''} onClick={() => { setWallMode('door-state'); setWallStart(null); }}>Alternar porta</button>
             <button type="button" className={wallMode === 'erase' ? 'active danger' : 'danger'} onClick={() => { setWallMode('erase'); setWallStart(null); }}>Apagar</button>
           </div>
-          <small className="wall-authoring-help">Parede: clique para iniciar e continue clicando para criar segmentos conectados. Shift trava em ângulos de 45°. Porta: clique diretamente sobre uma parede existente.</small>
+          <small className="wall-authoring-help">Selecionar/editar: clique no segmento e arraste um dos vértices. Parede: clique para iniciar e continue clicando para criar segmentos conectados. Shift trava em ângulos de 45°. Porta: clique diretamente sobre uma parede existente.</small>
+          {wallMode === 'select' && selectedWall() ? (() => {
+            const wall = selectedWall();
+            return (
+              <div className="wall-selection-editor">
+                <div><span>Selecionado</span><strong>{wall.kind === SceneWallKind.DOOR ? 'Porta' : 'Parede'}</strong></div>
+                <div className="wall-coordinate-grid">
+                  <label>A · X<input type="number" step="0.5" value={numberLabel(wall.a.x)} onChange={(event) => updateSelectedWallPoint('a', 'x', event.target.value)} /></label>
+                  <label>A · Y<input type="number" step="0.5" value={numberLabel(wall.a.y)} onChange={(event) => updateSelectedWallPoint('a', 'y', event.target.value)} /></label>
+                  <label>B · X<input type="number" step="0.5" value={numberLabel(wall.b.x)} onChange={(event) => updateSelectedWallPoint('b', 'x', event.target.value)} /></label>
+                  <label>B · Y<input type="number" step="0.5" value={numberLabel(wall.b.y)} onChange={(event) => updateSelectedWallPoint('b', 'y', event.target.value)} /></label>
+                </div>
+                {wall.kind === SceneWallKind.DOOR ? (
+                  <label className="wall-selected-door-state">Estado da porta
+                    <select value={wall.doorState ?? SceneDoorState.CLOSED} onChange={(event) => rememberAndSetWalls(wallDraft.map((item) => item.id === wall.id ? { ...item, doorState: event.target.value } : item))}>
+                      <option value={SceneDoorState.CLOSED}>Fechada</option>
+                      <option value={SceneDoorState.OPEN}>Aberta</option>
+                      <option value={SceneDoorState.LOCKED}>Trancada</option>
+                    </select>
+                  </label>
+                ) : null}
+                <button type="button" className="danger" onClick={removeSelectedWall}>Excluir selecionada</button>
+              </div>
+            );
+          })() : null}
           <div className="wall-authoring-options">
             <label><input type="checkbox" checked={snapWalls} onChange={(event) => setSnapWalls(event.target.checked)} /> Snap na grade</label>
             <label><input type="checkbox" checked={snapVertices} onChange={(event) => setSnapVertices(event.target.checked)} /> Snap em vértices</label>
@@ -1068,9 +1220,9 @@ export function MapStage({
             const stateClass = wall.kind === SceneWallKind.DOOR ? ` door-${wall.doorState}` : '';
             return (
               <g key={wall.id}>
-                <line className={`wall-segment wall-${wall.kind}${stateClass}`} x1={a.x} y1={a.y} x2={b.x} y2={b.y} />
-                <circle className="wall-vertex-handle" cx={a.x} cy={a.y} r="3.5" />
-                <circle className="wall-vertex-handle" cx={b.x} cy={b.y} r="3.5" />
+                <line className={`wall-segment wall-${wall.kind}${stateClass}${wall.id === selectedWallId ? ' selected' : ''}`} x1={a.x} y1={a.y} x2={b.x} y2={b.y} />
+                <circle className={`wall-vertex-handle${wall.id === selectedWallId ? ' selected' : ''}`} cx={a.x} cy={a.y} r={wall.id === selectedWallId ? 6 : 3.5} />
+                <circle className={`wall-vertex-handle${wall.id === selectedWallId ? ' selected' : ''}`} cx={b.x} cy={b.y} r={wall.id === selectedWallId ? 6 : 3.5} />
               </g>
             );
           })}

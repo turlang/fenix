@@ -162,3 +162,42 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+
+.grid-two-point-calibration {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  gap: 7px;
+  align-items: end;
+  padding: 9px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(93,173,232,.055);
+}
+
+.grid-two-point-calibration button {
+  min-height: 34px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: rgba(255,255,255,.025);
+  color: #c6ccd0;
+  cursor: pointer;
+  font-size: 9px;
+}
+
+.grid-two-point-calibration button.active {
+  background: rgba(93,173,232,.14);
+  border-color: rgba(93,173,232,.48);
+  color: #8fd0f1;
+}
+
+.grid-two-point-calibration > small {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 8px;
+  line-height: 1.4;
+}
+
+.grid-two-point-calibration .grid-calibration-error {
+  color: #e49a94;
+}

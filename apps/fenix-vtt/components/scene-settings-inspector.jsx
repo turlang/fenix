@@ -137,6 +137,7 @@ export function SceneSettingsInspector({
         <div className="context-inspector-actions">
           <button type="button" onClick={() => onOpenMapTool('grid')}>Grade e escala</button>
           <button type="button" onClick={() => onOpenMapTool('walls')}>Paredes e portas</button>
+          <button type="button" onClick={() => onOpenMapTool('regions')}>Pisos / escadas</button>
           <button type="button" onClick={() => onOpenMapTool('fog')}>Fog / visão</button>
         </div>
       ) : !active ? (
@@ -145,7 +146,7 @@ export function SceneSettingsInspector({
         </button>
       ) : null}
 
-      <p className="context-inspector-note">Botão direito abre o objeto no contexto. Dados de personagem continuam fora da cena; visão e movimento vêm da ficha + sistema de RPG.</p>
+      <p className="context-inspector-note">Use “Configurar” na lista de cenas para reabrir estas opções a qualquer momento. Botão direito também abre o objeto no contexto. Dados de personagem continuam fora da cena; visão e movimento vêm da ficha + sistema de RPG.</p>
     </aside>
   );
 }

@@ -53,7 +53,7 @@
 
 .wall-authoring-tools {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 5px;
 }
 
@@ -263,4 +263,76 @@
   .token-placement-banner small {
     display: none;
   }
+}
+
+
+.wall-segment.selected {
+  stroke: #fff1c7;
+  stroke-width: 6;
+  filter: drop-shadow(0 0 4px rgba(230,177,83,.7));
+}
+
+.wall-vertex-handle.selected {
+  fill: var(--accent);
+  stroke: #fff1c7;
+  stroke-width: 2;
+}
+
+.wall-selection-editor {
+  display: grid;
+  gap: 8px;
+  padding: 9px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: rgba(230,177,83,.055);
+}
+
+.wall-selection-editor > div:first-child {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 9px;
+  color: var(--muted);
+}
+
+.wall-selection-editor > div:first-child strong { color: var(--accent); }
+
+.wall-coordinate-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.wall-coordinate-grid label,
+.wall-selected-door-state {
+  display: grid;
+  gap: 4px;
+  color: #aeb4b8;
+  font-size: 8px;
+}
+
+.wall-coordinate-grid input,
+.wall-selected-door-state select {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #090c0e;
+  color: var(--text);
+  padding: 6px;
+  font-size: 9px;
+}
+
+.wall-selection-editor > button.danger {
+  justify-self: end;
+  border: 1px solid rgba(220,119,111,.28);
+  border-radius: 8px;
+  background: rgba(220,119,111,.08);
+  color: #e49a94;
+  padding: 6px 8px;
+  cursor: pointer;
+  font-size: 9px;
+}
+
+@media (max-width: 760px) {
+  .wall-coordinate-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

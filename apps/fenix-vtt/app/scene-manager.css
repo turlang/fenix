@@ -277,3 +277,25 @@
     top: 52px;
   }
 }
+
+
+.scene-panel-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.scene-config-button {
+  border: 1px solid var(--line);
+  background: rgba(255,255,255,.025);
+  color: #b7bdc1;
+  border-radius: 9px;
+  padding: 7px 8px;
+  font-size: 9px;
+  cursor: pointer;
+}
+
+.scene-config-button:hover {
+  border-color: var(--line-strong);
+  color: var(--accent);
+}
