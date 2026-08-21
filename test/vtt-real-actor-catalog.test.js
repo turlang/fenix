@@ -38,7 +38,8 @@ test('provider carrega atores reais e cria Token ↔ Ator com ids separados', as
   assert.match(provider, /actorId: actor\.id/);
   assert.match(provider, /sheetId: actor\.sheetId/);
   assert.match(provider, /systemId: actor\.systemId/);
-  assert.match(provider, /realtime\.moveToken\(token/);
+  assert.match(provider, /realtimeRef\.current\.moveToken\(token/);
+  assert.match(provider, /client\.upsertSceneToken\(campaign\.id, activeScene\.id, token\)/);
 });
 
 test('sessão nasce com atores da campanha e não semeia demoTokens no realtime', async () => {
