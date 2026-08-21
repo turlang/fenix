@@ -29,5 +29,9 @@ export async function getPromotedNativeEntity(client, campaignId, promotion) {
     const result = await client.request(`/v1/campaigns/${encoded(campaignId)}/items/${encoded(promotion.nativeId)}`);
     return result.item ?? null;
   }
+  if (promotion.nativeType === 'roll-table') {
+    const result = await client.request(`/v1/campaigns/${encoded(campaignId)}/roll-tables/${encoded(promotion.nativeId)}`);
+    return result.rollTable ?? null;
+  }
   return null;
 }
