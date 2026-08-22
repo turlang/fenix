@@ -1,3 +1,18 @@
+
+> **⚠️ COPYRIGHT NOTICE — ALL RIGHTS RESERVED**
+>
+> Copyright (c) 2026 **Evandro Ricardo / Mestre Orc**  
+> Este software e todo o seu código-fonte são propriedade exclusiva do autor.  
+> **É proibida** a cópia, modificação, distribuição, engenharia reversa ou qualquer uso sem autorização prévia e por escrito do proprietário.  
+> Veja o arquivo [`LICENSE`](LICENSE) e [`NOTICE`](NOTICE) para os termos completos.
+
+---
+
+
+
+
+
+
 # Mestre Orc / Fênix Engine
 
 Versão base `0.1.0-alpha.24` — Node.js 20–24, Foundry VTT 13 e Fênix VTT standalone.
