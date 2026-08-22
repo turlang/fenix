@@ -46,6 +46,29 @@ function documentCapability(type) {
   return Boolean(globalThis.CONFIG?.[type]?.documentClass || globalThis.foundry?.documents?.[type]);
 }
 
+function collectionValues(collection) {
+  if (!collection) return [];
+  if (Array.isArray(collection.contents)) return [...collection.contents];
+  if (typeof collection.values === 'function') return [...collection.values()];
+  try { return [...collection]; }
+  catch { return []; }
+}
+
+function liveCandidatesForType(type) {
+  if (type === 'Actor') return collectionValues(globalThis.game?.actors);
+  if (type === 'RollTable') return collectionValues(globalThis.game?.tables);
+  if (type === 'Item') {
+    const worldItems = collectionValues(globalThis.game?.items);
+    if (worldItems.length) return worldItems;
+    const embedded = [];
+    for (const actor of collectionValues(globalThis.game?.actors)) {
+      embedded.push(...collectionValues(actor?.items));
+    }
+    return embedded;
+  }
+  return [];
+}
+
 function liveCompatibilityEvidence({ generatedAt, resolvedTypes = [], journalHasPages = false } = {}) {
   const coreVersion = clean(globalThis.game?.version ?? globalThis.game?.release?.version, 100) || null;
   const systemId = clean(globalThis.game?.system?.id, 200) || null;
@@ -78,6 +101,38 @@ function liveCompatibilityEvidence({ generatedAt, resolvedTypes = [], journalHas
 async function safeResolve(resolveUuid, uuid) {
   try { return await resolveUuid(uuid); }
   catch { return null; }
+}
+
+export async function probeFoundryWorldEntities({
+  requiredEntityTypes = REQUIRED_LIVE_ENTITY_TYPES,
+  fromUuidImpl = null
+} = {}) {
+  if (!globalThis.game?.user?.isGM) throw new Error('Somente o Mestre pode executar o probe de entidades do Foundry.');
+  const resolveUuid = fromUuidImpl ?? globalThis.foundry?.utils?.fromUuid ?? globalThis.fromUuid;
+  if (typeof resolveUuid !== 'function') throw new Error('fromUuid() não está disponível nesta versão do Foundry.');
+
+  const types = [...new Set((requiredEntityTypes ?? []).map((value) => clean(value, 100)).filter(Boolean))];
+  const evidence = [];
+
+  for (const type of types) {
+    const candidates = liveCandidatesForType(type);
+    const candidate = candidates.find((document) => documentType(document) === type && clean(document?.uuid, 500))
+      ?? candidates.find((document) => clean(document?.uuid, 500))
+      ?? null;
+    const uuid = clean(candidate?.uuid, 500) || null;
+    const resolved = uuid ? await safeResolve(resolveUuid, uuid) : null;
+    const resolvedType = resolved ? documentType(resolved) : null;
+    evidence.push(Object.freeze({
+      type,
+      available: Boolean(candidate),
+      uuid,
+      name: clean(candidate?.name, 200) || null,
+      resolved: Boolean(resolved && resolvedType === type),
+      resolvedType
+    }));
+  }
+
+  return Object.freeze(evidence);
 }
 
 export async function resolveFoundryContentPackage({
@@ -199,16 +254,20 @@ export function evaluateFoundryLiveValidation(envelope, {
   foundryMajor = 13,
   systemId = 'dnd5e',
   systemMajor = 5,
-  requiredEntityTypes = REQUIRED_LIVE_ENTITY_TYPES
+  requiredEntityTypes = REQUIRED_LIVE_ENTITY_TYPES,
+  liveEntityEvidence = []
 } = {}) {
   const source = envelope?.source ?? {};
   const compatibility = envelope?.compatibility ?? {};
   const capabilities = compatibility.capabilities ?? {};
   const resolution = envelope?.resolution ?? {};
-  const resolvedTypes = new Set(Array.isArray(resolution.resolvedEntityTypes) ? resolution.resolvedEntityTypes : []);
+  const crawlTypes = new Set(Array.isArray(resolution.resolvedEntityTypes) ? resolution.resolvedEntityTypes : []);
+  const liveEvidence = Array.isArray(liveEntityEvidence) ? liveEntityEvidence : [];
+  const liveTypes = new Set(liveEvidence.filter((entry) => entry?.resolved === true).map((entry) => clean(entry.resolvedType ?? entry.type, 100)).filter(Boolean));
+  const observedTypes = new Set([...crawlTypes, ...liveTypes]);
   const missingUuids = Array.isArray(resolution.missingUuids) ? resolution.missingUuids : [];
   const requiredTypes = [...new Set((requiredEntityTypes ?? []).map((value) => clean(value, 100)).filter(Boolean))];
-  const missingTypes = requiredTypes.filter((type) => !resolvedTypes.has(type));
+  const missingTypes = requiredTypes.filter((type) => !observedTypes.has(type));
   const expectedSystemId = clean(systemId, 100).toLowerCase();
 
   const checks = [
@@ -235,12 +294,14 @@ export function evaluateFoundryLiveValidation(envelope, {
     {
       id: 'bounded-resolution',
       ok: resolution.bounded === true,
-      detail: 'Crawl de UUID permanece limitado por quantidade e profundidade.'
+      detail: 'Crawl do Journal permanece limitado por quantidade e profundidade.'
     },
     {
       id: 'required-entity-types',
       ok: missingTypes.length === 0,
-      detail: missingTypes.length ? `Tipos ainda não observados: ${missingTypes.join(', ')}.` : `Tipos observados: ${requiredTypes.join(', ')}.`
+      detail: missingTypes.length
+        ? `Tipos ainda não observados no crawl ou probe live: ${missingTypes.join(', ')}.`
+        : `Tipos observados no runtime real: ${requiredTypes.join(', ')}.`
     },
     {
       id: 'uuid-resolution',
@@ -262,7 +323,9 @@ export function evaluateFoundryLiveValidation(envelope, {
     }),
     bridge: Object.freeze({
       rootUuid: envelope?.rootUuid ?? null,
-      resolvedEntityTypes: Object.freeze([...resolvedTypes].sort()),
+      resolvedEntityTypes: Object.freeze([...crawlTypes].sort()),
+      observedEntityTypes: Object.freeze([...observedTypes].sort()),
+      liveEntityEvidence: Object.freeze(liveEvidence.map((entry) => Object.freeze({ ...entry }))),
       resolvedCount: Array.isArray(resolution.resolvedUuids) ? resolution.resolvedUuids.length : 0,
       missingUuids: Object.freeze([...missingUuids]),
       bounded: resolution.bounded === true,
@@ -297,7 +360,14 @@ export async function runFoundryLiveValidation({
 } = {}) {
   if (!globalThis.game?.user?.isGM) throw new Error('Somente o Mestre pode executar a validação física do Bridge.');
   const envelope = await resolveFoundryContentPackage({ rootUuid, maxEntities, maxDepth });
-  const baseReport = evaluateFoundryLiveValidation(envelope, { foundryMajor, systemId, systemMajor, requiredEntityTypes });
+  const liveEntityEvidence = await probeFoundryWorldEntities({ requiredEntityTypes });
+  const baseReport = evaluateFoundryLiveValidation(envelope, {
+    foundryMajor,
+    systemId,
+    systemMajor,
+    requiredEntityTypes,
+    liveEntityEvidence
+  });
   const shouldSync = Boolean(clean(campaignId, 200) && clean(adventureId, 200));
   let sync = baseReport.sync;
 
@@ -322,6 +392,7 @@ export async function runFoundryLiveValidation({
   const report = Object.freeze({ ...baseReport, sync });
   console.group('[Mestre Orc][Content Sync] Validação física v1.7');
   console.table(report.automatedChecks.map(({ id, ok, detail }) => ({ check: id, ok, detail })));
+  console.table(report.bridge.liveEntityEvidence.map(({ type, available, uuid, name, resolved, resolvedType }) => ({ type, available, resolved, resolvedType, name, uuid })));
   console.log('Relatório completo:', report);
   console.log('Validação física concluída?', report.physicalValidationConfirmed, '— os passos manuais ainda precisam ser confirmados pelo Mestre.');
   console.groupEnd();
@@ -336,9 +407,10 @@ function exposeBridgeApi() {
     ...(module.api ?? {}),
     resolveContentPackage: resolveFoundryContentPackage,
     syncContent: syncFoundryContentToFenix,
+    probeWorldEntities: probeFoundryWorldEntities,
     runLiveValidation: runFoundryLiveValidation
   };
-  console.log('[Mestre Orc][Content Sync] Bridge v3 disponível: resolveContentPackage(), syncContent() e runLiveValidation().');
+  console.log('[Mestre Orc][Content Sync] Bridge v3 disponível: resolveContentPackage(), syncContent(), probeWorldEntities() e runLiveValidation().');
 }
 
 if (globalThis.Hooks?.once) globalThis.Hooks.once('ready', exposeBridgeApi);
