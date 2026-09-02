@@ -14,69 +14,249 @@ Stack principal: Node.js 20–24, Next.js 15, React 19, WebGL/3D, PostgreSQL, We
 
 ## Missão
 
-O Fênix não pretende ser apenas um VTT que possui um chatbot ou um gerador de narração. A visão de longo prazo é construir um **motor de RPG persistente no qual um Mestre IA compreende o mundo, acompanha sua evolução e dirige a experiência narrativa**.
+O Fênix não pretende ser apenas um VTT com chatbot, gerador de texto ou automação de regras. A visão é construir um **motor de RPG persistente no qual um Mestre IA compreende regras, mundo, campanha, espaço, tempo, percepção, memória e causalidade, e usa esse conhecimento para mestrar e narrar com criatividade controlada pela coerência**.
 
-O destino arquitetural é o **Mestre IA 4D**: um Mestre com consciência operacional do espaço e do tempo do jogo, apoiado por percepção, memória, causalidade, emoção e direção dramática.
+O destino arquitetural é o **Mestre IA 4D**.
 
 > **No Fênix, 4D significa explicitamente X + Y + Z + T: três dimensões espaciais mais a dimensão temporal.**
 >
-> Não significa consciência humana nem uma hipótese física de quarta dimensão espacial. Significa que o sistema deve conhecer onde as entidades estão, quando os estados mudaram, quem percebeu os acontecimentos e quais causas produziram as consequências atuais.
+> Não significa consciência humana nem uma hipótese física de quarta dimensão espacial. Significa consciência operacional espaço-temporal do estado do jogo: onde as entidades estão, quando os estados mudaram, quem percebeu os acontecimentos, quais regras se aplicam e quais causas produziram as consequências atuais.
 
-O roadmap completo dessa evolução está em [`ROADMAP.md`](ROADMAP.md).
+O roadmap completo está em [`ROADMAP.md`](ROADMAP.md).
+
+## Diretriz prioritária: conhecimento antes de autonomia
+
+O Mestre IA não deve depender da memória pré-treinada de um LLM para decidir regras, lore ou fatos da campanha. Antes de ampliar sua autonomia, o Fênix deve construir uma **Knowledge Foundation** confiável.
+
+```text
+                    FÊNIX KNOWLEDGE FOUNDATION
+
+       RULE MATERIAL                         WORLD MATERIAL
+             │                                     │
+       Rule Compiler                         World Compiler
+             │                                     │
+       Rules Knowledge                      World Knowledge
+             │                                     │
+             └──────────────┬──────────────────────┘
+                            │
+                     Campaign Compiler
+                            │
+                     Campaign Model
+                            │
+                      World Authority
+                            │
+                   Mestre IA 4D / Director
+```
+
+Essa fundação é prioridade arquitetural do projeto.
+
+## Sistemas de RPG e material do Mestre
+
+O Fênix poderá distribuir nativamente apenas regras e conteúdos cuja licença permita esse uso, incluindo sistemas abertos e materiais compatíveis com licenças como OGL, ORC, Creative Commons ou outras permissões aplicáveis.
+
+O Mestre poderá fornecer seus próprios materiais para uso privado na campanha, inclusive livros de regras, aventuras, cenários e outros documentos aos quais tenha acesso legítimo. O Fênix deve tratar conteúdo importado como privado, manter proveniência e respeitar direitos, licenças e restrições aplicáveis. A posse de uma cópia não é tratada pelo sistema como autorização automática para redistribuição.
+
+Conteúdo privado importado não deve ser incorporado ao produto, publicado para terceiros ou usado como conteúdo nativo distribuído pelo Fênix sem autorização apropriada.
+
+## Rule Compiler
+
+Importar um livro de regras não deve significar apenas indexar PDF para busca semântica. O objetivo é **compreender e estruturar as regras**.
+
+O Rule Compiler deverá produzir simultaneamente:
+
+- referência ao texto-fonte;
+- conceitos e entidades mecânicas;
+- condições e gatilhos;
+- cálculos;
+- exceções;
+- relações entre regras;
+- requisitos;
+- efeitos;
+- fonte e proveniência;
+- confiança da interpretação.
+
+Exemplo conceitual:
+
+```text
+RULE
+id: falling_damage
+system: SYSTEM_A
+trigger: actor_falls
+conditions: distance > threshold
+calculation: ...
+exceptions: ...
+source: book / section / page
+confidence: 0.99
+```
+
+A IA interpreta a intenção do jogador. O Rules Engine determina a resolução mecânica sempre que a regra puder ser formalizada. O Mestre IA transforma o resultado em consequência e narração.
+
+```text
+Player Action
+     ↓
+Intent Recognition
+     ↓
+Rules Retrieval
+     ↓
+Rules Engine
+     ↓
+World State Mutation
+     ↓
+Narrative Director
+```
+
+## World Compiler
+
+O World Compiler deverá compreender material de cenário, aventuras, campanhas e, quando legalmente utilizável, obras narrativas fornecidas pelo Mestre, convertendo texto em uma representação semântica jogável.
+
+O objetivo não é resumir documentos. É extrair o **DNA do mundo**:
+
+- geografia;
+- locais;
+- personagens;
+- povos e culturas;
+- facções;
+- história;
+- política;
+- cosmologia e mitologia;
+- criaturas;
+- objetos e artefatos;
+- relações;
+- segredos;
+- cronologia;
+- arquitetura;
+- tecnologia;
+- economia;
+- estética;
+- atmosfera;
+- temas;
+- regras implícitas do universo.
+
+Toda informação deve preservar sua origem:
+
+```text
+CANON       explicitamente estabelecido pela fonte
+DERIVED     inferido a partir das fontes
+GENERATED   criado para completar o mundo jogável
+IMPROVISED  criado durante a sessão
+PLAYER_CAUSED mudança provocada pelas ações dos jogadores
+```
+
+Fatos também poderão ser `immutable`, `mutable`, `hidden`, `uncertain`, `rumor` ou `false_information`.
+
+## Campaign Compiler
+
+O Campaign Compiler une:
+
+```text
+SYSTEM
+  +
+WORLD
+  +
+CAMPAIGN / ADVENTURE
+  =
+PLAYABLE CAMPAIGN MODEL
+```
+
+Ele deverá funcionar tanto para campanhas e one-shots criados do zero quanto para material importado.
+
+A criação não deve produzir uma história rígida. O Fênix deve gerar **situações, conflitos, personagens, objetivos, segredos, lugares, ameaças e possibilidades**, deixando que a história resulte das ações dos jogadores.
+
+## Importação de mundos literários
+
+Uma meta estratégica é permitir que material narrativo autorizado ou legitimamente fornecido pelo Mestre seja interpretado como um mundo potencialmente jogável.
+
+```text
+Book / Source Material
+        ↓
+Literary Analyzer
+        ↓
+Entities + Geography + Timeline + Relationships
+        ↓
+Knowledge Graph
+        ↓
+World DNA
+        ↓
+RPG Adaptation
+        ↓
+World Model
+        ↓
+Spatial Compiler
+        ↓
+3D / 4D Playable World
+```
+
+Um romance não é uma aventura pronta. O sistema precisa converter narrativa linear em um **espaço de possibilidades** sem confundir fatos da obra com conteúdo inventado para preencher lacunas.
+
+A materialização espacial deve ser incremental. O Fênix pode compreender uma região semanticamente sem gerar todo o seu espaço 3D imediatamente. Áreas próximas aos jogadores ganham maior resolução conforme se tornam relevantes.
+
+## Quatro fontes de verdade do Mestre IA
+
+Toda decisão do Mestre IA deverá considerar, quando aplicável:
+
+1. **Rules Truth:** quais regras se aplicam e como a ação é resolvida.
+2. **World Truth:** o que realmente existe e qual é seu estado.
+3. **Character Knowledge:** o que cada personagem sabe, acredita, percebe ou desconhece.
+4. **Temporal Truth:** o que aconteceu, quando aconteceu e quais consequências permanecem ativas.
+
+O Mestre IA também deverá consultar a proveniência para saber **o que pode inventar sem contradizer o material**.
+
+## Creative Boundary Engine
+
+Improvisação é requisito central, mas não pode destruir a coerência.
+
+O Fênix deverá permitir criatividade crescente conforme diminui a quantidade de fatos definidos pela fonte. Próximo a fatos canônicos ou regras explícitas, a liberdade é menor. Em lacunas não definidas, o Mestre IA pode criar novos NPCs, locais, conflitos, rumores, interiores e acontecimentos, registrando essas criações como `GENERATED` ou `IMPROVISED`.
+
+A meta é:
+
+> **criatividade limitada pela coerência, não por scripts.**
+
+Se jogadores abandonarem completamente o caminho previsto, o sistema deve conseguir expandir o mundo mantendo cultura, geografia, economia, história, regras e estado atual.
 
 ## A visão 4D
 
-Um VTT convencional conhece principalmente o estado presente. O Fênix deverá conhecer também a trajetória desse estado.
+O World Model combina espaço e tempo:
 
 ```text
 FÊNIX WORLD MODEL
 
-Space
-  X + Y + Z
-
-Time
-  T
-
-Context
-  State
-  Perception
-  Knowledge
-  Memory
-  Emotion
-  Causality
+Space: X + Y + Z
+Time: T
+State
+Perception
+Knowledge
+Memory
+Emotion
+Causality
+Provenance
 ```
 
-Exemplo de fatos que o motor deverá ser capaz de produzir sem depender de invenção do LLM:
+A IA não deve inventar fatos espaciais autoritativos. Geometria, posição, visibilidade, alcance e demais fatos determinísticos devem ser calculados pelo sistema.
+
+## Realidade, percepção e conhecimento
+
+O Fênix distingue:
+
+1. realidade do mundo;
+2. percepção individual;
+3. conhecimento e crença individual.
+
+Assim, uma criatura pode existir no World Model sem poder ser revelada ao personagem que ainda não a percebeu.
+
+Informação falsa também pode existir corretamente:
 
 ```text
-23:47:14
-Player_A moved 1.4m north.
-Player_A cannot see Orc_07.
-Orc_07 cannot see Player_A.
-Orc_07 heard Player_A.
-Orc_07 suspicion = 0.42.
-Player_B is looking toward the ceiling.
-Player_B perception check = SUCCESS.
+WORLD TRUTH: King is dead
+NPC BELIEF: King escaped
+PLAYER KNOWLEDGE: unknown
+PUBLIC RUMOR: King was kidnapped
 ```
 
-A função da IA é **interpretar e dirigir a experiência a partir desses fatos**, e não inventar arbitrariamente a geometria ou o estado do mundo.
+## A quarta dimensão: memória temporal e causalidade
 
-## Princípio fundamental: realidade ≠ percepção ≠ conhecimento
-
-O Fênix deverá distinguir três camadas:
-
-1. **Realidade do mundo:** o que realmente existe e acontece.
-2. **Percepção:** o que determinado personagem consegue ver, ouvir ou detectar naquele momento.
-3. **Conhecimento:** o que esse personagem sabe ou acredita com base em experiências anteriores.
-
-Assim, o Mestre IA poderá saber que existe uma criatura no teto e simultaneamente saber que nenhum personagem a percebeu. A criatura existe no World Model, mas não pode ser revelada pela narração até que uma percepção, ação ou consequência justifique isso.
-
-## A quarta dimensão: memória temporal
-
-O tempo não será apenas um relógio visual. Ele deverá fazer parte do estado do universo.
+O tempo faz parte do universo:
 
 ```text
-21:43 Player_A approached Door_17
 21:43 Player_A attempted lockpick
 21:43 lockpick FAILED
 21:44 Player_B forced Door_17
@@ -85,80 +265,47 @@ O tempo não será apenas um relógio visual. Ele deverá fazer parte do estado 
 21:45 Orc_03 became ALERT
 ```
 
-Isso permite que o Mestre compreenda não apenas que `Door_17` está quebrada, mas **quando foi quebrada, quem provocou a mudança, quem percebeu o evento e quais consequências surgiram depois**.
+O sistema deve preservar não apenas o estado atual, mas quando ele mudou, quem provocou a mudança, quem percebeu e quais consequências surgiram.
 
-Uma sala poderá carregar vestígios de eventos anteriores. Um NPC poderá lembrar de uma ameaça. Guardas poderão procurar aventureiros porque receberam um alerta causado minutos antes. O presente passa a ser consequência de uma linha temporal persistente.
+Eventos podem formar um grafo causal, permitindo que o mundo continue evoluindo mesmo fora da atenção imediata dos jogadores.
 
-## Causalidade
+## Mundo virtual construído a partir do conhecimento
 
-A evolução posterior adicionará um grafo causal ao World Model:
+Regras, cenário e campanha não ficam isolados em documentos. Eles alimentam o mesmo World Model que sustenta o espaço virtual.
 
 ```text
-Door_17 broken
-  caused_by: Player_B forced door
-  consequence: Orc_03 alerted
-  secondary: Orc_03 warned guards
-  current_effect: guards searching dungeon
+Knowledge Foundation
+       ↓
+Campaign Model
+       ↓
+World Model
+       ↓
+Spatial World Model
+       ↓
+Terrain / Regions / Settlements
+       ↓
+Buildings / Interiors / Objects
+       ↓
+NPC Population
+       ↓
+Lighting / Weather / Soundscape
+       ↓
+Simulation
+       ↓
+Mestre IA 4D
 ```
 
-O objetivo é permitir que o Mestre IA compreenda **por que** o mundo chegou ao estado atual, e não apenas qual é esse estado.
+O objetivo não é gerar uma imagem bonita de uma cidade. É criar uma cidade **jogável e semanticamente compreendida**: portas são portas, pontes conectam regiões, NPCs possuem relações e conhecimento, objetos possuem função e o tempo altera o estado do lugar.
 
 ## Narração natural é requisito central
 
-A visão 4D não termina em geometria. Um mundo tecnicamente perfeito ainda falha como RPG se a narração parecer texto de IA lido por um TTS.
+O Fênix deverá possuir um **Narrative Performance Engine** capaz de coordenar contexto sensorial, emoção, subtexto, ritmo, pausas, respiração, hesitação, volume, silêncio dramático, identidade vocal, música, soundscape, iluminação e áudio espacial.
 
-O Fênix deverá evoluir para um **Narrative Performance Engine** que coordene:
+O Mestre não deve falar continuamente. O Director AI deve poder escolher `NO_ACTION` quando silêncio, ambiente ou atuação dos NPCs forem narrativamente superiores.
 
-- contexto sensorial do ambiente;
-- tensão, mistério e perigo percebido;
-- estado físico e emocional dos personagens;
-- conhecimento e segredos individuais;
-- ritmo dramático;
-- intenção narrativa;
-- emoção e subtexto;
-- pausas, respiração e hesitação;
-- velocidade e intensidade da fala;
-- sussurro e volume;
-- silêncio dramático;
-- identidade vocal persistente por NPC;
-- música, soundscape e áudio espacial;
-- iluminação e efeitos ambientais.
+## Estado emocional e NPCs
 
-A saída de narração poderá carregar uma partitura de interpretação:
-
-```text
-emotion: apprehension
-intensity: 0.38
-pace: slow
-volume: low
-breathiness: 0.22
-
-"O frio muda primeiro."
-PAUSE 900ms
-
-"Não é apenas a umidade da cripta."
-PAUSE 500ms
-
-intensity: 0.52
-"Há alguma coisa diferente no ar."
-PAUSE 1300ms
-```
-
-O objetivo não é fazer a IA falar continuamente. Um Mestre competente também sabe observar e permanecer em silêncio. O Director AI deverá poder escolher `NO_ACTION` quando som, iluminação, atuação dos NPCs ou simplesmente o silêncio forem narrativamente superiores a outra fala.
-
-## Estado emocional e subtexto dos NPCs
-
-NPCs futuros não deverão ser representados apenas por rótulos como `angry` ou `afraid`. O estado poderá ser multidimensional:
-
-```text
-fear:       0.62
-anger:      0.81
-confidence: 0.34
-grief:      0.18
-suspicion:  0.73
-```
-
-A cognição deverá separar:
+NPCs deverão separar:
 
 ```text
 KNOWS
@@ -168,94 +315,95 @@ SAYS
 DOES
 ```
 
-Isso permitirá mentira, hesitação, medo oculto, falsa confiança, memória social e subtexto sem exigir que o narrador explique explicitamente cada emoção.
+Estados emocionais serão multidimensionais e persistentes, permitindo mentira, medo oculto, hesitação, confiança falsa, memória social e subtexto.
 
 ## Arquitetura-alvo
 
 ```text
-                         FÊNIX WORLD
-                              │
-                       World Authority
-                              │
-               ┌──────────────┴──────────────┐
-               │                             │
-        Spatial World Model             Rules Engine
-          X + Y + Z                          │
-               │                         Simulation
-        Perception Engine                    │
-               └──────────────┬──────────────┘
-                              │
-                         Event Stream
-                              │
-                     Temporal Memory (T)
-                              │
-                         Causal Graph
-                              │
-                    NPC Cognition / Emotion
-                              │
-                         GM Director AI
-                ┌─────────────┼─────────────┐
-                │             │             │
-           Narration        NPC AI       World Direction
-                │             │             │
-        Performance/TTS    Animation    Music/FX/Lighting
-                └─────────────┼─────────────┘
-                              │
-                          FÊNIX WORLD
-                              │
-                   Desktop / Mobile / VR / AR
+                    SOURCES
+          Rules / World / Adventure
+                      │
+              Knowledge Foundation
+          ┌───────────┼───────────┐
+          │           │           │
+     Rule Compiler World Compiler Campaign Compiler
+          └───────────┼───────────┘
+                      │
+               Knowledge Graph
+                      │
+               World Authority
+                      │
+              Spatial Model XYZ
+                      │
+             Perception / Knowledge
+                      │
+               Event Stream
+                      │
+             Temporal Memory T
+                      │
+                Causal Graph
+                      │
+              NPC Cognition
+                      │
+              GM Director AI
+          ┌───────────┼───────────┐
+       Rules      Narration     World Direction
+          │           │           │
+     Simulation  Performance  Music/FX/Lighting
+          └───────────┼───────────┘
+                      │
+                 FÊNIX WORLD
+                      │
+          Desktop / Mobile / VR / AR
 ```
 
 ## VR e realidade espacial
 
-VR é uma evolução planejada, mas **não deve ser o cérebro do sistema**. Primeiro o Fênix precisa compreender o mundo. Depois VR passa a ser outra interface para observar e manipular esse mesmo World Model.
-
-O objetivo futuro é permitir sessões híbridas nas quais jogadores desktop e VR compartilhem o mesmo universo. Headset, posição da cabeça, orientação, mãos, voz e eventualmente gestos poderão alimentar o Perception Engine sem criar uma arquitetura paralela.
+VR é uma evolução planejada, não o cérebro do sistema. Desktop, navegador, streaming, mobile e VR deverão compartilhar o mesmo World Model. Tracking de cabeça, mãos, voz e gestos futuramente alimentarão percepção e interação sem criar um segundo universo de jogo.
 
 ## Estado atual
 
-A fundação existente inclui:
+A fundação existente inclui Shared Core VTT-agnóstico, Fênix standalone, renderer desacoplado, battlemap, grid, Walls + Doors, Fog/LOS, memória de exploração, autenticação, campanhas, memberships, multiplayer, runtime distribuído, PostgreSQL opcional, leases/fencing, routing HTTP/WebSocket, idempotência e observabilidade.
 
-- Shared Core VTT-agnóstico para contexto, intenção, regras, relacionamentos, narração e áudio;
-- Fênix VTT standalone com Next.js 15 + React 19;
-- renderer desacoplado por `MapRendererPort`;
-- battlemap, pan/zoom e calibração persistente de grid;
-- Walls + Doors Authoring persistente;
-- portas `open`, `closed` e `locked`;
-- Fog of War + Token Line of Sight por personagem;
-- memória persistente de áreas exploradas;
-- autenticação, campanhas, memberships e convites;
-- controle de personagem derivado da membership no servidor;
-- `CampaignRuntimeRegistry` isolado por campanha;
-- PostgreSQL opcional e coordenação distribuída;
-- runtime leases com fencing token;
-- `LISTEN/NOTIFY` para invalidação entre Engines;
-- owner-aware HTTP/WebSocket routing;
-- HMAC interno entre Engines;
-- `DistributedCommandLedger` para idempotência;
-- observabilidade e readiness;
-- `ROOM_ENTERED` e ações integradas ao Shared Core;
-- recuperação de sessão sem repetir aberturas.
+Esses recursos são fundação existente. **Knowledge Foundation, Rule Compiler, World Compiler, Campaign Compiler, Creative Boundary Engine e o World Model 4D completo são objetivos arquiteturais, não funcionalidades declaradas como concluídas.**
 
-## Próximas fundações técnicas
+## Prioridade técnica
 
-Antes do Mestre IA 4D, o VTT precisa consolidar:
+A ordem estratégica passa a ser:
 
-- manipulação e qualidade do streaming 3D;
-- colisão autoritativa de tokens;
-- iluminação dinâmica, elevação e som espacial;
-- Durable Realtime Outbox + garantias de entrega;
-- World Authority;
-- Spatial World Model;
-- Perception & Knowledge Engine;
-- Temporal Memory;
-- Causal Simulation;
-- NPC Cognition;
-- Narrative Performance Engine;
-- Autonomous GM / Director AI;
-- VR e interfaces espaciais.
+```text
+VTT Reliability
+      ↓
+Knowledge Foundation
+      ↓
+Rule Compiler + World Compiler
+      ↓
+Campaign Compiler + Provenance
+      ↓
+World Authority
+      ↓
+Spatial World Model
+      ↓
+Perception & Knowledge
+      ↓
+Temporal Memory
+      ↓
+Causal Simulation
+      ↓
+NPC Cognition
+      ↓
+Narrative Intelligence
+      ↓
+Narrative Performance
+      ↓
+Autonomous GM
+      ↓
+Mestre IA 4D
+      ↓
+VR / Spatial RPG
+```
 
-A ordem e os gates estão documentados em [`ROADMAP.md`](ROADMAP.md).
+Essa ordem é deliberada: **não construir o cérebro antes de definir de onde ele obtém conhecimento confiável**.
 
 ## Execução local
 
@@ -266,85 +414,27 @@ npm run check
 npm run dev
 ```
 
-Fênix VTT standalone:
+Fênix standalone:
 
 ```powershell
 npm run dev:vtt
 ```
 
-Desenvolvimento pode usar persistência JSON:
+## Segurança e direitos
 
-```env
-FENIX_PERSISTENCE_DRIVER=json
-FENIX_STATE_FILE=./data/fenix-state.json
-```
+- nenhum componente de IA pode contornar permissões ou revelar estado oculto;
+- regras determinísticas e fatos autoritativos prevalecem sobre invenção do LLM;
+- material importado mantém proveniência;
+- conteúdo privado do Mestre deve permanecer isolado conforme o modelo de acesso da campanha;
+- conteúdo proprietário não deve ser redistribuído como parte do Fênix sem autorização;
+- geração e adaptação devem respeitar direitos e licenças aplicáveis.
 
-Para infraestrutura distribuída, configure PostgreSQL e as variáveis de runtime descritas em `.env.example`, além de `GROQ_API_KEY`, `GROQ_MODEL`, CORS e autenticação.
+## Critério de sucesso
 
-## Mapas, visão e autoridade atual
+A pergunta final deixa de ser apenas "a IA escreve boas descrições?".
 
-O Scene Manager mantém battlemap, dimensões, grid calibrado, paredes e Fog como estado persistente. Paredes e portas fechadas/trancadas bloqueiam visão; portas abertas liberam line-of-sight. O contrato geométrico permanece em `packages/scene-geometry` e o contrato de visão em `packages/scene-vision`.
+O objetivo é que o Fênix consiga:
 
-A exploração não é declarada pelo browser. Depois de um `TOKEN_MOVE` autorizado, o Engine calcula as células visíveis usando posição, grid e paredes. Alterações de grid, paredes, portas e Fog são GM-only no servidor.
+> **compreender as regras utilizadas, compreender o material do mundo e da campanha, transformá-los em um mundo jogável, acompanhar esse mundo em X + Y + Z + T, improvisar sem destruir sua coerência e dirigir uma experiência dramática natural.**
 
-Documentação relacionada:
-
-- [`docs/FENIX_WALLS_DOORS.md`](docs/FENIX_WALLS_DOORS.md)
-- [`docs/FENIX_FOG_LOS.md`](docs/FENIX_FOG_LOS.md)
-- [`docs/FENIX_AUTH_PERSISTENCE.md`](docs/FENIX_AUTH_PERSISTENCE.md)
-
-## Limites atuais importantes
-
-### Entrega durável de eventos realtime
-
-A execução de comandos já é deduplicada entre réplicas, mas o broadcast realtime ainda pode ser perdido se o owner cair após confirmar uma mutação e antes da entrega aos peers. A evolução planejada é **Durable Realtime Outbox + Event Delivery Guarantees**.
-
-### Colisão, iluminação e espacialidade
-
-Fog e LOS já usam geometria autoritativa. Ainda é necessário consolidar colisão física, iluminação dinâmica, elevação, propagação de som e relações espaciais necessárias ao futuro World Model 4D.
-
-## Módulo Foundry
-
-Copie `apps/foundry-module` para:
-
-```text
-FoundryVTT/Data/modules/mestre-orc/
-```
-
-A lógica alpha.24 preserva correlação por número da sala, Journal relacionado e read-aloud seguro. O Foundry permanece adapter de primeira classe, mas a inteligência de mundo de longo prazo pertence ao Shared Core/Fênix World Model.
-
-## Comandos principais
-
-```text
-npm run dev
-npm run dev:vtt
-npm run build:vtt
-npm test
-npm run test:auth-integration
-npm run test:realtime-integration
-npm run test:postgres-integration
-npm run test:coordination-integration
-npm run test:routing-integration
-npm run test:idempotency-integration
-npm run migrate:postgres
-npm run validate
-npm run check
-```
-
-## Segurança
-
-O Fênix mantém autorização no servidor, autenticação com cookies HttpOnly, validação de origem e payload WebSocket, isolamento por membership, HMAC entre Engines, fencing de runtime, idempotência distribuída e separação entre autenticação de usuário e confiança interna de infraestrutura.
-
-Nenhum componente de IA deverá poder contornar permissões, revelar estado oculto ou substituir regras determinísticas do World Model.
-
-## Critério de sucesso da visão Fênix
-
-A pergunta final não é apenas:
-
-> "A IA consegue escrever uma boa descrição?"
-
-É:
-
-> **"O Fênix consegue dirigir uma experiência dramática contínua usando espaço, tempo, percepção, memória, causalidade, emoção, voz, silêncio e ambiente sem quebrar a coerência do mundo?"**
-
-Quando essa resposta for consistentemente positiva, o Fênix terá deixado de ser apenas um VTT com IA para se tornar um **motor de RPG espaço-temporal dirigido por um Mestre IA 4D**.
+Quando isso ocorrer consistentemente, o Fênix terá evoluído de um VTT com IA para um **motor de RPG espaço-temporal dirigido por um Mestre IA 4D**.
