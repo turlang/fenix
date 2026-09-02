@@ -1,83 +1,69 @@
 # Changelog
 
-Este projeto segue o formato do [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e usa versionamento semântico durante a fase alfa.
+Este documento registra **mudanças efetivamente implementadas** no Fênix. Visão, arquitetura resumida, requisitos e modelo de negócio ficam no [`README.md`](README.md); fases futuras e prioridades ficam no [`ROADMAP.md`](ROADMAP.md).
+
+O projeto segue o formato do [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e usa versionamento semântico durante a fase alfa.
 
 ## [Unreleased]
 
+> Itens desta seção já foram incorporados ao código em `main`, mas ainda não foram consolidados em uma versão estável/tag de release. Objetivos futuros não pertencem ao changelog.
+
 ### Adicionado
 
-- Shared Core VTT-agnóstico, adapters Foundry/standalone, narração, áudio, autenticação, campanhas e multiplayer realtime.
-- `PostgresFenixRepository`, `CampaignRuntimeRegistry`, `PostgresRuntimeLeaseManager` e `PostgresStateBus` para persistência, ownership, fencing, failover e invalidação entre Engines.
-- `OwnerAwareRuntimeRouter` para resolver o owner atual e encaminhar comandos HTTP para a réplica correta.
-- Proxy WebSocket owner-aware que mantém o browser no endpoint público e cria canal interno para o owner.
-- Autenticação interna HMAC-SHA256 com `generation`, timestamp, método, path, hash do body e hop único.
-- Reconnect limitado do cliente realtime após `1012 Runtime owner changed`.
-- `PostgresCommandLedger` com estados `IN_PROGRESS`, `COMPLETED` e `UNKNOWN`, chave distribuída por scope/`commandId` e replay do resultado confirmado.
-- `InMemoryCommandLedger` para desenvolvimento JSON/single-instance com o mesmo contrato lógico.
-- SHA-256 canônico do request para detectar reutilização incompatível de `commandId` sem persistir o body original no ledger.
-- Retry de timeout/unreachability somente para mutações com `commandId`/idempotency key, preservando fail-closed para chamadas legadas.
-- `RuntimeObservability` com contadores, latência, logs estruturados e exportação Prometheus.
-- Endpoints `/ready`, `/metrics` e `/v1/runtime/observability`; o endpoint JSON expõe apenas agregados.
-- Integração PostgreSQL real com duas instâncias do ledger provando execução única, replay em outra réplica, conflito de payload e bloqueio de outcome desconhecido.
-- Advisory transaction lock na criação de `fenix_command_ledger`, evitando corrida de schema durante boot simultâneo de réplicas.
-- Migração segura JSON → PostgreSQL, integrações HTTP/WebSocket e build standalone no CI.
-- Scene Manager do standalone com upload de PNG/JPG/WEBP, cenas persistentes, background real, pan/zoom e calibração de grade por cena.
-- `RemoteMapImporter` e endpoint autenticado para importar battlemap diretamente de URL HTTP/HTTPS e copiar o resultado para o `AssetStorage` local.
-- Detecção server-side de formato e dimensões para mapas remotos, preservando o mesmo pipeline de cena usado por upload local.
-- `scene-geometry` com contrato puro para segmentos `wall`/`door`, estados `open`/`closed`/`locked`, snap à grade, distância e semântica futura de bloqueio de visão/movimento.
-- Walls + Doors Authoring no mapa standalone com desenho em dois cliques, portas, alternância de estado, apagar, desfazer, cancelar e salvar.
-- Endpoint GM-only `POST /v1/campaigns/:campaignId/scenes/:sceneId/walls` e persistência de geometria por cena.
-- `scene-vision` com ray-casting, line-of-sight, polígono de visão, células visíveis e memória de exploração por personagem.
-- Fog of War por cena com alcance em células, níveis de opacidade, preview do Mestre e visão automática do token do jogador.
-- Endpoint GM-only `POST /v1/campaigns/:campaignId/scenes/:sceneId/fog` para configurar Fog e opcionalmente limpar exploração.
-- Persistência autoritativa de exploração derivada de `TOKEN_MOVE` já autorizado, sem endpoint público para revelar células arbitrárias.
+- Shared Core VTT-agnóstico e adapters Foundry/standalone.
+- Autenticação, campanhas, memberships e multiplayer realtime.
+- Persistência PostgreSQL com `PostgresFenixRepository`.
+- Coordenação distribuída com `CampaignRuntimeRegistry`, leases, fencing e `PostgresStateBus`.
+- Roteamento owner-aware para HTTP e WebSocket, incluindo reconexão após mudança de owner.
+- Autenticação interna HMAC-SHA256 para comunicação entre réplicas.
+- Idempotência distribuída com `PostgresCommandLedger` e implementação em memória para desenvolvimento single-instance.
+- Observabilidade de runtime, métricas Prometheus e endpoints `/ready`, `/metrics` e `/v1/runtime/observability`.
+- Migração JSON → PostgreSQL e integrações distribuídas no CI.
+- Scene Manager standalone com upload de mapas, persistência, pan/zoom e calibração de grade.
+- Importação autenticada de battlemap remoto com cópia para storage local e validações SSRF/formato/tamanho.
+- Authoring de Walls + Doors com persistência autoritativa por cena.
+- `scene-vision` com ray-casting, line-of-sight, células visíveis e memória de exploração por personagem.
+- Fog of War por cena, preview do Mestre e visão derivada do token autorizado do jogador.
 
 ### Alterado
 
-- `server.js` compõe persistência, leases, invalidation, routing, idempotência, observabilidade, assets e importação remota apenas na camada externa; `SessionDirector` continua sem conhecer essas implementações.
-- Runtimes persistentes validam lease/fencing antes de operações narrativas e cada comando realtime passa por `assertOwnership()`.
-- Comandos realtime com `commandId` são deduplicados antes de tocar no gateway/hub; replay confirmado emite ACK sem reaplicar o efeito.
-- O cliente standalone gera `commandId` para start, action, room-entry e end.
-- O proxy HTTP preserva Cookie/Authorization e `X-Idempotency-Key`; o owner reaplica autenticação e membership.
-- Requests já roteados não criam segundo proxy; mudança de geração retorna `RUNTIME_OWNER_CHANGED`.
-- Owner realtime obsoleto encerra a conexão com `1012`; o browser reconecta ao mesmo endpoint público.
-- `/health` reporta routing e driver de idempotência; `/ready` verifica disponibilidade do ledger.
-- CI exige matriz Node 20/22/24, PostgreSQL 16, coordenação distribuída, idempotência, owner-aware routing, auth, WebSocket e build Next.
-- Validator arquitetural passa a exigir command ledger/observability/routing/importador remoto e impede que essas implementações apareçam no `SessionDirector`.
-- O Scene Manager permite escolher `Arquivo` ou `URL`; o modo URL usa dimensões detectadas pelo Engine e não depende de CORS/hotlink depois da importação.
-- Cenas autoritativas agora carregam `walls` no catálogo, no snapshot persistente e em `SCENE_UPDATED`, mantendo a geometria sincronizada em reconnect/failover.
-- Validator arquitetural passa a exigir o contrato `scene-geometry` e impede que authoring de paredes vaze para o `SessionDirector`.
-- `SCENE_UPDATED` também invalida o catálogo local do standalone, permitindo que cada cliente recarregue Fog conforme sua membership sem transmitir histórico privado no broadcast.
-- Alterar tamanho ou offsets da grade limpa automaticamente a memória explorada, pois as chaves `col:row` deixam de representar a mesma posição; esconder/mostrar a grade preserva a exploração.
-- Validator arquitetural passa a exigir `scene-vision`, overlay de Fog e persistência autoritativa, mantendo LOS/Fog fora do `SessionDirector`.
+- `server.js` concentra infraestrutura externa enquanto `SessionDirector` permanece desacoplado dessas implementações.
+- Runtimes persistentes validam ownership/lease antes de operações relevantes.
+- Comandos realtime com `commandId` são deduplicados antes de reaplicar efeitos; resultados confirmados podem ser reproduzidos por ACK.
+- Cliente standalone gera `commandId` para comandos de sessão relevantes.
+- Proxy HTTP preserva autenticação e idempotency key; owner reaplica autenticação e membership.
+- Mudança de geração invalida owner obsoleto e força recuperação segura da conexão.
+- `/health` e `/ready` refletem componentes de routing/idempotência necessários à operação.
+- CI cobre Node 20/22/24, PostgreSQL 16, coordenação distribuída, idempotência, routing, autenticação, WebSocket e build standalone.
+- Scene Manager suporta arquivo local ou URL importada.
+- Cenas autoritativas carregam e sincronizam `walls`.
+- Alterações de geometria de grade invalidam memória de exploração quando as células deixam de representar as mesmas posições.
+- `SCENE_UPDATED` invalida catálogo local para recarga segura de estado específico da membership.
 
 ### Segurança
 
-- Tokens reutilizáveis de sessão/convite permanecem apenas em hash em repouso.
-- `generation` continua como fencing token monotônico para impedir owner antigo de processar a campanha.
-- Roteamento interno exige assinatura, timestamp recente e hop exatamente igual a um; headers forjados são recusados.
-- Mesmo `commandId` com payload diferente é recusado com `COMMAND_ID_CONFLICT`.
-- Resultado que não pode ser confirmado é marcado `UNKNOWN`; `COMMAND_OUTCOME_UNKNOWN` bloqueia reexecução automática.
-- O ledger persiste o hash do request e o resultado necessário ao replay, não o conteúdo original do comando.
-- Métricas HTTP públicas não expõem lista recente de owners/sources; esses detalhes ficam somente em logs estruturados.
-- Importação remota aceita somente HTTP/HTTPS, bloqueia localhost/redes privadas, fixa o IP após DNS validado e revalida cada redirect para reduzir SSRF/DNS rebinding.
-- Mapas remotos obedecem timeout, limite de tamanho, assinatura PNG/JPEG/WEBP e limite de dimensões; a URL completa, query strings e tokens temporários não são persistidos.
-- Alteração de paredes/portas é autorizada como GM no servidor; jogadores podem receber a geometria da cena, mas não persistir `walls` nem publicar `SCENE_UPDATE` autoritativo.
-- Payloads de geometria são normalizados novamente no Engine, com limite de 2.000 segmentos, bounds de cena, tamanho mínimo e IDs únicos.
-- Configuração de Fog é GM-only e jogadores recebem somente a memória explorada do próprio `membership.actorId`.
-- A memória explorada é calculada no Engine a partir da posição normalizada de um `TOKEN_MOVE` já autorizado; o cliente não escolhe livremente células a revelar.
-- Quando o token do jogador não está disponível, o overlay fecha de forma segura e mantém a cena encoberta.
+- Tokens reutilizáveis de sessão/convite permanecem em hash em repouso.
+- `generation` atua como fencing token monotônico contra processamento por owner obsoleto.
+- Comunicação interna exige assinatura, timestamp recente e hop válido.
+- Reutilização incompatível de `commandId` é recusada; resultados ambíguos não são reexecutados automaticamente.
+- Ledger armazena hash canônico do request e dados necessários ao replay, sem persistir o body original.
+- Métricas públicas evitam expor detalhes internos de owners/sources.
+- Importação remota restringe protocolo, redes privadas, redirects, DNS, timeout, tamanho, assinatura e dimensões para reduzir SSRF e abuso.
+- Alterações autoritativas de Walls/Doors e Fog permanecem GM-only.
+- Geometria é normalizada novamente no Engine com limites e validação de IDs/bounds.
+- Memória de exploração é derivada server-side de movimento autorizado e isolada por personagem.
+- Ausência de token válido mantém o Fog fechado de forma segura.
 
-### Compatibilidade
+### Compatibilidade e limitações atuais
 
-- A regra alpha.24 de correlação por número da sala permanece no adapter Foundry.
-- `FENIX_ALLOW_LEGACY_SESSION_HTTP` mantém o caminho Foundry conforme configuração.
-- Chamadas legadas sem idempotency key continuam aceitas, porém não recebem retry automático de timeout ambíguo.
-- JSON continua single-instance sem lease/LISTEN/routing e usa ledger apenas em memória.
-- PostgreSQL coordena ownership, cache invalidation, failover, encaminhamento e idempotência de execução; a próxima fronteira distribuída continua sendo outbox durável/garantia de entrega de eventos realtime.
-- Mapas por URL são importados como cópia local; não existe dependência permanente do host remoto.
-- Walls + Doors Authoring não altera a lógica Foundry alpha.24.
-- Fog/LOS usa a mesma geometria standalone e ainda não implementa colisão física, fontes de luz, darkvision, elevação ou iluminação dinâmica.
+- Regra alpha.24 de correlação por número da sala permanece no adapter Foundry.
+- `FENIX_ALLOW_LEGACY_SESSION_HTTP` mantém o caminho legado conforme configuração.
+- Chamadas sem idempotency key continuam aceitas, mas não recebem retry automático em timeout ambíguo.
+- Driver JSON permanece single-instance e usa ledger em memória.
+- Mapas importados por URL tornam-se cópias locais, sem dependência permanente do host remoto.
+- Walls + Doors standalone não altera a lógica Foundry alpha.24.
+- Fog/LOS ainda não representa colisão física, fontes de luz, darkvision, elevação ou iluminação dinâmica.
+- Outbox durável/garantia de entrega de eventos realtime continua fora do conjunto implementado registrado nesta seção.
 
 ## [0.1.0-alpha.24] - 2026-07-21
 
