@@ -1,75 +1,93 @@
 # Fênix VTT — Roadmap Estratégico
 
-> Evolução do Fênix de VTT com IA para um **mundo de RPG persistente, compilável a partir de regras e material narrativo, compreendido e dirigido por um Mestre IA 4D**.
+> Este documento define **para onde o Fênix está indo e em qual ordem**. A visão resumida do produto, requisitos e modelo de negócio ficam no [`README.md`](README.md). Mudanças já implementadas pertencem ao [`CHANGELOG.md`](CHANGELOG.md).
 
-## Visão
+## Objetivo estratégico
 
-O Mestre IA precisa primeiro **saber**, depois **compreender**, depois **simular**, e somente então ganhar autonomia para **improvisar e dirigir**.
+Evoluir o Fênix de um VTT com IA para um **motor de RPG persistente dirigido por um Mestre IA 4D**.
 
-A Knowledge Foundation torna-se prioridade arquitetural. O Fênix não deve depender do conhecimento pré-treinado do LLM como fonte de verdade para regras, lore ou campanha.
+No Fênix, **4D = X + Y + Z + T**: três dimensões espaciais autoritativas mais a evolução temporal persistente do mundo. O objetivo é consciência operacional do estado do jogo, não consciência humana.
 
-### 4D no Fênix
+A regra arquitetural central é:
 
-**4D = X + Y + Z + T.**
+> **saber → compreender → simular → improvisar → dirigir.**
 
-- X, Y e Z representam espaço tridimensional autoritativo.
-- T representa a evolução temporal persistente do mundo.
+Por isso, conhecimento confiável precede autonomia. Regras, lore e fatos da campanha não devem depender da memória pré-treinada do LLM como fonte de verdade.
 
-O objetivo é consciência operacional espaço-temporal, não consciência humana: saber o que existe, onde está, quando mudou, quem percebeu, quais regras se aplicam, por que aconteceu e quais consequências permanecem ativas.
+## Princípios de evolução
 
----
+1. Conhecimento antes de autonomia.
+2. Rules Truth vem de fontes autorizadas e resolução estruturada sempre que possível.
+3. World Truth é autoritativa e não pode ser inventada pelo LLM.
+4. Proveniência acompanha conhecimento e mudanças relevantes.
+5. Realidade, percepção e conhecimento são estados diferentes.
+6. Tempo integra o estado do mundo.
+7. Improvisação ocorre dentro dos limites de coerência.
+8. Campanhas são espaços de possibilidades, não roteiros rígidos.
+9. O mundo visual deriva do mesmo modelo semântico da campanha.
+10. Narrativa inclui direção e performance, não apenas geração de texto.
+11. VR é uma interface sobre o World Model compartilhado.
+12. Direitos, licenças, privacidade e escopo de acesso fazem parte da arquitetura de conteúdo.
 
-# Princípios prioritários
+## Sequência estratégica
 
-1. **Conhecimento antes de autonomia.**
-2. **Rules Truth é externa ao LLM.** Regras aplicáveis devem vir de fontes autorizadas/importadas e de execução estruturada quando possível.
-3. **World Truth é autoritativa.** A IA não inventa geometria ou fatos já estabelecidos.
-4. **Proveniência é obrigatória.** Diferenciar `CANON`, `DERIVED`, `GENERATED`, `IMPROVISED` e `PLAYER_CAUSED`.
-5. **Realidade, percepção e conhecimento são diferentes.**
-6. **Tempo faz parte do estado.**
-7. **Improvisação é permitida dentro de limites de coerência.**
-8. **Campanhas são espaços de possibilidades, não roteiros rígidos.**
-9. **O mundo virtual nasce do mesmo modelo semântico da campanha.**
-10. **Narrativa é performance.**
-11. **VR é uma interface sobre o World Model, não uma arquitetura separada.**
-12. **Direitos e licenças são parte da arquitetura de conteúdo.**
+```text
+VTT Reliability
+      ↓
+Knowledge Foundation
+      ↓
+Rule Compiler + World Compiler
+      ↓
+Campaign Compiler + Provenance
+      ↓
+Creative Boundary Engine
+      ↓
+World Authority
+      ↓
+Spatial World Model
+      ↓
+Perception & Knowledge
+      ↓
+Temporal Memory
+      ↓
+Causal Simulation
+      ↓
+NPC Cognition
+      ↓
+Narrative Intelligence
+      ↓
+Narrative Performance
+      ↓
+Autonomous GM
+      ↓
+Mestre IA 4D
+      ↓
+VR / Spatial RPG
+      ↓
+Persistent Multimodal World
+```
 
----
-
-# Fases evolutivas
+# Fases
 
 ## Fase 0 — Fundação VTT confiável
 
-**Objetivo:** estabilizar a plataforma que hospedará o conhecimento e a simulação.
+**Objetivo:** estabilizar a plataforma que hospedará conhecimento e simulação.
 
+Escopo principal:
 - cenas, tokens, personagens e permissões;
 - grid, paredes, portas e Fog/LOS;
 - multiplayer e persistência;
-- runtime distribuído;
+- runtime distribuído e eventos realtime;
 - streaming 3D manipulável com qualidade adequada;
-- colisão;
-- iluminação/elevação;
-- eventos realtime duráveis.
+- colisão, iluminação e elevação.
 
-**Gate:** o estado operacional do VTT é confiável para servir de base à autoridade do mundo.
+**Gate:** o estado operacional do VTT é confiável o suficiente para sustentar a autoridade do mundo.
 
 ## Fase 1 — Knowledge Foundation
 
-**Objetivo:** criar a camada comum para regras, lore, campanhas, fontes e proveniência.
+**Objetivo:** criar a camada comum de conhecimento, fontes, relações, confiança, proveniência, licença e escopo de acesso.
 
-Estruturas mínimas:
-
-```text
-KnowledgeEntity
-SourceReference
-KnowledgeRelation
-Confidence
-Provenance
-LicenseMetadata
-AccessScope
-```
-
-Categorias de proveniência:
+Proveniência mínima:
 
 ```text
 CANON
@@ -79,397 +97,164 @@ IMPROVISED
 PLAYER_CAUSED
 ```
 
-Qualificadores:
-
-```text
-immutable
-mutable
-hidden
-uncertain
-rumor
-false_information
-```
-
-**Gate:** toda informação relevante pode indicar de onde veio, seu escopo e sua confiabilidade.
+**Gate:** informação relevante consegue declarar origem, escopo e confiabilidade.
 
 ## Fase 2 — Rule Compiler
 
 **Objetivo:** transformar material de regras permitido em conhecimento mecânico consultável e progressivamente executável.
 
-O Fênix poderá distribuir nativamente apenas conteúdo cuja licença permita o uso correspondente, incluindo sistemas abertos e materiais compatíveis com OGL, ORC, Creative Commons ou outras permissões aplicáveis.
-
-Material privado fornecido pelo Mestre deverá permanecer privado e não será tratado como conteúdo redistribuível do produto.
-
 Pipeline:
 
 ```text
-Rule Source
-    ↓
-Document Parsing
-    ↓
-Semantic Rule Extraction
-    ↓
-Rules Knowledge Graph
-    ↓
-Validation / Provenance
-    ↓
-Rules Engine Representation
+Rule Source → Parsing → Semantic Extraction → Rules Knowledge → Validation → Rules Engine
 ```
 
-Extrair:
+Deve representar entidades mecânicas, gatilhos, condições, cálculos, testes, efeitos, exceções, precedência e referências à fonte.
 
-- entidades mecânicas;
-- gatilhos;
-- condições;
-- cálculos;
-- testes;
-- efeitos;
-- exceções;
-- precedência;
-- relações entre regras;
-- referências à fonte.
-
-**Gate:** ações importantes podem recuperar a regra correta e, quando formalizada, resolvê-la sem pedir ao LLM para inventar a mecânica.
+**Gate:** ações importantes recuperam a regra correta e, quando formalizada, são resolvidas sem pedir ao LLM que invente a mecânica.
 
 ## Fase 3 — World Compiler
 
-**Objetivo:** transformar cenário, aventura ou material narrativo em representação semântica do universo.
-
-Extrair:
-
-- geografia;
-- regiões e locais;
-- personagens;
-- povos e culturas;
-- facções;
-- história e política;
-- cosmologia;
-- criaturas;
-- itens e artefatos;
-- relações;
-- segredos;
-- cronologia;
-- economia;
-- arquitetura;
-- estética e atmosfera;
-- temas;
-- regras implícitas do mundo.
+**Objetivo:** transformar cenário, aventura e material narrativo autorizado em representação semântica do universo.
 
 Pipeline:
 
 ```text
-Source Material
-      ↓
-Literary / World Analyzer
-      ↓
-Entities + Relations + Timeline + Geography
-      ↓
-World Knowledge Graph
-      ↓
-World DNA
+Source Material → World Analysis → Entities / Relations / Timeline / Geography → World Knowledge → World DNA
 ```
 
-**Gate:** o Fênix consegue responder fatos importantes sobre o universo citando sua proveniência e distinguindo fato explícito de inferência.
+O modelo deverá representar geografia, personagens, culturas, facções, história, política, cosmologia, criaturas, objetos, relações, segredos, cronologia, economia, arquitetura, estética e atmosfera conforme as fontes disponíveis.
+
+**Gate:** o Fênix responde fatos importantes sobre o universo preservando proveniência e distinguindo fato explícito de inferência.
 
 ## Fase 4 — Campaign Compiler
 
 **Objetivo:** combinar sistema, mundo e premissa em um modelo jogável.
 
 ```text
-SYSTEM + WORLD + CAMPAIGN/ADVENTURE
-                 ↓
-         Playable Campaign Model
+SYSTEM + WORLD + CAMPAIGN / ADVENTURE → Playable Campaign Model
 ```
 
-Suportar:
+Deve suportar campanhas e one-shots criados ou importados, sandbox, histórias paralelas e modos de fidelidade ao material.
 
-- one-shots gerados;
-- campanhas geradas;
-- aventuras importadas;
-- cenários importados;
-- campanhas sandbox;
-- histórias paralelas a uma cronologia existente;
-- modos de fidelidade ao material.
-
-A campanha deve modelar situações, conflitos, objetivos, segredos, ameaças e possibilidades, não apenas uma sequência fixa de cenas.
-
-**Gate:** o Mestre pode iniciar uma sessão a partir do Campaign Model sem depender de um roteiro textual linear.
+**Gate:** uma sessão pode partir do Campaign Model sem depender de roteiro textual linear.
 
 ## Fase 5 — Creative Boundary Engine
 
-**Objetivo:** permitir improvisação sem corrupção de lore ou regras.
+**Objetivo:** permitir improvisação sem corromper regras, lore ou continuidade.
 
-Política conceitual:
+Quanto maior a definição existente, menor a liberdade para contradizê-la. Quanto maior a lacuna, maior a liberdade criativa. Toda criação relevante recebe proveniência.
 
-```text
-mais fatos definidos pela fonte
-        ↓
-menor liberdade criativa
-
-mais espaço não especificado
-        ↓
-maior liberdade criativa
-```
-
-Toda criação nova recebe proveniência. O motor verifica contradições antes de consolidar improvisações relevantes.
-
-**Gate:** o Mestre IA consegue reagir a desvios importantes dos jogadores criando conteúdo novo coerente com sistema, cultura, geografia, cronologia e estado atual.
+**Gate:** desvios importantes dos jogadores podem gerar conteúdo novo coerente com sistema, cultura, geografia, cronologia e estado atual.
 
 ## Fase 6 — World Authority
 
-**Objetivo:** consolidar a fonte de verdade do mundo jogável.
+**Objetivo:** consolidar a fonte de verdade do mundo jogável, incluindo identidade, tipo, posição, orientação, estado, ownership, relações, proveniência e timestamps.
 
-```text
-Entity
-  id
-  type
-  scene
-  position[x,y,z]
-  orientation
-  state
-  ownership
-  relationships
-  provenance
-  timestamps
-```
+**Gate:** fatos autoritativos deixam de depender de interpretação livre do LLM.
 
-**Gate:** fatos autoritativos não dependem de interpretação livre do LLM.
+## Fase 7 — Spatial World Model
 
-## Fase 7 — Spatial World Model / Spatial Compiler
+**Objetivo:** transformar o mundo semântico em espaço jogável e semanticamente compreendido.
 
-**Objetivo:** transformar o mundo semântico em espaço jogável.
+Inclui X/Y/Z, regiões, volumes, terreno, assentamentos, interiores, objetos, conectividade, elevação, distância, cobertura, colisão, LOS, iluminação, som e relações espaciais.
 
-- X/Y/Z;
-- regiões, salas, zonas e volumes;
-- terreno;
-- assentamentos;
-- edifícios e interiores;
-- portas, passagens e objetos;
-- conectividade;
-- elevação;
-- distância e cobertura;
-- colisão;
-- LOS;
-- iluminação;
-- propagação de som;
-- relações `inside`, `behind`, `above`, `adjacent`, `reachable`.
+A materialização deve ser incremental: alta resolução onde o jogo exige e representação abstrata onde ainda não exige.
 
-Materialização deve ser incremental: alta resolução perto da área jogável e representação mais abstrata para regiões ainda distantes.
-
-**Gate:** o Fênix consegue transformar parte relevante do Campaign/World Model em espaço 3D semanticamente compreendido, não apenas visualmente gerado.
+**Gate:** uma parte relevante do Campaign/World Model pode ser materializada em espaço 3D funcional, não apenas visual.
 
 ## Fase 8 — Perception & Knowledge Engine
 
-**Objetivo:** separar World Truth de percepção, crença e conhecimento individual.
-
-```text
-visibleEntities
-heardEntities
-knownEntities
-suspectedEntities
-rememberedEntities
-beliefs
-```
+**Objetivo:** separar World Truth de percepção, crença, memória e conhecimento individual.
 
 **Gate:** o Mestre IA sabe o que pode revelar para cada jogador e NPC.
 
-## Fase 9 — Temporal Memory: T
+## Fase 9 — Temporal Memory
 
-**Objetivo:** transformar snapshots em história persistente.
+**Objetivo:** incorporar T ao World Model, registrando ações, mudanças, observadores e tempo de mundo/sessão.
 
-Registrar ações, mudanças, observadores e tempo de mundo/sessão.
-
-```text
-21:44 Player_B forced Door_17
-21:44 Door_17 became BROKEN
-21:44 Orc_03 heard impact
-21:45 Orc_03 became ALERT
-```
-
-**Gate 4D temporal:** consultar onde algo está, onde estava, quando mudou e quem presenciou a mudança.
+**Gate:** o sistema consulta onde algo está, onde estava, quando mudou e quem presenciou a mudança.
 
 ## Fase 10 — Causal Simulation
 
-**Objetivo:** compreender ação → consequência → novo estado.
+**Objetivo:** modelar ação → consequência → novo estado.
 
-- grafo causal;
-- consequências atrasadas;
-- propagação de informação;
-- eventos mundiais;
-- evolução de conflitos mesmo fora da atenção dos jogadores;
-- resolução determinística antes da interpretação narrativa.
+Inclui grafo causal, consequências atrasadas, propagação de informação, eventos mundiais e evolução de conflitos fora da atenção imediata dos jogadores.
 
 **Gate:** o mundo consegue explicar por que seu estado atual existe.
 
 ## Fase 11 — NPC Cognition
 
-**Objetivo:** NPCs com percepção, memória, objetivos, crenças e emoções persistentes.
+**Objetivo:** manter NPCs com percepção, memória, crenças, emoções, objetivos e relações persistentes.
 
 ```text
-KNOWS
-BELIEVES
-FEELS
-WANTS
-SAYS
-DOES
+KNOWS → BELIEVES → FEELS → WANTS → SAYS → DOES
 ```
 
-**Gate:** NPCs mantêm coerência social e psicológica entre sessões.
+**Gate:** NPCs mantêm coerência social e psicológica entre cenas e sessões.
 
 ## Fase 12 — Narrative Intelligence
 
 **Objetivo:** transformar estado e simulação em direção dramática.
 
-- intenção narrativa;
-- tema;
-- ritmo;
-- tensão;
-- mistério;
-- revelações;
-- pistas;
-- consequências;
-- subtexto;
-- escolha entre narrar, perguntar, agir, esperar ou permanecer em silêncio.
+Inclui intenção narrativa, tema, ritmo, tensão, mistério, revelações, pistas, consequências, subtexto e decisão entre narrar, perguntar, agir, esperar ou permanecer em silêncio.
 
-**Gate:** a IA dirige cenas sem confundir criatividade com alteração arbitrária de fatos.
+**Gate:** a IA dirige cenas sem alterar arbitrariamente fatos autoritativos.
 
 ## Fase 13 — Narrative Performance Engine
 
-**Objetivo:** eliminar a sensação de texto de IA lido por TTS.
+**Objetivo:** transformar intenção narrativa em performance natural.
 
-Coordenar:
+Inclui emoção, intensidade, ritmo, pausas, respiração, hesitação, volume, identidade vocal, música, soundscape, iluminação, áudio espacial e silêncio dramático.
 
-- emoção;
-- intensidade;
-- ritmo;
-- pausas;
-- respiração;
-- hesitação;
-- sussurro;
-- volume;
-- identidade vocal;
-- música;
-- soundscape;
-- iluminação;
-- áudio espacial;
-- silêncio dramático.
-
-**Gate:** ambiente, sensação, estado emocional e intenção são transmitidos naturalmente sem exposição excessiva.
+**Gate:** ambiente, sensação, estado emocional e intenção são transmitidos sem exposição artificial ou sensação predominante de texto lido por TTS.
 
 ## Fase 14 — Autonomous GM / Director AI
 
-**Objetivo:** observar continuamente e decidir quando e como intervir.
+**Objetivo:** observar o estado continuamente e decidir quando e como intervir usando regras, narração, NPCs, encontros, música, ambiente, iluminação ou `NO_ACTION`.
 
-```text
-Knowledge + Rules + World
-          ↓
-Perception + Time + Causality
-          ↓
-GM Director
- ├─ Rules
- ├─ Narration
- ├─ NPCs
- ├─ Encounters
- ├─ Music
- ├─ Soundscape
- ├─ Lighting
- └─ NO_ACTION
-```
-
-**Gate:** sessões longas permanecem coerentes com supervisão humana opcional.
+**Gate:** sessões prolongadas permanecem coerentes com supervisão humana opcional.
 
 ## Fase 15 — Mestre IA 4D
 
-**Objetivo:** integração plena da primeira visão espaço-temporal.
+**Objetivo:** integrar regras, mundo, campanha, espaço, tempo, percepção, conhecimento, emoção, causalidade e possibilidades futuras em uma única direção de jogo.
 
-O Mestre deve compreender simultaneamente:
-
-**regras + mundo + campanha + onde + quando + quem + percepção + conhecimento + emoção + causa + consequência + possibilidades futuras.**
-
-As quatro fontes de verdade são obrigatórias:
-
-1. Rules Truth;
-2. World Truth;
-3. Character Knowledge;
-4. Temporal Truth.
-
-**Gate:** improvisação e narração permanecem coerentes com todas as quatro fontes durante sessões prolongadas.
+**Gate:** improvisação e narração permanecem coerentes com Rules Truth, World Truth, Character Knowledge e Temporal Truth durante sessões prolongadas.
 
 ## Fase 16 — VR / Spatial RPG
 
-**Objetivo:** colocar jogadores dentro do mesmo World Model.
+**Objetivo:** colocar jogadores dentro do mesmo World Model compartilhado por desktop e outras interfaces.
 
-- headset;
-- cabeça e mãos;
-- orientação corporal;
-- interação espacial;
-- áudio 3D;
-- jogadores desktop e VR juntos;
-- percepção baseada em ponto de vista;
-- voz e gestos como sinais quando suportados.
+Inclui tracking compatível de cabeça/mãos, orientação corporal, interação espacial, áudio 3D, percepção por ponto de vista e sinais multimodais quando suportados.
 
-VR adiciona sensores e interação. Não cria um segundo cérebro ou segundo mundo.
+**Gate:** VR adiciona interação espacial sem criar um segundo estado de mundo ou uma segunda lógica de jogo.
 
 ## Fase 17 — Mundo persistente multimodal
 
-Horizonte:
+**Objetivo de horizonte:** permitir regiões em evolução contínua, NPCs autônomos, geração procedural semântica, memória de longo prazo, múltiplas interfaces e expansão incremental de mundos criados ou importados.
 
-- regiões que evoluem continuamente;
-- NPCs autônomos;
-- geração procedural semântica;
-- múltiplos grupos quando desejado;
-- desktop/mobile/VR/AR;
-- memória de campanha de longo prazo;
-- direção dramática adaptativa;
-- expansão incremental de mundos importados ou criados.
+**Gate:** o mundo mantém continuidade de longo prazo enquanto diferentes modalidades e grupos interagem com a mesma autoridade de estado, dentro das regras de produto definidas.
 
----
+## Fênix World Compiler
 
-# Fênix World Compiler
-
-O termo **Fênix World Compiler** representa o conjunto de pipelines que convertem conhecimento em mundo jogável:
+**Fênix World Compiler** é o nome do eixo que converte conhecimento em mundo jogável:
 
 ```text
 Rules ───────→ Rule Compiler ──────┐
                                    │
-World Sources → World Compiler ────┼→ Campaign Model
-                                   │       ↓
-Adventure ───→ Campaign Compiler ──┘   World Model
-                                           ↓
-                                    Spatial Compiler
-                                           ↓
-                                     3D/4D World
-                                           ↓
-                                      Simulation
-                                           ↓
-                                      Mestre IA 4D
+World Sources → World Compiler ────┼→ Campaign Model → World Model
+                                   │                         ↓
+Adventure ───→ Campaign Compiler ──┘                 Spatial Compiler
+                                                             ↓
+                                                       3D / 4D World
+                                                             ↓
+                                                        Simulation
+                                                             ↓
+                                                        Mestre IA 4D
 ```
 
-Esse eixo é fundacional e prioritário.
+## Critério final
 
----
+O Fênix deve conseguir **compreender as regras escolhidas, compreender o material importado ou criado, convertê-lo em um mundo jogável, preservar proveniência, acompanhar o mundo em X + Y + Z + T, resolver ações segundo as regras, improvisar dentro da coerência e dirigir/narrar uma experiência dramática natural**.
 
-# Métrica conceitual de maturidade
-
-As porcentagens são marcos arquiteturais, não progresso de sprint:
-
-| Marco | Maturidade conceitual |
-|---|---:|
-| VTT confiável | 30% |
-| Knowledge + Rule/World/Campaign Compilers | 45% |
-| World Authority + Spatial Model | 60% |
-| Perception + Temporal Memory | 72% |
-| Causality + NPC Cognition | 84% |
-| Narrative Intelligence + Performance | 90% |
-| Autonomous Mestre IA 4D | 96% |
-| VR/multimodal, primeiro ciclo | 100% |
-
----
-
-# Critério final
-
-O Fênix deve ser capaz de:
-
-> **compreender as regras escolhidas, compreender o material importado ou criado, convertê-lo em um mundo jogável, preservar proveniência, acompanhar esse mundo em X + Y + Z + T, resolver ações segundo as regras, improvisar dentro da coerência e dirigir/narrar uma experiência dramática natural.**
-
-Essa é a base oficial para a evolução do **Mestre IA 4D**.
+O estado real de implementação de cada entrega deve ser registrado no [`CHANGELOG.md`](CHANGELOG.md), e não inferido deste roadmap.
