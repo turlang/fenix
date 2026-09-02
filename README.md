@@ -405,6 +405,124 @@ VR / Spatial RPG
 
 Essa ordem é deliberada: **não construir o cérebro antes de definir de onde ele obtém conhecimento confiável**.
 
+## Modelo de negócio e operação
+
+A direção comercial planejada para o Fênix é um modelo **híbrido inspirado na simplicidade operacional do self-hosting**, preservando a independência tecnológica e comercial do projeto.
+
+### Licença principal
+
+- o Mestre adquire uma licença do Fênix VTT;
+- jogadores podem participar da mesa sem adquirir uma licença individual;
+- o Mestre pode executar a sessão em sua própria máquina;
+- renderização 2D/3D deve ocorrer localmente sempre que possível;
+- campanhas e assets podem permanecer locais quando o Mestre escolher o modo self-hosted;
+- a licença principal não deve depender de uma assinatura obrigatória para manter o VTT básico utilizável.
+
+Os valores comerciais definitivos serão definidos apenas antes do lançamento. Como referência de planejamento, a estratégia considera uma licença perpétua na faixa de **R$ 249 a R$ 399**, sujeita a validação de mercado, custos, impostos e escopo final.
+
+### Serviços opcionais
+
+O modelo comercial poderá ser complementado por serviços que não sejam necessários para o funcionamento básico da licença local:
+
+- **Fênix Cloud:** hospedagem 24/7, backups, armazenamento e conexão simplificada;
+- **BYOK (Bring Your Own Key):** o Mestre conecta sua própria chave de um provedor de IA compatível e assume diretamente o consumo daquele provedor;
+- **Fênix AI:** IA gerenciada pelo Fênix com franquia, créditos ou cobrança por consumo;
+- **World Compiler / Campaign Compiler:** processamento pesado cobrado por créditos ou incluído em planos específicos;
+- **voz e mídia premium:** TTS, geração de áudio, vídeo, modelos e outros recursos de alto custo sob demanda;
+- **Marketplace:** conteúdo de criadores e parceiros, com participação do Fênix nas transações;
+- **conteúdo oficial/licenciado:** packs de sistemas, mundos e campanhas quando houver autorização apropriada.
+
+A diretriz econômica é simples: **o custo variável pesado não deve ficar escondido dentro de uma licença ilimitada**.
+
+```text
+FÊNIX LOCAL
+VTT + servidor da mesa + renderização → máquina do Mestre
+
+FÊNIX BYOK
+VTT local → máquina do Mestre
+IA → conta/chave do Mestre
+
+FÊNIX CLOUD
+VTT/mesa → local ou cloud
+IA/compiladores/voz/storage → serviços Fênix sob demanda
+```
+
+Essa arquitetura reduz o custo fixo central do projeto, permite operação comercial gradual e evita que cada mesa ativa exija permanentemente uma instância ou GPU mantida pelo Fênix.
+
+## Requisitos de sistema planejados
+
+Os requisitos abaixo são **alvos de produto**, não requisitos finais certificados da versão `0.1.0-alpha.24`. Eles deverão ser revisados por benchmarks antes de cada release estável. O consumo real varia conforme tamanho do mapa, quantidade de tokens, iluminação, modelos 3D, resolução, efeitos e uso de IA local.
+
+### Mestre / Host: mínimo planejado
+
+| Componente | Requisito mínimo alvo |
+| --- | --- |
+| Sistema operacional | Windows 10/11 64-bit, Linux 64-bit ou macOS compatível |
+| CPU | 4 núcleos / 8 threads, classe Intel Core i5 ou AMD Ryzen 5 |
+| RAM | 8 GB |
+| GPU | GPU compatível com WebGL 2; 4 GB de VRAM recomendados para cenas 3D |
+| Armazenamento | 10 GB livres + espaço para campanhas e assets |
+| Internet | 20 Mbps download / 10 Mbps upload para self-hosting de mesa pequena |
+| Runtime de desenvolvimento/self-host atual | Node.js `>=20 <25` |
+| Navegador | versão atual de navegador Chromium/Firefox compatível com WebGL 2 e WebSocket |
+
+O perfil mínimo deve priorizar mesas 2D/2.5D e cenas 3D moderadas. Cenas 3D complexas, IA local e VR não são alvo desse perfil.
+
+### Mestre / Host: recomendado
+
+| Componente | Requisito recomendado alvo |
+| --- | --- |
+| CPU | 6 a 8 núcleos modernos, classe Core i5/i7 ou Ryzen 5/7 |
+| RAM | 16 GB; 32 GB para criação pesada, IA local ou mundos 3D grandes |
+| GPU | GPU dedicada com 8 GB de VRAM ou superior |
+| Armazenamento | SSD/NVMe com pelo menos 30 GB livres para aplicação, cache e assets ativos |
+| Internet | 100 Mbps download / 20 Mbps upload ou superior; conexão cabeada quando possível |
+| Tela | 1920×1080 ou superior |
+| Áudio | headset/microfone dedicado recomendado para voz e interação com Mestre IA |
+
+### Jogador: mínimo planejado
+
+| Componente | Requisito mínimo alvo |
+| --- | --- |
+| CPU | processador moderno de 4 núcleos |
+| RAM | 8 GB |
+| GPU | WebGL 2 compatível; integrada moderna para 2D/2.5D |
+| Internet | 10 Mbps estáveis |
+| Navegador | versão atual compatível com WebGL 2, WebSocket e WebRTC quando necessário |
+
+### Jogador: recomendado para 3D
+
+| Componente | Requisito recomendado alvo |
+| --- | --- |
+| CPU | 6 núcleos modernos |
+| RAM | 16 GB |
+| GPU | dedicada com 6 GB de VRAM ou superior |
+| Armazenamento | SSD e espaço disponível para cache de assets |
+| Internet | 50 Mbps ou superior |
+| Tela | 1920×1080 ou superior |
+
+### IA local e VR
+
+IA local e VR constituem perfis separados e **não fazem parte dos requisitos mínimos do VTT**. O Fênix deverá permitir IA por cloud/BYOK para que o usuário não seja obrigado a possuir hardware de IA dedicado.
+
+Para IA local, a necessidade de GPU/VRAM dependerá do modelo selecionado e será publicada por modelo suportado. Para VR, os requisitos serão definidos quando a fase de realidade espacial possuir implementação e benchmarks reais. Não devem ser prometidos requisitos de VR antes dessa validação.
+
+### Diretriz de desempenho
+
+O produto deve seguir a ordem:
+
+```text
+renderização local primeiro
+        ↓
+cloud rendering somente quando necessário
+        ↓
+workers/compiladores sob demanda
+        ↓
+GPU cloud sem permanência ociosa
+```
+
+O objetivo é manter o Fênix acessível em hardware intermediário e impedir que a infraestrutura central assuma desnecessariamente o custo de renderização de todas as mesas.
+
 ## Execução local
 
 ```powershell
