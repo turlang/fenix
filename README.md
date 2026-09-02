@@ -1,29 +1,263 @@
-
 > **⚠️ COPYRIGHT NOTICE — ALL RIGHTS RESERVED**
 >
 > Copyright (c) 2026 **Evandro Ricardo / Mestre Orc**  
 > Este software e todo o seu código-fonte são propriedade exclusiva do autor.  
 > **É proibida** a cópia, modificação, distribuição, engenharia reversa ou qualquer uso sem autorização prévia e por escrito do proprietário.  
-> Veja o arquivo [`LICENSE`](LICENSE) e [`NOTICE`](NOTICE) para os termos completos.
+> Veja [`LICENSE`](LICENSE) e [`NOTICE`](NOTICE).
 
 ---
 
+# Mestre Orc / Fênix VTT
 
+Versão base atual: `0.1.0-alpha.24`  
+Stack principal: Node.js 20–24, Next.js 15, React 19, WebGL/3D, PostgreSQL, WebSocket e Shared Core de IA. O Foundry VTT 13 permanece como adapter de primeira classe enquanto o Fênix evolui como VTT standalone.
 
+## Missão
 
+O Fênix não pretende ser apenas um VTT que possui um chatbot ou um gerador de narração. A visão de longo prazo é construir um **motor de RPG persistente no qual um Mestre IA compreende o mundo, acompanha sua evolução e dirige a experiência narrativa**.
 
+O destino arquitetural é o **Mestre IA 4D**: um Mestre com consciência operacional do espaço e do tempo do jogo, apoiado por percepção, memória, causalidade, emoção e direção dramática.
 
-# Mestre Orc / Fênix Engine
+> **No Fênix, 4D significa explicitamente X + Y + Z + T: três dimensões espaciais mais a dimensão temporal.**
+>
+> Não significa consciência humana nem uma hipótese física de quarta dimensão espacial. Significa que o sistema deve conhecer onde as entidades estão, quando os estados mudaram, quem percebeu os acontecimentos e quais causas produziram as consequências atuais.
 
-Versão base `0.1.0-alpha.24` — Node.js 20–24, Foundry VTT 13 e Fênix VTT standalone.
+O roadmap completo dessa evolução está em [`ROADMAP.md`](ROADMAP.md).
 
-## Preview
+## A visão 4D
 
-![Preview do Mestre Orc Engine](docs/preview.svg)
+Um VTT convencional conhece principalmente o estado presente. O Fênix deverá conhecer também a trajetória desse estado.
 
-O projeto mantém um Shared Core VTT-agnóstico para contexto, intenção, regras, relacionamentos, narração e áudio. O Foundry VTT continua como adapter de primeira classe, enquanto `apps/fenix-vtt` executa o mesmo Core como cliente standalone com Next.js, WebGL2, contas, campanhas, multiplayer e infraestrutura distribuída opcional sobre PostgreSQL.
+```text
+FÊNIX WORLD MODEL
 
-## Engine
+Space
+  X + Y + Z
+
+Time
+  T
+
+Context
+  State
+  Perception
+  Knowledge
+  Memory
+  Emotion
+  Causality
+```
+
+Exemplo de fatos que o motor deverá ser capaz de produzir sem depender de invenção do LLM:
+
+```text
+23:47:14
+Player_A moved 1.4m north.
+Player_A cannot see Orc_07.
+Orc_07 cannot see Player_A.
+Orc_07 heard Player_A.
+Orc_07 suspicion = 0.42.
+Player_B is looking toward the ceiling.
+Player_B perception check = SUCCESS.
+```
+
+A função da IA é **interpretar e dirigir a experiência a partir desses fatos**, e não inventar arbitrariamente a geometria ou o estado do mundo.
+
+## Princípio fundamental: realidade ≠ percepção ≠ conhecimento
+
+O Fênix deverá distinguir três camadas:
+
+1. **Realidade do mundo:** o que realmente existe e acontece.
+2. **Percepção:** o que determinado personagem consegue ver, ouvir ou detectar naquele momento.
+3. **Conhecimento:** o que esse personagem sabe ou acredita com base em experiências anteriores.
+
+Assim, o Mestre IA poderá saber que existe uma criatura no teto e simultaneamente saber que nenhum personagem a percebeu. A criatura existe no World Model, mas não pode ser revelada pela narração até que uma percepção, ação ou consequência justifique isso.
+
+## A quarta dimensão: memória temporal
+
+O tempo não será apenas um relógio visual. Ele deverá fazer parte do estado do universo.
+
+```text
+21:43 Player_A approached Door_17
+21:43 Player_A attempted lockpick
+21:43 lockpick FAILED
+21:44 Player_B forced Door_17
+21:44 Door_17 became BROKEN
+21:44 Orc_03 heard impact
+21:45 Orc_03 became ALERT
+```
+
+Isso permite que o Mestre compreenda não apenas que `Door_17` está quebrada, mas **quando foi quebrada, quem provocou a mudança, quem percebeu o evento e quais consequências surgiram depois**.
+
+Uma sala poderá carregar vestígios de eventos anteriores. Um NPC poderá lembrar de uma ameaça. Guardas poderão procurar aventureiros porque receberam um alerta causado minutos antes. O presente passa a ser consequência de uma linha temporal persistente.
+
+## Causalidade
+
+A evolução posterior adicionará um grafo causal ao World Model:
+
+```text
+Door_17 broken
+  caused_by: Player_B forced door
+  consequence: Orc_03 alerted
+  secondary: Orc_03 warned guards
+  current_effect: guards searching dungeon
+```
+
+O objetivo é permitir que o Mestre IA compreenda **por que** o mundo chegou ao estado atual, e não apenas qual é esse estado.
+
+## Narração natural é requisito central
+
+A visão 4D não termina em geometria. Um mundo tecnicamente perfeito ainda falha como RPG se a narração parecer texto de IA lido por um TTS.
+
+O Fênix deverá evoluir para um **Narrative Performance Engine** que coordene:
+
+- contexto sensorial do ambiente;
+- tensão, mistério e perigo percebido;
+- estado físico e emocional dos personagens;
+- conhecimento e segredos individuais;
+- ritmo dramático;
+- intenção narrativa;
+- emoção e subtexto;
+- pausas, respiração e hesitação;
+- velocidade e intensidade da fala;
+- sussurro e volume;
+- silêncio dramático;
+- identidade vocal persistente por NPC;
+- música, soundscape e áudio espacial;
+- iluminação e efeitos ambientais.
+
+A saída de narração poderá carregar uma partitura de interpretação:
+
+```text
+emotion: apprehension
+intensity: 0.38
+pace: slow
+volume: low
+breathiness: 0.22
+
+"O frio muda primeiro."
+PAUSE 900ms
+
+"Não é apenas a umidade da cripta."
+PAUSE 500ms
+
+intensity: 0.52
+"Há alguma coisa diferente no ar."
+PAUSE 1300ms
+```
+
+O objetivo não é fazer a IA falar continuamente. Um Mestre competente também sabe observar e permanecer em silêncio. O Director AI deverá poder escolher `NO_ACTION` quando som, iluminação, atuação dos NPCs ou simplesmente o silêncio forem narrativamente superiores a outra fala.
+
+## Estado emocional e subtexto dos NPCs
+
+NPCs futuros não deverão ser representados apenas por rótulos como `angry` ou `afraid`. O estado poderá ser multidimensional:
+
+```text
+fear:       0.62
+anger:      0.81
+confidence: 0.34
+grief:      0.18
+suspicion:  0.73
+```
+
+A cognição deverá separar:
+
+```text
+KNOWS
+FEELS
+WANTS
+SAYS
+DOES
+```
+
+Isso permitirá mentira, hesitação, medo oculto, falsa confiança, memória social e subtexto sem exigir que o narrador explique explicitamente cada emoção.
+
+## Arquitetura-alvo
+
+```text
+                         FÊNIX WORLD
+                              │
+                       World Authority
+                              │
+               ┌──────────────┴──────────────┐
+               │                             │
+        Spatial World Model             Rules Engine
+          X + Y + Z                          │
+               │                         Simulation
+        Perception Engine                    │
+               └──────────────┬──────────────┘
+                              │
+                         Event Stream
+                              │
+                     Temporal Memory (T)
+                              │
+                         Causal Graph
+                              │
+                    NPC Cognition / Emotion
+                              │
+                         GM Director AI
+                ┌─────────────┼─────────────┐
+                │             │             │
+           Narration        NPC AI       World Direction
+                │             │             │
+        Performance/TTS    Animation    Music/FX/Lighting
+                └─────────────┼─────────────┘
+                              │
+                          FÊNIX WORLD
+                              │
+                   Desktop / Mobile / VR / AR
+```
+
+## VR e realidade espacial
+
+VR é uma evolução planejada, mas **não deve ser o cérebro do sistema**. Primeiro o Fênix precisa compreender o mundo. Depois VR passa a ser outra interface para observar e manipular esse mesmo World Model.
+
+O objetivo futuro é permitir sessões híbridas nas quais jogadores desktop e VR compartilhem o mesmo universo. Headset, posição da cabeça, orientação, mãos, voz e eventualmente gestos poderão alimentar o Perception Engine sem criar uma arquitetura paralela.
+
+## Estado atual
+
+A fundação existente inclui:
+
+- Shared Core VTT-agnóstico para contexto, intenção, regras, relacionamentos, narração e áudio;
+- Fênix VTT standalone com Next.js 15 + React 19;
+- renderer desacoplado por `MapRendererPort`;
+- battlemap, pan/zoom e calibração persistente de grid;
+- Walls + Doors Authoring persistente;
+- portas `open`, `closed` e `locked`;
+- Fog of War + Token Line of Sight por personagem;
+- memória persistente de áreas exploradas;
+- autenticação, campanhas, memberships e convites;
+- controle de personagem derivado da membership no servidor;
+- `CampaignRuntimeRegistry` isolado por campanha;
+- PostgreSQL opcional e coordenação distribuída;
+- runtime leases com fencing token;
+- `LISTEN/NOTIFY` para invalidação entre Engines;
+- owner-aware HTTP/WebSocket routing;
+- HMAC interno entre Engines;
+- `DistributedCommandLedger` para idempotência;
+- observabilidade e readiness;
+- `ROOM_ENTERED` e ações integradas ao Shared Core;
+- recuperação de sessão sem repetir aberturas.
+
+## Próximas fundações técnicas
+
+Antes do Mestre IA 4D, o VTT precisa consolidar:
+
+- manipulação e qualidade do streaming 3D;
+- colisão autoritativa de tokens;
+- iluminação dinâmica, elevação e som espacial;
+- Durable Realtime Outbox + garantias de entrega;
+- World Authority;
+- Spatial World Model;
+- Perception & Knowledge Engine;
+- Temporal Memory;
+- Causal Simulation;
+- NPC Cognition;
+- Narrative Performance Engine;
+- Autonomous GM / Director AI;
+- VR e interfaces espaciais.
+
+A ordem e os gates estão documentados em [`ROADMAP.md`](ROADMAP.md).
+
+## Execução local
 
 ```powershell
 npm ci
@@ -32,260 +266,42 @@ npm run check
 npm run dev
 ```
 
-Desenvolvimento pode permanecer em JSON:
+Fênix VTT standalone:
+
+```powershell
+npm run dev:vtt
+```
+
+Desenvolvimento pode usar persistência JSON:
 
 ```env
 FENIX_PERSISTENCE_DRIVER=json
 FENIX_STATE_FILE=./data/fenix-state.json
 ```
 
-Para PostgreSQL distribuído:
+Para infraestrutura distribuída, configure PostgreSQL e as variáveis de runtime descritas em `.env.example`, além de `GROQ_API_KEY`, `GROQ_MODEL`, CORS e autenticação.
 
-```env
-FENIX_PERSISTENCE_DRIVER=postgres
-DATABASE_URL=postgres://usuario:senha@host:5432/fenix
-FENIX_POSTGRES_POOL_MAX=10
-FENIX_INSTANCE_ID=engine-a
-FENIX_INSTANCE_PUBLIC_URL=https://engine-a.internal.example.com
-FENIX_INTERNAL_ROUTING_SECRET=troque-por-um-segredo-compartilhado-com-32-ou-mais-caracteres
-FENIX_RUNTIME_LEASE_TTL_MS=15000
-FENIX_RUNTIME_HEARTBEAT_MS=5000
-FENIX_RUNTIME_RECONCILE_MS=5000
-FENIX_RUNTIME_ROUTING_TIMEOUT_MS=5000
-FENIX_RUNTIME_ROUTING_MAX_RETRIES=1
-FENIX_COMMAND_LEDGER_WAIT_MS=1500
-FENIX_COMMAND_LEDGER_UNKNOWN_AFTER_MS=60000
-FENIX_COMMAND_LEDGER_RETENTION_HOURS=168
-FENIX_COMMAND_LEDGER_RESULT_MAX_BYTES=524288
-```
+## Mapas, visão e autoridade atual
 
-`FENIX_INSTANCE_ID` deve ser único por réplica. `FENIX_INSTANCE_PUBLIC_URL` precisa ser alcançável pelas demais réplicas. O mesmo `FENIX_INTERNAL_ROUTING_SECRET` deve ser compartilhado somente entre Engines autorizados. Sem o secret, o Engine continua em modo local-only mesmo usando PostgreSQL.
+O Scene Manager mantém battlemap, dimensões, grid calibrado, paredes e Fog como estado persistente. Paredes e portas fechadas/trancadas bloqueiam visão; portas abertas liberam line-of-sight. O contrato geométrico permanece em `packages/scene-geometry` e o contrato de visão em `packages/scene-vision`.
 
-Também configure `GROQ_API_KEY`, `GROQ_MODEL`, CORS e autenticação conforme `.env.example`.
+A exploração não é declarada pelo browser. Depois de um `TOKEN_MOVE` autorizado, o Engine calcula as células visíveis usando posição, grid e paredes. Alterações de grid, paredes, portas e Fog são GM-only no servidor.
 
-## Fênix VTT standalone
+Documentação relacionada:
 
-```powershell
-npm run dev:vtt
-```
+- [`docs/FENIX_WALLS_DOORS.md`](docs/FENIX_WALLS_DOORS.md)
+- [`docs/FENIX_FOG_LOS.md`](docs/FENIX_FOG_LOS.md)
+- [`docs/FENIX_AUTH_PERSISTENCE.md`](docs/FENIX_AUTH_PERSISTENCE.md)
 
-Na primeira abertura, o VTT oferece o bootstrap único do primeiro Mestre. Depois disso, a entrada usa login persistente. O GM cria campanhas e convites one-time ligados a um `actorId`; jogadores controlam apenas o personagem atribuído pelo servidor.
+## Limites atuais importantes
 
-O browser envia somente `sessionId` e `clientId` no WebSocket. `userId`, papel GM/Player e `actorId` são derivados do cookie HttpOnly e da membership.
+### Entrega durável de eventos realtime
 
-O fluxo atual possui:
+A execução de comandos já é deduplicada entre réplicas, mas o broadcast realtime ainda pode ser perdido se o owner cair após confirmar uma mutação e antes da entrega aos peers. A evolução planejada é **Durable Realtime Outbox + Event Delivery Guarantees**.
 
-- Next.js 15 + React 19 + Tailwind CSS 4;
-- renderer WebGL2 atrás de `MapRendererPort`;
-- upload de battlemap PNG/JPG/WEBP e importação segura por URL HTTP/HTTPS;
-- pan/zoom, fit de cena e calibração persistente de grid;
-- **Walls + Doors Authoring** persistente para o Mestre;
-- segmentos `wall` e `door` com estados `open`, `closed` e `locked`;
-- snap de paredes à grade, apagar, desfazer, cancelar e sincronização realtime;
-- **Fog of War + Token Line of Sight** por personagem;
-- ray-casting contra paredes, portas e limites da cena;
-- memória persistente de áreas exploradas separada por `actorId`;
-- preview de visão do personagem para o Mestre;
-- autenticação com `scrypt` e token opaco;
-- campanhas/memberships/convites;
-- `CampaignRuntimeRegistry` com runtime isolado por campanha;
-- várias campanhas ativas simultaneamente;
-- `PostgresRuntimeLeaseManager` com um único dono por campanha;
-- fencing token monotônico por `generation`;
-- heartbeat, expiração e takeover da mesma `sessionId`;
-- `PostgresStateBus` com `LISTEN/NOTIFY` para invalidar caches entre Engines;
-- `OwnerAwareRuntimeRouter` para encaminhar HTTP ao owner atual;
-- proxy WebSocket transparente entre ingress e owner;
-- HMAC interno, timestamp, generation e hop único para autenticar Engine→Engine;
-- `DistributedCommandLedger` para deduplicar comandos por `commandId` entre réplicas;
-- replay do resultado já confirmado após timeout/resposta perdida;
-- bloqueio fail-closed de resultados ambíguos com `COMMAND_OUTCOME_UNKNOWN`;
-- retry de timeout/unreachability apenas quando a requisição possui idempotency key;
-- fencing antes de cada comando realtime;
-- reconnect automático do browser após `1012 Runtime owner changed`;
-- métricas de routing, dedupe, retry e failover;
-- readiness dependente do ledger distribuído;
-- `RealtimeSessionHub` isolado por `sessionId`;
-- `ROOM_ENTERED` e ações pelo mesmo Shared Core;
-- recuperação de sessões após restart/failover sem repetir aberturas;
-- JSON local ou PostgreSQL transacional como adapters de persistência.
+### Colisão, iluminação e espacialidade
 
-## Mapas, grade, paredes, portas e visão
-
-O Scene Manager mantém battlemap, dimensões, grid calibrado, `walls` e configuração de Fog como estado persistente da cena. O Mestre edita a geometria diretamente sobre o mapa usando as mesmas coordenadas de mundo do renderer.
-
-```text
-Battlemap
-   ↓
-Pan / Zoom + Grid Calibration
-   ↓
-Walls + Doors Authoring
-   ├─ wall
-   └─ door → open | closed | locked
-   ↓
-scene-geometry
-   ↓
-scene-vision → LOS + Fog + explored cells
-   ↓
-CampaignSceneService
-   ↓
-persistência + invalidação SCENE_UPDATED
-```
-
-O contrato geométrico está em `packages/scene-geometry`. Paredes e portas fechadas/trancadas bloqueiam visão; portas abertas liberam line-of-sight. O contrato de visão está em `packages/scene-vision`, que calcula LOS, polígono de visibilidade e células exploradas sem conhecer React, WebGL, Foundry ou o Shared Core narrativo.
-
-O Fog possui três estados visuais: nunca visto, já explorado e visão atual. A memória é persistida por personagem. Jogadores recebem somente `exploredCells` do próprio `membership.actorId`; o Mestre pode usar **Visão** para pré-visualizar o resultado do ator selecionado.
-
-A exploração persistente não é declarada pelo browser. Depois de um `TOKEN_MOVE` autorizado e normalizado pelo RealtimeSessionGateway, o Engine calcula as células visíveis usando posição, grid e paredes autoritativas. Recalibrar tamanho/offset da grade limpa a memória incompatível; apenas ocultar a grade preserva a exploração.
-
-Alterações de grid, paredes, portas e configuração de Fog são GM-only no servidor. Jogadores recebem a cena filtrada conforme sua membership e não podem publicar `SCENE_UPDATE` de Mestre.
-
-Detalhes: `docs/FENIX_WALLS_DOORS.md` e `docs/FENIX_FOG_LOS.md`.
-
-## PostgreSQL, ownership e owner-aware ingress
-
-`PostgresFenixRepository` preserva o contrato dos serviços atuais e usa pool, transação, advisory lock de inicialização e `SELECT ... FOR UPDATE` nas mutações. O estado principal continua em uma linha JSONB versionada nesta fase de transição.
-
-Quando PostgreSQL está ativo, o Engine também cria `fenix_runtime_leases`. Um lease registra campanha, owner, `sessionId`, `generation` e prazo de validade. A geração funciona como fencing token: uma instância que perdeu ownership não consegue continuar processando comandos com uma geração antiga.
-
-O `PostgresStateBus` mantém uma conexão dedicada em `LISTEN fenix_state_changed`. Alterações persistidas publicam notificações best-effort depois do `COMMIT`; a reconciliação periódica continua como proteção contra notificações perdidas.
-
-### Roteamento HTTP
-
-```text
-Browser / Foundry
-       ↓
-Load Balancer
-       ↓
-Engine B
-       ↓ resolve lease
-owner = Engine A
-       ↓ HMAC proxy
-Engine A
-       ↓ auth + membership + fence
-DistributedCommandLedger
-       ↓
-CampaignRuntime
-```
-
-O proxy preserva a autenticação original do usuário. O owner executa novamente as regras de auth/membership; a assinatura interna nunca substitui autorização de usuário.
-
-Cada hop interno transporta HMAC-SHA256 sobre origem, `generation`, timestamp, método, path e hash do body. O hop aceito é exatamente `1`, impedindo cadeias de proxy entre Engines.
-
-### Roteamento WebSocket
-
-O navegador permanece conectado ao endpoint público que recebeu o upgrade. Se essa réplica não for owner, ela cria um WebSocket interno assinado para o owner e encaminha frames nos dois sentidos.
-
-```text
-Browser
-   ⇅ WebSocket público
-Engine B / ingress
-   ⇅ WebSocket interno HMAC
-Engine A / owner
-   ⇅
-Command Ledger → RealtimeSessionGateway
-```
-
-Cada comando recebido pelo owner passa por `assertOwnership()` e, quando possui `commandId`, pelo ledger. Se o lease for perdido, o socket antigo é encerrado com `1012`; o cliente standalone faz reconnect limitado no mesmo endpoint público, que resolve novamente o owner atual.
-
-## Idempotência distribuída de comandos
-
-O PostgreSQL mantém `fenix_command_ledger`, cujo par `(scope_key, command_id)` é único. O payload da requisição não é persistido no ledger; fica apenas seu SHA-256 para detectar reutilização incompatível do mesmo `commandId`. O resultado confirmado é persistido em JSONB para replay seguro.
-
-Estados:
-
-```text
-novo commandId
-     ↓
-IN_PROGRESS
-  ┌──┴─────────────────┐
-  │                    │
-sucesso             resultado incerto
-  │                    │
-COMPLETED             UNKNOWN
-  │                    │
-replay exato       nunca auto-reexecutar
-```
-
-Regras principais:
-
-- mesmo `commandId` + mesmo payload + `COMPLETED` → devolve o resultado anterior;
-- mesmo `commandId` + payload diferente → `COMMAND_ID_CONFLICT`;
-- comando já sendo processado → aguarda brevemente ou retorna `COMMAND_IN_PROGRESS`;
-- execução cujo resultado não pode ser confirmado → `UNKNOWN` e `COMMAND_OUTCOME_UNKNOWN`;
-- `UNKNOWN` não é reaproveitado para uma segunda execução automática;
-- inicialização concorrente da tabela é serializada com advisory transaction lock;
-- registros antigos são removidos conforme `FENIX_COMMAND_LEDGER_RETENTION_HOURS`.
-
-O cliente standalone gera `commandId` nas mutações de sessão. Clientes externos também podem usar `X-Idempotency-Key`. Requisições legadas sem chave continuam aceitas, mas não recebem retry automático para falhas ambíguas de transporte.
-
-## Observabilidade e readiness
-
-A infraestrutura registra contadores e latência para resolução de owner, proxy HTTP/WS, retry, dedupe, replay, conflitos e failover.
-
-Endpoints operacionais:
-
-- `GET /health`: liveness e capacidades configuradas;
-- `GET /ready`: readiness; falha com 503 quando o ledger não responde;
-- `GET /metrics`: métricas agregadas em formato Prometheus;
-- `GET /v1/runtime/observability`: somente contadores e latências agregadas.
-
-Os detalhes recentes de `ownerId`, `generation` e tentativa permanecem nos logs estruturados do servidor e não são expostos pelo endpoint JSON agregado.
-
-## Migração JSON → PostgreSQL
-
-Para migrar um estado JSON existente para um banco vazio:
-
-```powershell
-npm run migrate:postgres
-```
-
-O script recusa sobrescrever PostgreSQL que já contenha estado.
-
-## Comandos
-
-- `npm run dev`: inicia API/Engine.
-- `npm run dev:vtt`: inicia o Fênix VTT.
-- `npm run build:vtt`: build standalone.
-- `npm test`: suíte `node:test`.
-- `npm run test:auth-integration`: auth/campanhas no Fastify real, incluindo cenas, grid, paredes e mapas remotos.
-- `npm run test:realtime-integration`: WebSocket real.
-- `npm run test:postgres-integration`: repository contra PostgreSQL real.
-- `npm run test:coordination-integration`: dois Engines, lease, LISTEN/NOTIFY, takeover e fencing.
-- `npm run test:routing-integration`: HTTP e WebSocket chegam ao não-owner e são encaminhados ao owner.
-- `npm run test:idempotency-integration`: dois ledgers PostgreSQL disputam o mesmo `commandId` e provam execução única/replay.
-- `npm run migrate:postgres`: migra JSON para PostgreSQL vazio.
-- `npm run validate`: valida fronteiras/estrutura.
-- `npm run check`: validação + Core tests.
-
-## Segurança e operação
-
-- Nunca versione `.env`, estado persistido ou `node_modules`.
-- Senhas usam `scrypt` + salt; tokens reutilizáveis de sessão/convite não ficam em texto puro.
-- Cookies são `HttpOnly` e `Secure` em produção.
-- WebSocket valida `Origin`, payload e rate limit.
-- Jogador não escolhe `role`/`actorId` pela URL e não controla recursos de outra membership.
-- Alterações de grid, paredes, portas e Fog são autorizadas como GM no servidor, não apenas ocultadas pela UI.
-- Jogadores recebem somente o histórico de exploração do próprio personagem; outros `actorId` não são expostos no catálogo da cena.
-- A exploração é derivada do `TOKEN_MOVE` normalizado pelo servidor; não há endpoint de cliente para revelar células arbitrárias.
-- O HTTP legado Foundry permanece disponível apenas conforme `FENIX_ALLOW_LEGACY_SESSION_HTTP`.
-- Apenas o owner de um lease válido pode processar uma campanha persistente.
-- Requisições internas precisam de HMAC válido, timestamp recente, `generation` e hop único.
-- Cabeçalhos internos forjados são recusados; o proxy não cria cadeias recursivas.
-- `commandId` nunca autoriza usuário; auth/membership continuam obrigatórias no owner.
-- O ledger grava hash da requisição e resultado necessário ao replay, não o body original do comando.
-- O shutdown fecha o ingress antes de liberar leases.
-- `LISTEN/NOTIFY` acelera invalidação, mas a reconciliação periódica cobre eventos perdidos.
-
-### Limite atual: entrega durável de eventos realtime
-
-A execução de comandos agora é deduplicada entre réplicas, inclusive após resposta perdida. Porém o broadcast realtime ainda é um efeito do owner em memória: se o processo cair depois de confirmar uma mutação, mas antes de todos os peers receberem o evento correspondente, o ledger impede duplicar o comando, porém não garante a entrega daquele broadcast para cada conexão.
-
-A evolução de infraestrutura para esse ponto continua sendo **Durable Realtime Outbox + Event Delivery Guarantees**, separando confirmação do comando de entrega durável/replay de eventos aos peers.
-
-### Limite atual do mapa: colisão e iluminação
-
-Fog of War e line-of-sight já consomem a geometria autoritativa de paredes/portas. O mapa ainda não impede fisicamente que um token atravesse um segmento e não possui fontes de luz/sombras, darkvision, elevação ou iluminação dinâmica. A próxima evolução visual é **Token Collision + Dynamic Lighting** sobre `scene-geometry` e `scene-vision`.
+Fog e LOS já usam geometria autoritativa. Ainda é necessário consolidar colisão física, iluminação dinâmica, elevação, propagação de som e relações espaciais necessárias ao futuro World Model 4D.
 
 ## Módulo Foundry
 
@@ -295,51 +311,40 @@ Copie `apps/foundry-module` para:
 FoundryVTT/Data/modules/mestre-orc/
 ```
 
-A lógica alpha.24 permanece no módulo: correlação por número da sala, Journal relacionado e read-aloud seguro. Essa regra não foi movida para o Shared Core.
+A lógica alpha.24 preserva correlação por número da sala, Journal relacionado e read-aloud seguro. O Foundry permanece adapter de primeira classe, mas a inteligência de mundo de longo prazo pertence ao Shared Core/Fênix World Model.
 
-## Arquitetura validada
+## Comandos principais
 
 ```text
-Browser / Foundry
-       │
-       ↓
-Load Balancer
-       │
-       ↓
- qualquer Engine
-       │
-       ├── Auth / Membership
-       ├── Scene Manager → assets / grid / walls / fog
-       ├── scene-geometry / scene-vision
-       ├── resolve lease
-       │
-       ├─ local owner ───────────────┐
-       │                             │
-       └─ remote owner → HMAC proxy ─┤
-                                     ↓
-                           DistributedCommandLedger
-                                     │
-                          CampaignRuntimeRegistry
-                                     │
-                              assert lease/fence
-                                     ↓
-                               Shared Core
-                                     │
-                           NarrationOutput / Hub
-                                     │
-                    ┌────────────────┴──────────────┐
-                    │ PostgreSQL                    │
-                    │ state + leases + ledger       │
-                    └───────────────┬───────────────┘
-                                    │
-                         RuntimeObservability
-                         /ready /metrics / logs
+npm run dev
+npm run dev:vtt
+npm run build:vtt
+npm test
+npm run test:auth-integration
+npm run test:realtime-integration
+npm run test:postgres-integration
+npm run test:coordination-integration
+npm run test:routing-integration
+npm run test:idempotency-integration
+npm run migrate:postgres
+npm run validate
+npm run check
 ```
 
-`SessionDirector` continua sem conhecer Foundry, autenticação, banco, Fastify, WebSocket, React, WebGL, assets, scene authoring, `scene-geometry`, `scene-vision`, Fog/LOS, leases, `LISTEN/NOTIFY`, roteamento, command ledger ou observabilidade.
+## Segurança
 
-## CI
+O Fênix mantém autorização no servidor, autenticação com cookies HttpOnly, validação de origem e payload WebSocket, isolamento por membership, HMAC entre Engines, fencing de runtime, idempotência distribuída e separação entre autenticação de usuário e confiança interna de infraestrutura.
 
-A pipeline exige matriz Node 20/22/24, suíte unitária, validação de paredes/portas/Fog/LOS, PostgreSQL 16 real, concorrência de repository, leases/failover, idempotência distribuída de comandos, owner-aware HTTP/WebSocket routing entre dois Engines, auth/campanhas/cenas HTTP, WebSocket real, `npm ci` e build Next. O workflow permanece somente-leitura (`contents: read`).
+Nenhum componente de IA deverá poder contornar permissões, revelar estado oculto ou substituir regras determinísticas do World Model.
 
-Veja `docs/FENIX_WALLS_DOORS.md` e `docs/FENIX_FOG_LOS.md` para o mapa, e `docs/FENIX_AUTH_PERSISTENCE.md` para persistência, coordenação, ingress, idempotência e observabilidade. Os `README-ALPHA*.md` preservam o histórico anterior.
+## Critério de sucesso da visão Fênix
+
+A pergunta final não é apenas:
+
+> "A IA consegue escrever uma boa descrição?"
+
+É:
+
+> **"O Fênix consegue dirigir uma experiência dramática contínua usando espaço, tempo, percepção, memória, causalidade, emoção, voz, silêncio e ambiente sem quebrar a coerência do mundo?"**
+
+Quando essa resposta for consistentemente positiva, o Fênix terá deixado de ser apenas um VTT com IA para se tornar um **motor de RPG espaço-temporal dirigido por um Mestre IA 4D**.
