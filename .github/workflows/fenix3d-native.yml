@@ -65,7 +65,7 @@ jobs:
 
       - name: Upload native session evidence
         if: ${{ always() && inputs.run_stream_smoke }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: fenix3d-native-session-evidence
           path: artifacts/fenix3d-native-session.json
